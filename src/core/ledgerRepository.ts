@@ -97,6 +97,10 @@ export class LedgerRepository {
     return parseJson<LedgerEntry>(await this.store.get(ledgerEntryKey(entryId)));
   }
 
+  async updateLedgerEntry(entry: LedgerEntry): Promise<void> {
+    await this.store.set(ledgerEntryKey(entry.entryId), JSON.stringify(entry));
+  }
+
   async getUserLedger(userKey: string): Promise<LedgerEntry[]> {
     const entryIds = await this.store.zRange(userLedgerKey(userKey), 0, -1, {
       reverse: true,

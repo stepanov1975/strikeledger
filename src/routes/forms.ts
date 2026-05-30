@@ -13,6 +13,7 @@ import {
   type TargetSnapshot,
 } from '../core/enforcement';
 import { LedgerRepository, type FormNonceRecord } from '../core/ledgerRepository';
+import { executeSideEffects } from '../core/sideEffects';
 import {
   PUBLIC_PLACEHOLDERS,
   validateTemplatePlaceholders,
@@ -118,15 +119,16 @@ const buildTargetSnapshot = (
 });
 
 const formatCreatedToast = (
-  status: Extract<
-    Awaited<ReturnType<LedgerRepository['createLedgerEntry']>>,
-    { status: 'created' | 'idempotent' }
-  >['status'],
   entry: LedgerEntry,
-  activeTotal: number
+  activeTotal: number,
+  wasIdempotent = false
 ): string => {
-  const prefix = status === 'created' ? 'Strike recorded' : 'Strike already recorded';
-  return `${prefix}: ${ACTION_LABELS[entry.action]} for ${entry.ruleLabel}. Active total: ${activeTotal}. Reddit side effects are pending.`;
+  const prefix = wasIdempotent ? 'Strike already recorded' : 'Strike recorded';
+  if (entry.status === 'partial') {
+    return `${prefix}, but one or more Reddit side effects failed. Active total: ${activeTotal}.`;
+  }
+
+  return `${prefix}: ${ACTION_LABELS[entry.action]} for ${entry.ruleLabel}. Active total: ${activeTotal}.`;
 };
 
 forms.post('/enforcement-submit', async (c) => {
@@ -221,15 +223,28 @@ forms.post('/enforcement-submit', async (c) => {
   });
 
   switch (result.status) {
-    case 'created':
+    case 'created': {
+      const updatedEntry = await executeSideEffects({
+        entry: result.entry,
+        activeTotal: result.activeTotal,
+        target: targetState.target,
+        reddit,
+        config: DEFAULT_CONFIG,
+        ...(publicCommentOverride !== undefined ? { publicCommentOverride } : {}),
+      });
+      await repository.updateLedgerEntry(updatedEntry);
+
+      return c.json<UiResponse>(
+        {
+          showToast: formatCreatedToast(updatedEntry, result.activeTotal),
+        },
+        200
+      );
+    }
     case 'idempotent':
       return c.json<UiResponse>(
         {
-          showToast: formatCreatedToast(
-            result.status,
-            result.entry,
-            result.activeTotal
-          ),
+          showToast: formatCreatedToast(result.entry, result.activeTotal, true),
         },
         200
       );

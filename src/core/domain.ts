@@ -87,6 +87,10 @@ export type LedgerEntry = {
   idempotencyInputs: Record<string, string | number | boolean>;
   formNonce: string;
   sideEffects: SideEffects;
+  publicCommentId?: string;
+  publicCorrectionCommentId?: string;
+  modNoteId?: string;
+  userNoticeId?: string;
   moderatorNote?: string;
   reversedAtMs?: number;
   reversedBy?: string;

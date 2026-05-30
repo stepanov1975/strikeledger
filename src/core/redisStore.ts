@@ -22,7 +22,10 @@ export interface RedisStore {
     stop: number,
     options?: ZRangeOptions
   ): Promise<string[]>;
-  runTransaction<T>(operation: () => Promise<T>): Promise<T>;
+  runTransaction<T>(
+    watchedKeys: readonly string[],
+    operation: () => Promise<T>
+  ): Promise<T>;
 }
 
 export class FakeRedisStore implements RedisStore {
@@ -99,7 +102,13 @@ export class FakeRedisStore implements RedisStore {
     return members.slice(start, normalizedStop + 1);
   }
 
-  async runTransaction<T>(operation: () => Promise<T>): Promise<T> {
+  readonly transactionWatchKeys: string[][] = [];
+
+  async runTransaction<T>(
+    watchedKeys: readonly string[],
+    operation: () => Promise<T>
+  ): Promise<T> {
+    this.transactionWatchKeys.push([...watchedKeys]);
     return operation();
   }
 }

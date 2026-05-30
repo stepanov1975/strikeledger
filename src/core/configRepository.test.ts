@@ -40,6 +40,7 @@ describe('ConfigRepository', () => {
     expect(result.config.revision).toBe(DEFAULT_CONFIG.revision + 1);
     expect(result.audit.changedFields).toEqual(['actionPoints']);
     expect(result.audit.beforeHash).toBe(sha256Hex(canonicalJson(DEFAULT_CONFIG)));
+    expect(store.transactionWatchKeys[0]).toEqual(['config']);
     await expect(repo.getConfig()).resolves.toMatchObject({
       revision: DEFAULT_CONFIG.revision + 1,
       actionPoints: expect.objectContaining({ warn: 2 }),

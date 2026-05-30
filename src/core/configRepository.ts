@@ -90,8 +90,10 @@ export class ConfigRepository {
   }
 
   async saveConfig(request: SaveConfigRequest): Promise<SaveConfigResult> {
-    return this.store.runTransaction(async () => {
-      const currentConfig = await this.getConfig();
+    return this.store.runTransaction([configKey], async () => {
+      const currentConfig =
+        parseJson<StrikeLedgerConfig>(await this.store.get(configKey)) ??
+        DEFAULT_CONFIG;
       if (currentConfig.revision !== request.expectedRevision) {
         return {
           status: 'conflict',

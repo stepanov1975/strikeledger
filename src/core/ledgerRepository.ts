@@ -53,6 +53,17 @@ export type CreateLedgerEntryResult =
         | 'nonce_consumed_without_entry';
     };
 
+type CreateLedgerEntryTransactionResult =
+  | {
+      status: 'created';
+      entry: LedgerEntry;
+    }
+  | {
+      status: 'idempotent';
+      entry: LedgerEntry;
+    }
+  | Extract<CreateLedgerEntryResult, { status: 'duplicate' | 'blocked' }>;
+
 export type ReverseLedgerEntryRequest = {
   entryId: string;
   reversedAtMs: number;
@@ -68,6 +79,17 @@ export type ReverseLedgerEntryResult =
       status: 'reversed' | 'already_reversed';
       entry: LedgerEntry;
       activeTotal: number;
+    }
+  | { status: 'not_found' };
+
+type ReverseLedgerEntryTransactionResult =
+  | {
+      status: 'reversed';
+      entry: LedgerEntry;
+    }
+  | {
+      status: 'already_reversed';
+      entry: LedgerEntry;
     }
   | { status: 'not_found' };
 
@@ -133,103 +155,119 @@ export class LedgerRepository {
   async createLedgerEntry(
     request: CreateLedgerEntryRequest
   ): Promise<CreateLedgerEntryResult> {
-    return this.store.runTransaction(async () => {
-      const nonce = await this.getValidNonce(request);
-      if (nonce.status === 'blocked') {
-        return nonce;
-      }
-
-      if (nonce.status === 'consumed') {
-        const entry = await this.getLedgerEntry(nonce.entryId);
-        if (!entry) {
-          return { status: 'blocked', reason: 'nonce_consumed_without_entry' };
+    const result = await this.store.runTransaction(
+      this.getCreateWatchedKeys(request),
+      async (): Promise<CreateLedgerEntryTransactionResult> => {
+        const nonce = await this.getValidNonce(request);
+        if (nonce.status === 'blocked') {
+          return nonce;
         }
 
-        return {
-          status: 'idempotent',
-          entry,
-          activeTotal: await this.recalculateActiveTotal(
-            entry.userKey,
-            request.config,
-            request.nowMs
-          ),
-        };
+        if (nonce.status === 'consumed') {
+          const entry = await this.getLedgerEntry(nonce.entryId);
+          if (!entry) {
+            return { status: 'blocked', reason: 'nonce_consumed_without_entry' };
+          }
+
+          return {
+            status: 'idempotent',
+            entry,
+          };
+        }
+
+        const retryEntry = await this.getRetryEntry(request);
+        if (retryEntry) {
+          return {
+            status: 'idempotent',
+            entry: retryEntry,
+          };
+        }
+
+        const duplicateEntry = await this.getDuplicateEntry(request.entry);
+        if (duplicateEntry && duplicateEntry.status !== 'reversed') {
+          return { status: 'duplicate', existingEntry: duplicateEntry };
+        }
+
+        await this.writePendingEntry(request, nonce.record);
+
+        return { status: 'created', entry: request.entry };
       }
+    );
 
-      const retryEntry = await this.getRetryEntry(request);
-      if (retryEntry) {
-        return {
-          status: 'idempotent',
-          entry: retryEntry,
-          activeTotal: await this.recalculateActiveTotal(
-            retryEntry.userKey,
-            request.config,
-            request.nowMs
-          ),
-        };
-      }
+    if (result.status === 'created' || result.status === 'idempotent') {
+      return {
+        ...result,
+        activeTotal: await this.recalculateActiveTotal(
+          result.entry.userKey,
+          request.config,
+          request.nowMs
+        ),
+      };
+    }
 
-      const duplicateEntry = await this.getDuplicateEntry(request.entry);
-      if (duplicateEntry && duplicateEntry.status !== 'reversed') {
-        return { status: 'duplicate', existingEntry: duplicateEntry };
-      }
-
-      await this.writePendingEntry(request, nonce.record);
-      const activeTotal = await this.recalculateActiveTotal(
-        request.entry.userKey,
-        request.config,
-        request.nowMs
-      );
-
-      return { status: 'created', entry: request.entry, activeTotal };
-    });
+    return result;
   }
 
   async reverseLedgerEntry(
     request: ReverseLedgerEntryRequest
   ): Promise<ReverseLedgerEntryResult> {
-    return this.store.runTransaction(async () => {
-      const entry = await this.getLedgerEntry(request.entryId);
-      if (!entry) {
-        return { status: 'not_found' };
-      }
+    const currentEntry = await this.getLedgerEntry(request.entryId);
+    const result = await this.store.runTransaction(
+      this.getReverseWatchedKeys(request.entryId, currentEntry),
+      async (): Promise<ReverseLedgerEntryTransactionResult> => {
+        const entry = await this.getLedgerEntry(request.entryId);
+        if (!entry) {
+          return { status: 'not_found' };
+        }
 
-      if (entry.status === 'reversed') {
-        return {
-          status: 'already_reversed',
-          entry,
-          activeTotal: await this.recalculateActiveTotal(
-            entry.userKey,
-            request.config,
-            request.nowMs
-          ),
+        if (entry.status === 'reversed') {
+          return {
+            status: 'already_reversed',
+            entry,
+          };
+        }
+
+        const duplicateClaimKey = getDuplicateClaimKey({
+          targetId: entry.targetId,
+          action: entry.action,
+          ruleId: entry.ruleId,
+        });
+        const claimedEntryId = await this.store.get(duplicateClaimKey);
+        const reversedEntry: LedgerEntry = {
+          ...entry,
+          status: 'reversed',
+          reversedAtMs: request.reversedAtMs,
+          reversedBy: request.reversedBy,
+          reversalReason: request.reversalReason,
+          ...(request.reversalNote !== undefined
+            ? { reversalNote: request.reversalNote }
+            : {}),
         };
+
+        await this.store.set(
+          ledgerEntryKey(reversedEntry.entryId),
+          JSON.stringify(reversedEntry)
+        );
+        if (claimedEntryId === reversedEntry.entryId) {
+          await this.store.del(duplicateClaimKey);
+        }
+
+        return { status: 'reversed', entry: reversedEntry };
       }
+    );
 
-      const reversedEntry: LedgerEntry = {
-        ...entry,
-        status: 'reversed',
-        reversedAtMs: request.reversedAtMs,
-        reversedBy: request.reversedBy,
-        reversalReason: request.reversalReason,
-        ...(request.reversalNote !== undefined
-          ? { reversalNote: request.reversalNote }
-          : {}),
+    if (result.status === 'reversed' || result.status === 'already_reversed') {
+      return {
+        ...result,
+        activeTotal: await this.recalculateActiveTotal(
+          result.entry.userKey,
+          request.config,
+          request.nowMs
+        ),
       };
+    }
 
-      await this.store.set(
-        ledgerEntryKey(reversedEntry.entryId),
-        JSON.stringify(reversedEntry)
-      );
-      await this.deleteDuplicateClaimIfCurrent(reversedEntry);
-      const activeTotal = await this.recalculateActiveTotal(
-        reversedEntry.userKey,
-        request.config,
-        request.nowMs
-      );
-
-      return { status: 'reversed', entry: reversedEntry, activeTotal };
-    });
+    return result;
   }
 
   async recalculateActiveTotal(
@@ -239,8 +277,51 @@ export class LedgerRepository {
   ): Promise<number> {
     const entries = await this.getUserLedger(userKey);
     const activeTotal = calculateActiveTotalFromEntries(entries, config, nowMs);
-    await this.store.set(activeTotalKey(userKey), String(activeTotal));
+    try {
+      await this.store.set(activeTotalKey(userKey), String(activeTotal));
+    } catch (error) {
+      console.error('StrikeLedger active-total cache update failed', error);
+    }
     return activeTotal;
+  }
+
+  private getCreateWatchedKeys(request: CreateLedgerEntryRequest): string[] {
+    return [
+      formNonceKey(request.formNonce),
+      getDuplicateClaimKey({
+        targetId: request.entry.targetId,
+        action: request.entry.action,
+        ruleId: request.entry.ruleId,
+      }),
+      getRetryClaimKey({
+        targetId: request.entry.targetId,
+        action: request.entry.action,
+        ruleId: request.entry.ruleId,
+        moderatorUsername: request.entry.moderatorUsername,
+        submittedAtMs: request.submittedAtMs,
+      }),
+      ledgerEntryKey(request.entry.entryId),
+      userLedgerKey(request.entry.userKey),
+      targetEntriesKey(request.entry.targetId),
+    ];
+  }
+
+  private getReverseWatchedKeys(
+    entryId: string,
+    currentEntry: LedgerEntry | null
+  ): string[] {
+    if (!currentEntry) {
+      return [ledgerEntryKey(entryId)];
+    }
+
+    return [
+      ledgerEntryKey(entryId),
+      getDuplicateClaimKey({
+        targetId: currentEntry.targetId,
+        action: currentEntry.action,
+        ruleId: currentEntry.ruleId,
+      }),
+    ];
   }
 
   private async getValidNonce(
@@ -356,20 +437,5 @@ export class LedgerRepository {
       request.entry.entryId,
       { expiresAtMs: request.nowMs + RETRY_WINDOW_MS }
     );
-  }
-
-  private async deleteDuplicateClaimIfCurrent(
-    entry: LedgerEntry
-  ): Promise<void> {
-    const duplicateClaimKey = getDuplicateClaimKey({
-      targetId: entry.targetId,
-      action: entry.action,
-      ruleId: entry.ruleId,
-    });
-    const claimedEntryId = await this.store.get(duplicateClaimKey);
-
-    if (claimedEntryId === entry.entryId) {
-      await this.store.del(duplicateClaimKey);
-    }
   }
 }

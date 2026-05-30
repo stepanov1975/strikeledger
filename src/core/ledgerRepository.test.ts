@@ -105,7 +105,7 @@ const buildNonce = (overrides: Partial<FormNonceRecord> = {}): FormNonceRecord =
 
 describe('LedgerRepository', () => {
   it('creates a pending ledger entry, consumes nonce, indexes, and caches total', async () => {
-    const { repo } = createRepo();
+    const { repo, store } = createRepo();
     const entry = buildEntry();
     await repo.saveFormNonce(buildNonce());
 
@@ -118,6 +118,14 @@ describe('LedgerRepository', () => {
     });
 
     expect(result).toEqual({ status: 'created', entry, activeTotal: 1 });
+    expect(store.transactionWatchKeys[0]).toEqual(
+      expect.arrayContaining([
+        'form_nonce:nonce-1',
+        'ledger_entry:entry-1',
+        'user:id:t2_user:ledger',
+        'target:t3_target:entries',
+      ])
+    );
     await expect(repo.getLedgerEntry(entry.entryId)).resolves.toEqual(entry);
     await expect(repo.getUserLedger(entry.userKey)).resolves.toEqual([entry]);
     await expect(repo.getCachedActiveTotal(entry.userKey)).resolves.toBe(1);
@@ -237,6 +245,16 @@ describe('LedgerRepository', () => {
     });
 
     expect(reversed.status).toBe('reversed');
+    expect(store.transactionWatchKeys.at(-1)).toEqual(
+      expect.arrayContaining([
+        'ledger_entry:entry-1',
+        getDuplicateClaimKey({
+          targetId: firstEntry.targetId,
+          action: firstEntry.action,
+          ruleId: firstEntry.ruleId,
+        }),
+      ])
+    );
     await expect(repo.getCachedActiveTotal(firstEntry.userKey)).resolves.toBe(0);
     await expect(
       store.get(

@@ -388,7 +388,7 @@ const openTargetDashboardView = async (
   const resolution = await resolveDashboardPost(
     target.subredditName,
     access,
-    false,
+    access.canManage,
     nowMs
   );
   if ('response' in resolution) {

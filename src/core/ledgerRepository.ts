@@ -89,6 +89,10 @@ export class LedgerRepository {
     });
   }
 
+  async getFormNonce(nonce: string): Promise<FormNonceRecord | null> {
+    return parseJson<FormNonceRecord>(await this.store.get(formNonceKey(nonce)));
+  }
+
   async getLedgerEntry(entryId: string): Promise<LedgerEntry | null> {
     return parseJson<LedgerEntry>(await this.store.get(ledgerEntryKey(entryId)));
   }

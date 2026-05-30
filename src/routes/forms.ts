@@ -1,114 +1,249 @@
 import { Hono } from 'hono';
 import type { UiResponse } from '@devvit/web/shared';
-import { context } from '@devvit/web/server';
-import { isT1, isT3 } from '@devvit/shared-types/tid.js';
-import { handleNuke, handleNukePost } from '../core/nuke';
+import { reddit, redis } from '@devvit/web/server';
+import type { Comment, Post } from '@devvit/web/server';
+import type { T1, T3 } from '@devvit/shared-types/tid.js';
+import { DEFAULT_CONFIG } from '../core/config';
+import { DevvitRedisStore } from '../core/devvitRedisStore';
+import { ACTION_LABELS, type LedgerEntry, type TargetKind } from '../core/domain';
+import {
+  buildLedgerEntry,
+  findEnabledRule,
+  normalizeSelectValue,
+  type TargetSnapshot,
+} from '../core/enforcement';
+import { LedgerRepository, type FormNonceRecord } from '../core/ledgerRepository';
+import {
+  PUBLIC_PLACEHOLDERS,
+  validateTemplatePlaceholders,
+} from '../core/templates';
 
-type NukeFormValues = {
-  remove?: boolean;
-  lock?: boolean;
-  skipDistinguished?: boolean;
-  targetId?: string;
+type EnforcementFormValues = {
+  formNonce?: string | string[];
+  ruleId?: string | string[];
+  moderatorNote?: string;
+  publicCommentOverride?: string;
+};
+
+type TargetState = {
+  target: Post | Comment;
+  parentPost?: Post;
 };
 
 export const forms = new Hono();
 
-const normalizeValues = (values: NukeFormValues) => ({
-  remove: Boolean(values.remove),
-  lock: Boolean(values.lock),
-  skipDistinguished: Boolean(values.skipDistinguished),
-});
+const getRepository = () => new LedgerRepository(new DevvitRedisStore(redis));
 
-const getTargetId = (values: NukeFormValues) => {
-  if (typeof values.targetId === 'string' && values.targetId.trim()) {
-    return values.targetId.trim();
+const trimOptional = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') {
+    return undefined;
   }
 
-  return context.postId;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
 };
 
-forms.post('/mop-comment-submit', async (c) => {
-  const values = await c.req.json<NukeFormValues>();
-  console.log('values', values);
-  const normalized = normalizeValues(values);
-
-  if (!normalized.lock && !normalized.remove) {
-    return c.json<UiResponse>(
-      {
-        showToast: 'You must select either lock or remove.',
-      },
-      200
-    );
+const fetchTargetState = async (
+  nonce: FormNonceRecord
+): Promise<TargetState> => {
+  if (nonce.targetKind === 'post') {
+    return { target: await reddit.getPostById(nonce.targetId as T3) };
   }
 
-  const targetId = getTargetId(values);
-  if (!isT1(targetId)) {
-    console.error('targetId is not a T1', targetId);
-    return c.json<UiResponse>(
-      {
-        showToast: 'Mop failed! Please try again later.',
-      },
-      200
-    );
+  const comment = await reddit.getCommentById(nonce.targetId as T1);
+  const parentPost = await reddit.getPostById(comment.postId);
+  return { target: comment, parentPost };
+};
+
+const getCurrentModeratorUsername = async (
+  subredditName: string
+): Promise<string | null> => {
+  const user = await reddit.getCurrentUser();
+  if (!user) {
+    return null;
   }
 
-  const result = await handleNuke({
-    ...normalized,
-    commentId: targetId,
-    subredditId: context.subredditId,
-  });
+  const permissions = await user.getModPermissionsForSubreddit(subredditName);
+  const canEnforce =
+    permissions.includes('all') || permissions.includes('posts');
 
-  console.log(
-    `Mop result - ${result.success ? 'success' : 'fail'} - ${result.message}`
-  );
+  return canEnforce ? user.username : null;
+};
 
-  return c.json<UiResponse>(
-    {
-      showToast: `${result.success ? 'Success' : 'Failed'} : ${result.message}`,
-    },
-    200
-  );
+const validateTargetPreconditions = (
+  nonce: FormNonceRecord,
+  state: TargetState
+): string | null => {
+  if (state.target.locked) {
+    return 'Locked content cannot be warned.';
+  }
+
+  if (state.parentPost?.locked) {
+    return 'Comments on locked posts cannot be warned.';
+  }
+
+  if (nonce.action === 'warn_remove' && state.target.removed) {
+    return 'Already removed content cannot be warned and removed.';
+  }
+
+  if (nonce.action === 'warn_nsfw') {
+    if (nonce.targetKind !== 'post') {
+      return 'Warn and mark NSFW can only apply to posts.';
+    }
+
+    if ((state.target as Post).nsfw) {
+      return 'Already NSFW posts cannot be warned and marked NSFW.';
+    }
+  }
+
+  return null;
+};
+
+const buildTargetSnapshot = (
+  nonce: FormNonceRecord,
+  target: Post | Comment
+): TargetSnapshot => ({
+  targetId: nonce.targetId,
+  targetKind: nonce.targetKind as TargetKind,
+  targetPermalink: target.permalink,
+  subredditName: nonce.subredditName,
+  author: {
+    userKey:
+      nonce.authorId !== undefined
+        ? `id:${nonce.authorId}`
+        : `name:${nonce.authorName?.toLowerCase() ?? '[unknown]'}`,
+    ...(nonce.authorId !== undefined ? { authorId: nonce.authorId } : {}),
+    ...(nonce.authorName !== undefined ? { authorName: nonce.authorName } : {}),
+  },
 });
 
-forms.post('/mop-post-submit', async (c) => {
-  const values = await c.req.json<NukeFormValues>();
-  console.log('values', values);
-  const normalized = normalizeValues(values);
+const formatCreatedToast = (
+  status: Extract<
+    Awaited<ReturnType<LedgerRepository['createLedgerEntry']>>,
+    { status: 'created' | 'idempotent' }
+  >['status'],
+  entry: LedgerEntry,
+  activeTotal: number
+): string => {
+  const prefix = status === 'created' ? 'Strike recorded' : 'Strike already recorded';
+  return `${prefix}: ${ACTION_LABELS[entry.action]} for ${entry.ruleLabel}. Active total: ${activeTotal}. Reddit side effects are pending.`;
+};
 
-  if (!normalized.lock && !normalized.remove) {
+forms.post('/enforcement-submit', async (c) => {
+  const values = await c.req.json<EnforcementFormValues>();
+  const formNonce = normalizeSelectValue(values.formNonce);
+  const ruleId = normalizeSelectValue(values.ruleId);
+
+  if (!formNonce || !ruleId) {
     return c.json<UiResponse>(
-      {
-        showToast: 'You must select either lock or remove.',
-      },
+      { showToast: 'StrikeLedger form is missing required fields.' },
       200
     );
   }
 
-  const targetId = getTargetId(values);
-  if (!isT3(targetId)) {
-    console.error('targetId is not a T3', targetId);
+  const repository = getRepository();
+  const nonce = await repository.getFormNonce(formNonce);
+  if (!nonce) {
     return c.json<UiResponse>(
-      {
-        showToast: 'Mop failed! Please try again later.',
-      },
+      { showToast: 'StrikeLedger form expired. Reopen the action.' },
       200
     );
   }
 
-  const result = await handleNukePost({
-    ...normalized,
-    postId: targetId,
-    subredditId: context.subredditId,
+  const rule = findEnabledRule(ruleId, DEFAULT_CONFIG);
+  if (!rule) {
+    return c.json<UiResponse>(
+      { showToast: 'Selected StrikeLedger rule is no longer enabled.' },
+      200
+    );
+  }
+
+  const publicCommentOverride = trimOptional(values.publicCommentOverride);
+  if (publicCommentOverride !== undefined) {
+    const templateIssues = validateTemplatePlaceholders(
+      'publicCommentOverride',
+      publicCommentOverride,
+      PUBLIC_PLACEHOLDERS
+    );
+    if (templateIssues.length > 0) {
+      return c.json<UiResponse>(
+        { showToast: 'Public comment override contains a private or unsupported placeholder.' },
+        200
+      );
+    }
+  }
+
+  const moderatorUsername = await getCurrentModeratorUsername(nonce.subredditName);
+  if (!moderatorUsername || moderatorUsername !== nonce.moderatorUsername) {
+    return c.json<UiResponse>(
+      { showToast: 'StrikeLedger form can only be submitted by the moderator who opened it.' },
+      200
+    );
+  }
+
+  let targetState: TargetState;
+  try {
+    targetState = await fetchTargetState(nonce);
+  } catch (error) {
+    console.error('StrikeLedger target fetch failed', error);
+    return c.json<UiResponse>(
+      { showToast: 'StrikeLedger could not re-check the selected content.' },
+      200
+    );
+  }
+
+  const preconditionFailure = validateTargetPreconditions(nonce, targetState);
+  if (preconditionFailure) {
+    return c.json<UiResponse>({ showToast: preconditionFailure }, 200);
+  }
+
+  const nowMs = Date.now();
+  const moderatorNote = trimOptional(values.moderatorNote);
+  const entry = buildLedgerEntry({
+    entryId: crypto.randomUUID(),
+    formNonce,
+    action: nonce.action,
+    rule,
+    target: buildTargetSnapshot(nonce, targetState.target),
+    moderatorUsername,
+    createdAtMs: nowMs,
+    publicCommentOverrideUsed: publicCommentOverride !== undefined,
+    ...(moderatorNote !== undefined ? { moderatorNote } : {}),
+    config: DEFAULT_CONFIG,
   });
 
-  console.log(
-    `Mop result - ${result.success ? 'success' : 'fail'} - ${result.message}`
-  );
+  const result = await repository.createLedgerEntry({
+    entry,
+    formNonce,
+    submittedAtMs: nowMs,
+    nowMs,
+    config: DEFAULT_CONFIG,
+  });
 
-  return c.json<UiResponse>(
-    {
-      showToast: `${result.success ? 'Success' : 'Failed'} : ${result.message}`,
-    },
-    200
-  );
+  switch (result.status) {
+    case 'created':
+    case 'idempotent':
+      return c.json<UiResponse>(
+        {
+          showToast: formatCreatedToast(
+            result.status,
+            result.entry,
+            result.activeTotal
+          ),
+        },
+        200
+      );
+    case 'duplicate':
+      return c.json<UiResponse>(
+        {
+          showToast: `Duplicate blocked. Existing entry: ${result.existingEntry.entryId}.`,
+        },
+        200
+      );
+    case 'blocked':
+      return c.json<UiResponse>(
+        { showToast: 'StrikeLedger form expired. Reopen the action.' },
+        200
+      );
+  }
 });

@@ -8,24 +8,79 @@
   "menu": {
     "items": [
       {
-        "label": "Mop comments",
-        "description": "Remove this comment and all child comments. This might take a few seconds to run.",
-        "location": "comment",
-        "forUserType": "moderator",
-        "endpoint": "/internal/menu/mop-comment"
-      },
-      {
-        "label": "Mop post comments",
-        "description": "Remove all comments of this post. This might take a few seconds to run.",
+        "label": "StrikeLedger: Warn",
+        "description": "Record a warning for this post author.",
         "location": "post",
         "forUserType": "moderator",
-        "endpoint": "/internal/menu/mop-post"
+        "endpoint": "/internal/menu/warn-post"
+      },
+      {
+        "label": "StrikeLedger: Warn",
+        "description": "Record a warning for this comment author.",
+        "location": "comment",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/warn-comment"
+      },
+      {
+        "label": "StrikeLedger: Warn and remove",
+        "description": "Record a warning and remove this post.",
+        "location": "post",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/warn-remove-post"
+      },
+      {
+        "label": "StrikeLedger: Warn and remove",
+        "description": "Record a warning and remove this comment.",
+        "location": "comment",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/warn-remove-comment"
+      },
+      {
+        "label": "StrikeLedger: Warn and mark NSFW",
+        "description": "Record a warning and mark this post NSFW.",
+        "location": "post",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/warn-nsfw-post"
+      },
+      {
+        "label": "StrikeLedger: History",
+        "description": "Open StrikeLedger history.",
+        "location": "post",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/history"
+      },
+      {
+        "label": "StrikeLedger: History",
+        "description": "Open StrikeLedger history.",
+        "location": "comment",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/history"
+      },
+      {
+        "label": "StrikeLedger: Profile",
+        "description": "Open this author's StrikeLedger profile.",
+        "location": "post",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/profile"
+      },
+      {
+        "label": "StrikeLedger: Profile",
+        "description": "Open this author's StrikeLedger profile.",
+        "location": "comment",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/profile"
+      },
+      {
+        "label": "StrikeLedger: Settings",
+        "description": "Open StrikeLedger settings.",
+        "location": "subreddit",
+        "forUserType": "moderator",
+        "endpoint": "/internal/menu/settings"
       }
     ]
   },
   "forms": {
-    "mopComment": "/internal/form/mop-comment-submit",
-    "mopPost": "/internal/form/mop-post-submit"
+    "strikeledgerEnforcement": "/internal/form/enforcement-submit"
   },
   "triggers": {
     "onAppInstall": "/internal/triggers/on-app-install"

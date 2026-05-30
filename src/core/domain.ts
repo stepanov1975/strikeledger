@@ -87,7 +87,11 @@ export type LedgerEntry = {
   idempotencyInputs: Record<string, string | number | boolean>;
   formNonce: string;
   sideEffects: SideEffects;
+  moderatorNote?: string;
   reversedAtMs?: number;
+  reversedBy?: string;
+  reversalReason?: string;
+  reversalNote?: string;
 };
 
 export const ACTION_LABELS: Record<StrikeAction, string> = {

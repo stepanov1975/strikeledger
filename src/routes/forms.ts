@@ -3,7 +3,7 @@ import type { UiResponse } from '@devvit/web/shared';
 import { reddit, redis } from '@devvit/web/server';
 import type { Comment, Post } from '@devvit/web/server';
 import type { T1, T3 } from '@devvit/shared-types/tid.js';
-import { DEFAULT_CONFIG } from '../core/config';
+import { ConfigRepository } from '../core/configRepository';
 import { DevvitRedisStore } from '../core/devvitRedisStore';
 import { ACTION_LABELS, type LedgerEntry, type TargetKind } from '../core/domain';
 import {
@@ -34,6 +34,8 @@ type TargetState = {
 export const forms = new Hono();
 
 const getRepository = () => new LedgerRepository(new DevvitRedisStore(redis));
+const getConfigRepository = () =>
+  new ConfigRepository(new DevvitRedisStore(redis));
 
 const trimOptional = (value: unknown): string | undefined => {
   if (typeof value !== 'string') {
@@ -144,6 +146,7 @@ forms.post('/enforcement-submit', async (c) => {
   }
 
   const repository = getRepository();
+  const config = await getConfigRepository().getConfig();
   const nonce = await repository.getFormNonce(formNonce);
   if (!nonce) {
     return c.json<UiResponse>(
@@ -152,7 +155,7 @@ forms.post('/enforcement-submit', async (c) => {
     );
   }
 
-  const rule = findEnabledRule(ruleId, DEFAULT_CONFIG);
+  const rule = findEnabledRule(ruleId, config);
   if (!rule) {
     return c.json<UiResponse>(
       { showToast: 'Selected StrikeLedger rule is no longer enabled.' },
@@ -211,7 +214,7 @@ forms.post('/enforcement-submit', async (c) => {
     createdAtMs: nowMs,
     publicCommentOverrideUsed: publicCommentOverride !== undefined,
     ...(moderatorNote !== undefined ? { moderatorNote } : {}),
-    config: DEFAULT_CONFIG,
+    config,
   });
 
   const result = await repository.createLedgerEntry({
@@ -219,7 +222,7 @@ forms.post('/enforcement-submit', async (c) => {
     formNonce,
     submittedAtMs: nowMs,
     nowMs,
-    config: DEFAULT_CONFIG,
+    config,
   });
 
   switch (result.status) {
@@ -229,7 +232,7 @@ forms.post('/enforcement-submit', async (c) => {
         activeTotal: result.activeTotal,
         target: targetState.target,
         reddit,
-        config: DEFAULT_CONFIG,
+        config,
         ...(publicCommentOverride !== undefined ? { publicCommentOverride } : {}),
       });
       await repository.updateLedgerEntry(updatedEntry);

@@ -1,9 +1,13 @@
 import { Hono } from 'hono';
 import { reddit, redis } from '@devvit/web/server';
-import { DEFAULT_CONFIG } from '../core/config';
+import { ConfigRepository } from '../core/configRepository';
 import { DashboardRepository, type ViewContextRecord } from '../core/dashboard';
 import { DevvitRedisStore } from '../core/devvitRedisStore';
-import { ACTION_LABELS, type LedgerEntry } from '../core/domain';
+import {
+  ACTION_LABELS,
+  type LedgerEntry,
+  type StrikeLedgerConfig,
+} from '../core/domain';
 import { LedgerRepository } from '../core/ledgerRepository';
 import { calculateActivePoints, recalculateActiveTotal } from '../core/scoring';
 import { executeReversalSideEffects } from '../core/sideEffects';
@@ -16,6 +20,7 @@ const HISTORY_PAGE_SIZE = 25;
 const getRepositories = () => {
   const store = new DevvitRedisStore(redis);
   return {
+    configRepository: new ConfigRepository(store),
     dashboardRepository: new DashboardRepository(store),
     ledgerRepository: new LedgerRepository(store),
   };
@@ -70,7 +75,8 @@ const getAuthorizedViewContext = async (
 
 const serializeEntry = (
   entry: LedgerEntry,
-  nowMs: number
+  nowMs: number,
+  config: StrikeLedgerConfig
 ): Record<string, unknown> => ({
   entryId: entry.entryId,
   username: entry.username,
@@ -82,7 +88,7 @@ const serializeEntry = (
   ruleId: entry.ruleId,
   ruleLabel: entry.ruleLabel,
   originalPoints: entry.originalPoints,
-  activePoints: calculateActivePoints(entry, DEFAULT_CONFIG, nowMs),
+  activePoints: calculateActivePoints(entry, config, nowMs),
   moderatorUsername: entry.moderatorUsername,
   createdAtMs: entry.createdAtMs,
   status: entry.status,
@@ -124,7 +130,9 @@ api.get('/history', async (c) => {
     return c.json({ error: 'moderator_required' }, 403);
   }
 
-  const { dashboardRepository, ledgerRepository } = getRepositories();
+  const { configRepository, dashboardRepository, ledgerRepository } =
+    getRepositories();
+  const config = await configRepository.getConfig();
   const context = await getAuthorizedViewContext(
     c.req.query('contextToken'),
     apiAccess.subredditName,
@@ -143,14 +151,14 @@ api.get('/history', async (c) => {
   );
   const activeTotal = await ledgerRepository.recalculateActiveTotal(
     context.userKey,
-    DEFAULT_CONFIG,
+    config,
     nowMs
   );
 
   return c.json({
     context,
     activeTotal,
-    entries: entries.map((entry) => serializeEntry(entry, nowMs)),
+    entries: entries.map((entry) => serializeEntry(entry, nowMs, config)),
     nextOffset:
       entries.length === HISTORY_PAGE_SIZE ? offset + HISTORY_PAGE_SIZE : null,
   });
@@ -162,7 +170,9 @@ api.get('/profile', async (c) => {
     return c.json({ error: 'moderator_required' }, 403);
   }
 
-  const { dashboardRepository, ledgerRepository } = getRepositories();
+  const { configRepository, dashboardRepository, ledgerRepository } =
+    getRepositories();
+  const config = await configRepository.getConfig();
   const context = await getAuthorizedViewContext(
     c.req.query('contextToken'),
     apiAccess.subredditName,
@@ -174,7 +184,7 @@ api.get('/profile', async (c) => {
 
   const nowMs = Date.now();
   const entries = await ledgerRepository.getUserLedger(context.userKey);
-  const activeTotal = recalculateActiveTotal(entries, DEFAULT_CONFIG, nowMs);
+  const activeTotal = recalculateActiveTotal(entries, config, nowMs);
   const activeOriginalPoints = entries
     .filter((entry) => entry.status !== 'reversed')
     .reduce((total, entry) => total + entry.originalPoints, 0);
@@ -201,7 +211,7 @@ api.get('/profile', async (c) => {
     },
     recentEntries: entries
       .slice(0, HISTORY_PAGE_SIZE)
-      .map((entry) => serializeEntry(entry, nowMs)),
+      .map((entry) => serializeEntry(entry, nowMs, config)),
   });
 });
 
@@ -211,11 +221,61 @@ api.get('/settings', async (c) => {
     return c.json({ error: 'moderator_required' }, 403);
   }
 
+  const { configRepository } = getRepositories();
+  const config = await configRepository.getConfig();
+
   return c.json({
     subredditName: apiAccess.subredditName,
     canManage: apiAccess.access.canManage,
-    config: DEFAULT_CONFIG,
+    config,
   });
+});
+
+api.post('/settings', async (c) => {
+  const apiAccess = await getApiAccess();
+  if (!apiAccess) {
+    return c.json({ error: 'moderator_required' }, 403);
+  }
+
+  if (!apiAccess.access.canManage) {
+    return c.json({ error: 'all_permission_required' }, 403);
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = await c.req.json<Record<string, unknown>>();
+  } catch {
+    return c.json({ error: 'invalid_json' }, 400);
+  }
+
+  const expectedRevision = Number(payload.revision);
+  const nextConfig = payload.config;
+  if (
+    !Number.isInteger(expectedRevision) ||
+    !nextConfig ||
+    typeof nextConfig !== 'object' ||
+    Array.isArray(nextConfig)
+  ) {
+    return c.json({ error: 'invalid_settings_payload' }, 400);
+  }
+
+  const { configRepository } = getRepositories();
+  const result = await configRepository.saveConfig({
+    expectedRevision,
+    nextConfig: nextConfig as StrikeLedgerConfig,
+    moderatorUsername: apiAccess.access.username,
+    timestampMs: Date.now(),
+  });
+
+  if (result.status === 'conflict') {
+    return c.json(result, 409);
+  }
+
+  if (result.status === 'invalid') {
+    return c.json(result, 400);
+  }
+
+  return c.json(result);
 });
 
 api.post('/reverse', async (c) => {
@@ -234,16 +294,17 @@ api.post('/reverse', async (c) => {
   const entryId = trimString(payload.entryId);
   const reversalReason = trimString(payload.reversalReason);
   const reversalNote = trimString(payload.reversalNote);
+  const { configRepository, ledgerRepository } = getRepositories();
+  const config = await configRepository.getConfig();
   const addNativeModNote =
     typeof payload.addNativeModNote === 'boolean'
       ? payload.addNativeModNote
-      : DEFAULT_CONFIG.reversalNativeModNotesEnabled;
+      : config.reversalNativeModNotesEnabled;
 
   if (!entryId || !reversalReason) {
     return c.json({ error: 'missing_required_fields' }, 400);
   }
 
-  const { ledgerRepository } = getRepositories();
   const existingEntry = await ledgerRepository.getLedgerEntry(entryId);
   if (
     !existingEntry ||
@@ -260,7 +321,7 @@ api.post('/reverse', async (c) => {
     reversedBy: apiAccess.access.username,
     reversalReason,
     ...(reversalNote ? { reversalNote } : {}),
-    config: DEFAULT_CONFIG,
+    config,
     nowMs,
   });
 
@@ -272,7 +333,7 @@ api.post('/reverse', async (c) => {
     return c.json({
       status: 'already_reversed',
       activeTotal: result.activeTotal,
-      entry: serializeEntry(result.entry, nowMs),
+      entry: serializeEntry(result.entry, nowMs, config),
     });
   }
 
@@ -280,7 +341,7 @@ api.post('/reverse', async (c) => {
     entry: result.entry,
     activeTotal: result.activeTotal,
     reddit,
-    config: DEFAULT_CONFIG,
+    config,
     addNativeModNote,
   });
   await ledgerRepository.updateLedgerEntry(updatedEntry);
@@ -288,7 +349,7 @@ api.post('/reverse', async (c) => {
   return c.json({
     status: 'reversed',
     activeTotal: result.activeTotal,
-    entry: serializeEntry(updatedEntry, nowMs),
+    entry: serializeEntry(updatedEntry, nowMs, config),
     sideEffects: updatedEntry.sideEffects,
   });
 });

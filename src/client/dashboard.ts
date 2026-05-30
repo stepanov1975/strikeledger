@@ -74,6 +74,14 @@ type SettingsResponse = {
   };
 };
 
+type SettingsSaveResponse =
+  | { status: 'saved'; config: SettingsResponse['config'] }
+  | { status: 'conflict'; currentRevision: number }
+  | {
+      status: 'invalid';
+      issues: Array<{ path: string; message: string }>;
+    };
+
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) {
   throw new Error('Missing #app root.');
@@ -87,6 +95,7 @@ let historyNextOffset: number | null = null;
 let historyContext: ViewContext | null = null;
 let historyActiveTotal = 0;
 let historyNotice: string | null = null;
+let settingsNotice: string | null = null;
 
 const create = <K extends keyof HTMLElementTagNameMap>(
   tagName: K,
@@ -528,7 +537,7 @@ const renderSettings = (response: SettingsResponse) => {
   table.append(thead, tbody);
   rulesPanel.append(table);
 
-  main.replaceChildren(
+  const children: HTMLElement[] = [
     renderToolbar('Settings', `r/${response.subredditName}`),
     renderMetrics([
       ['Revision', response.config.revision],
@@ -537,12 +546,84 @@ const renderSettings = (response: SettingsResponse) => {
       ['Mod notes', response.config.nativeModNotesEnabled ? 'On' : 'Off'],
     ]),
     create('p', 'subtitle', actionPoints),
-    rulesPanel
-  );
+    rulesPanel,
+  ];
+
+  if (settingsNotice) {
+    children.push(create('div', 'notice', settingsNotice));
+  }
+
+  if (response.canManage) {
+    const form = create('form', 'settings-form') as HTMLFormElement;
+    const label = create('label', 'field-label', 'Config JSON');
+    const editor = create('textarea', 'field-control json-editor') as HTMLTextAreaElement;
+    editor.spellcheck = false;
+    editor.value = JSON.stringify(response.config, null, 2);
+    label.append(editor);
+
+    const actions = create('div', 'modal-actions');
+    const save = create('button', 'load-more', 'Save');
+    save.type = 'submit';
+    actions.append(save);
+    form.append(label, actions);
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      void saveSettings(response.config.revision, editor.value);
+    });
+    children.push(form);
+  }
+
+  main.replaceChildren(...children);
 };
 
 const loadSettings = async () => {
   renderSettings(await fetchJson<SettingsResponse>('/api/settings'));
+};
+
+const saveSettings = async (revision: number, rawConfig: string) => {
+  let config: unknown;
+  try {
+    config = JSON.parse(rawConfig);
+  } catch {
+    settingsNotice = null;
+    showError('Settings JSON is invalid.');
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/settings', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ revision, config }),
+    });
+    const result = (await response.json()) as SettingsSaveResponse;
+
+    if (!response.ok) {
+      if (result.status === 'conflict') {
+        throw new Error(`Settings changed. Current revision: ${result.currentRevision}.`);
+      }
+
+      if (result.status === 'invalid') {
+        throw new Error(
+          result.issues.map((issue) => `${issue.path}: ${issue.message}`).join('; ')
+        );
+      }
+
+      throw new Error(`Settings save failed with ${response.status}.`);
+    }
+
+    settingsNotice = 'Settings saved.';
+    renderSettings({
+      subredditName: bootstrap?.subredditName ?? '',
+      canManage: true,
+      config: result.status === 'saved' ? result.config : (config as SettingsResponse['config']),
+    });
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Settings save failed.');
+  }
 };
 
 const loadActiveView = async () => {

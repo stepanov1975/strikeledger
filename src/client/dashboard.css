@@ -260,6 +260,12 @@ tr:last-child td {
   padding: 18px;
 }
 
+.settings-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
 .field-label,
 .checkbox-label {
   display: grid;
@@ -282,6 +288,13 @@ tr:last-child td {
   padding: 9px 10px;
   color: #1f2933;
   font: inherit;
+}
+
+.json-editor {
+  min-height: 320px;
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+  font-size: 12px;
 }
 
 .modal-actions {

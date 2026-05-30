@@ -5,13 +5,19 @@ import type { Comment, Post } from '@devvit/web/server';
 import type { FormField } from '@devvit/shared-types/shared/form.js';
 import type { T1, T3 } from '@devvit/shared-types/tid.js';
 import { DEFAULT_CONFIG } from '../core/config';
+import { ConfigRepository } from '../core/configRepository';
 import {
   DashboardRepository,
   createExpiringTimes,
   type DashboardView,
 } from '../core/dashboard';
 import { DevvitRedisStore } from '../core/devvitRedisStore';
-import { ACTION_LABELS, type StrikeAction, type TargetKind } from '../core/domain';
+import {
+  ACTION_LABELS,
+  type StrikeAction,
+  type StrikeLedgerConfig,
+  type TargetKind,
+} from '../core/domain';
 import {
   createFormNonceRecordTimes,
   getEnabledRules,
@@ -26,6 +32,8 @@ export const menu = new Hono();
 const getRepository = () => new LedgerRepository(new DevvitRedisStore(redis));
 const getDashboardRepository = () =>
   new DashboardRepository(new DevvitRedisStore(redis));
+const getConfigRepository = () =>
+  new ConfigRepository(new DevvitRedisStore(redis));
 
 type DashboardPost = Pick<Post, 'id' | 'permalink' | 'subredditName' | 'url'>;
 
@@ -131,23 +139,28 @@ const saveBootstrapAndNavigate = async (
   return { navigateTo: dashboardNavigateTarget(post) };
 };
 
-const buildRuleOptions = () =>
-  getEnabledRules(DEFAULT_CONFIG).map((rule) => ({
+const buildRuleOptions = (config: StrikeLedgerConfig) =>
+  getEnabledRules(config).map((rule) => ({
     label: rule.label,
     value: rule.id,
   }));
 
 const buildEnforcementFields = (
   formNonce: string,
-  action: StrikeAction
+  action: StrikeAction,
+  config: StrikeLedgerConfig
 ): FormField[] => [
   {
     name: 'ruleId',
     label: 'Rule',
     type: 'select',
-    options: buildRuleOptions(),
+    options: buildRuleOptions(config),
     required: true,
-    defaultValue: [DEFAULT_CONFIG.rules[0]?.id ?? 'rule-general'],
+    defaultValue: [
+      getEnabledRules(config)[0]?.id ??
+        DEFAULT_CONFIG.rules[0]?.id ??
+        'rule-general',
+    ],
   },
   {
     name: 'moderatorNote',
@@ -179,11 +192,15 @@ const buildEnforcementFields = (
   },
 ];
 
-const buildEnforcementForm = (formNonce: string, action: StrikeAction) => ({
+const buildEnforcementForm = (
+  formNonce: string,
+  action: StrikeAction,
+  config: StrikeLedgerConfig
+) => ({
   title: `StrikeLedger: ${ACTION_LABELS[action]}`,
   acceptLabel: ACTION_LABELS[action],
   cancelLabel: 'Cancel',
-  fields: buildEnforcementFields(formNonce, action),
+  fields: buildEnforcementFields(formNonce, action, config),
 });
 
 const snapshotAuthor = (
@@ -239,6 +256,7 @@ const openEnforcementForm = async (
   targetKind: TargetKind
 ): Promise<UiResponse> => {
   const nowMs = Date.now();
+  const config = await getConfigRepository().getConfig();
   const target =
     targetKind === 'post'
       ? await reddit.getPostById(request.targetId as T3)
@@ -267,7 +285,7 @@ const openEnforcementForm = async (
   return {
     showForm: {
       name: 'strikeledgerEnforcement',
-      form: buildEnforcementForm(nonceRecord.nonce, action),
+      form: buildEnforcementForm(nonceRecord.nonce, action, config),
     },
   };
 };

@@ -82,6 +82,11 @@ type SettingsSaveResponse =
       issues: Array<{ path: string; message: string }>;
     };
 
+type RecalculateResponse = {
+  userKey: string;
+  activeTotal: number;
+};
+
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) {
   throw new Error('Missing #app root.');
@@ -554,6 +559,22 @@ const renderSettings = (response: SettingsResponse) => {
   }
 
   if (response.canManage) {
+    const recalcForm = create('form', 'settings-form') as HTMLFormElement;
+    const recalcLabel = create('label', 'field-label', 'Username or user key');
+    const recalcInput = create('input', 'field-control') as HTMLInputElement;
+    recalcInput.type = 'text';
+    recalcLabel.append(recalcInput);
+    const recalcActions = create('div', 'modal-actions');
+    const recalcButton = create('button', 'secondary-button', 'Recalculate');
+    recalcButton.type = 'submit';
+    recalcActions.append(recalcButton);
+    recalcForm.append(recalcLabel, recalcActions);
+    recalcForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      void recalculateUserTotal(recalcInput.value);
+    });
+    children.push(recalcForm);
+
     const form = create('form', 'settings-form') as HTMLFormElement;
     const label = create('label', 'field-label', 'Config JSON');
     const editor = create('textarea', 'field-control json-editor') as HTMLTextAreaElement;
@@ -578,6 +599,38 @@ const renderSettings = (response: SettingsResponse) => {
 
 const loadSettings = async () => {
   renderSettings(await fetchJson<SettingsResponse>('/api/settings'));
+};
+
+const recalculateUserTotal = async (rawValue: string) => {
+  const value = rawValue.trim();
+  if (!value) {
+    showError('User is required.');
+    return;
+  }
+
+  try {
+    const keyField = value.startsWith('id:') || value.startsWith('name:')
+      ? 'userKey'
+      : 'username';
+    const response = await fetch('/api/recalculate-user-total', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ [keyField]: value }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Recalculate failed with ${response.status}.`);
+    }
+
+    const result = (await response.json()) as RecalculateResponse;
+    settingsNotice = `${result.userKey}: active total ${result.activeTotal}.`;
+    await loadSettings();
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Recalculate failed.');
+  }
 };
 
 const saveSettings = async (revision: number, rawConfig: string) => {

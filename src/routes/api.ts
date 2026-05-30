@@ -278,6 +278,53 @@ api.post('/settings', async (c) => {
   return c.json(result);
 });
 
+api.post('/recalculate-user-total', async (c) => {
+  const apiAccess = await getApiAccess();
+  if (!apiAccess) {
+    return c.json({ error: 'moderator_required' }, 403);
+  }
+
+  if (!apiAccess.access.canManage) {
+    return c.json({ error: 'all_permission_required' }, 403);
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = await c.req.json<Record<string, unknown>>();
+  } catch {
+    return c.json({ error: 'invalid_json' }, 400);
+  }
+
+  const { configRepository, dashboardRepository, ledgerRepository } =
+    getRepositories();
+  const context = await getAuthorizedViewContext(
+    trimString(payload.contextToken) ?? undefined,
+    apiAccess.subredditName,
+    dashboardRepository
+  );
+  const rawUserKey = trimString(payload.userKey);
+  const username = trimString(payload.username);
+  const userKey =
+    context?.userKey ??
+    (rawUserKey?.startsWith('id:') || rawUserKey?.startsWith('name:')
+      ? rawUserKey
+      : username
+        ? `name:${username.toLowerCase()}`
+        : null);
+
+  if (!userKey) {
+    return c.json({ error: 'missing_user' }, 400);
+  }
+
+  const activeTotal = await ledgerRepository.recalculateActiveTotal(
+    userKey,
+    await configRepository.getConfig(),
+    Date.now()
+  );
+
+  return c.json({ userKey, activeTotal });
+});
+
 api.post('/reverse', async (c) => {
   const apiAccess = await getApiAccess();
   if (!apiAccess) {

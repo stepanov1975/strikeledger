@@ -43,10 +43,20 @@ Useful commands:
 
 ```sh
 npm run type-check
+npm test
 npm run lint
+npm run build
 ```
 
 Use the MVP implementation plan in [MVP.md](./MVP.md) before adding code.
+
+## Data Retention Warning
+
+StrikeLedger stores ledger history in Devvit Redis scoped to the app installation. Uninstalling or reinstalling the app may remove or orphan ledger history unless Reddit provides a retention path for that installation.
+
+## Manual Playtest
+
+Use [PLAYTEST.md](./PLAYTEST.md) before uploading or publishing a build.
 
 ## Accepted Future Extensions
 

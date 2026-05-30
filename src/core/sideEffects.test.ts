@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CONFIG } from './config';
 import { EMPTY_SIDE_EFFECTS, SCHEMA_VERSION, type LedgerEntry } from './domain';
-import { executeSideEffects, type SideEffectRedditClient } from './sideEffects';
+import {
+  executeReversalSideEffects,
+  executeSideEffects,
+  type SideEffectRedditClient,
+} from './sideEffects';
 
 const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => ({
   schemaVersion: SCHEMA_VERSION,
@@ -183,5 +187,63 @@ describe('executeSideEffects', () => {
 
     expect(updated.status).toBe('partial');
     expect(updated.sideEffects.markNsfw).toBe('failed');
+  });
+
+  it('records reversal mod note and user notice side effects', async () => {
+    const reddit = buildReddit();
+    const updated = await executeReversalSideEffects({
+      entry: buildEntry({
+        status: 'reversed',
+        reversedAtMs: 2000,
+        reversedBy: 'mod-b',
+        reversalReason: 'issued in error',
+      }),
+      activeTotal: 0,
+      reddit,
+      config: DEFAULT_CONFIG,
+      addNativeModNote: true,
+    });
+
+    expect(updated.status).toBe('reversed');
+    expect(updated.reversalModNoteId).toBe('mod-note-1');
+    expect(updated.reversalUserNoticeId).toBe('conversation-1');
+    expect(updated.sideEffects.reversalModNote).toBe('succeeded');
+    expect(updated.sideEffects.reversalUserNotice).toBe('succeeded');
+    expect(reddit.addModNote).toHaveBeenCalledWith(
+      expect.not.objectContaining({ label: expect.anything() })
+    );
+    expect(reddit.modMail.createConversation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.stringContaining('was reversed'),
+      })
+    );
+  });
+
+  it('keeps reversal valid when private reversal notice fails', async () => {
+    const reddit = {
+      addModNote: vi.fn(async () => ({ id: 'mod-note-1' })),
+      modMail: {
+        createConversation: vi.fn(async () => {
+          throw new Error('modmail failed');
+        }),
+      },
+    };
+
+    const updated = await executeReversalSideEffects({
+      entry: buildEntry({
+        status: 'reversed',
+        reversedAtMs: 2000,
+        reversedBy: 'mod-b',
+        reversalReason: 'issued in error',
+      }),
+      activeTotal: 0,
+      reddit,
+      config: DEFAULT_CONFIG,
+      addNativeModNote: false,
+    });
+
+    expect(updated.status).toBe('reversed');
+    expect(updated.sideEffects.reversalModNote).toBe('skipped');
+    expect(updated.sideEffects.reversalUserNotice).toBe('failed');
   });
 });

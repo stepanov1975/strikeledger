@@ -6,6 +6,7 @@ import { DevvitRedisStore } from '../core/devvitRedisStore';
 import { ACTION_LABELS, type LedgerEntry } from '../core/domain';
 import { LedgerRepository } from '../core/ledgerRepository';
 import { calculateActivePoints, recalculateActiveTotal } from '../core/scoring';
+import { executeReversalSideEffects } from '../core/sideEffects';
 import { getModeratorAccess, type ModeratorAccess } from './permissions';
 
 export const api = new Hono();
@@ -44,6 +45,9 @@ const parseOffset = (value: string | undefined): number => {
   const offset = Number(value);
   return Number.isInteger(offset) && offset >= 0 ? offset : 0;
 };
+
+const trimString = (value: unknown): string | null =>
+  typeof value === 'string' ? value.trim() : null;
 
 const getAuthorizedViewContext = async (
   token: string | undefined,
@@ -211,5 +215,80 @@ api.get('/settings', async (c) => {
     subredditName: apiAccess.subredditName,
     canManage: apiAccess.access.canManage,
     config: DEFAULT_CONFIG,
+  });
+});
+
+api.post('/reverse', async (c) => {
+  const apiAccess = await getApiAccess();
+  if (!apiAccess) {
+    return c.json({ error: 'moderator_required' }, 403);
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = await c.req.json<Record<string, unknown>>();
+  } catch {
+    return c.json({ error: 'invalid_json' }, 400);
+  }
+
+  const entryId = trimString(payload.entryId);
+  const reversalReason = trimString(payload.reversalReason);
+  const reversalNote = trimString(payload.reversalNote);
+  const addNativeModNote =
+    typeof payload.addNativeModNote === 'boolean'
+      ? payload.addNativeModNote
+      : DEFAULT_CONFIG.reversalNativeModNotesEnabled;
+
+  if (!entryId || !reversalReason) {
+    return c.json({ error: 'missing_required_fields' }, 400);
+  }
+
+  const { ledgerRepository } = getRepositories();
+  const existingEntry = await ledgerRepository.getLedgerEntry(entryId);
+  if (
+    !existingEntry ||
+    existingEntry.subredditName.toLowerCase() !==
+      apiAccess.subredditName.toLowerCase()
+  ) {
+    return c.json({ error: 'not_found' }, 404);
+  }
+
+  const nowMs = Date.now();
+  const result = await ledgerRepository.reverseLedgerEntry({
+    entryId,
+    reversedAtMs: nowMs,
+    reversedBy: apiAccess.access.username,
+    reversalReason,
+    ...(reversalNote ? { reversalNote } : {}),
+    config: DEFAULT_CONFIG,
+    nowMs,
+  });
+
+  if (result.status === 'not_found') {
+    return c.json({ error: 'not_found' }, 404);
+  }
+
+  if (result.status === 'already_reversed') {
+    return c.json({
+      status: 'already_reversed',
+      activeTotal: result.activeTotal,
+      entry: serializeEntry(result.entry, nowMs),
+    });
+  }
+
+  const updatedEntry = await executeReversalSideEffects({
+    entry: result.entry,
+    activeTotal: result.activeTotal,
+    reddit,
+    config: DEFAULT_CONFIG,
+    addNativeModNote,
+  });
+  await ledgerRepository.updateLedgerEntry(updatedEntry);
+
+  return c.json({
+    status: 'reversed',
+    activeTotal: result.activeTotal,
+    entry: serializeEntry(updatedEntry, nowMs),
+    sideEffects: updatedEntry.sideEffects,
   });
 });

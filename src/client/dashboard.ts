@@ -52,6 +52,11 @@ type ProfileResponse = {
   recentEntries: LedgerEntryRow[];
 };
 
+type ReverseResponse = {
+  status: 'reversed' | 'already_reversed';
+  activeTotal: number;
+};
+
 type SettingsResponse = {
   subredditName: string;
   canManage: boolean;
@@ -81,6 +86,7 @@ let historyEntries: LedgerEntryRow[] = [];
 let historyNextOffset: number | null = null;
 let historyContext: ViewContext | null = null;
 let historyActiveTotal = 0;
+let historyNotice: string | null = null;
 
 const create = <K extends keyof HTMLElementTagNameMap>(
   tagName: K,
@@ -220,12 +226,15 @@ const sideEffectSummary = (sideEffects: SideEffects): string => {
   return notable.length > 0 ? notable.join(', ') : 'OK';
 };
 
-const renderEntryTable = (entries: LedgerEntryRow[]): HTMLElement => {
+const renderEntryTable = (
+  entries: LedgerEntryRow[],
+  onReverse?: (entry: LedgerEntryRow) => void
+): HTMLElement => {
   const panel = create('div', 'panel');
   const table = create('table');
   const thead = create('thead');
   const headerRow = create('tr');
-  for (const label of [
+  const headers = [
     'Date',
     'Rule',
     'Action',
@@ -234,7 +243,11 @@ const renderEntryTable = (entries: LedgerEntryRow[]): HTMLElement => {
     'Target',
     'Moderator',
     'Side effects',
-  ]) {
+  ];
+  if (onReverse) {
+    headers.push('Actions');
+  }
+  for (const label of headers) {
     headerRow.append(create('th', undefined, label));
   }
   thead.append(headerRow);
@@ -265,6 +278,20 @@ const renderEntryTable = (entries: LedgerEntryRow[]): HTMLElement => {
       create('td', undefined, entry.moderatorUsername),
       create('td', undefined, sideEffectSummary(entry.sideEffects))
     );
+
+    if (onReverse) {
+      const actionCell = create('td');
+      if (entry.status !== 'reversed') {
+        const reverseButton = create('button', 'secondary-button', 'Reverse');
+        reverseButton.type = 'button';
+        reverseButton.addEventListener('click', () => {
+          onReverse(entry);
+        });
+        actionCell.append(reverseButton);
+      }
+      row.append(actionCell);
+    }
+
     tbody.append(row);
   }
 
@@ -283,10 +310,14 @@ const renderHistory = () => {
     renderMetrics([['Active total', historyActiveTotal]]),
   ];
 
+  if (historyNotice) {
+    children.push(create('div', 'notice', historyNotice));
+  }
+
   if (historyEntries.length === 0) {
     children.push(create('div', 'empty', 'No ledger entries.'));
   } else {
-    children.push(renderEntryTable(historyEntries));
+    children.push(renderEntryTable(historyEntries, reverseEntry));
   }
 
   if (historyNextOffset !== null) {
@@ -322,6 +353,115 @@ const loadHistory = async (offset: number) => {
   historyEntries = [...historyEntries, ...response.entries];
   historyNextOffset = response.nextOffset;
   renderHistory();
+};
+
+type ReverseDialogResult = {
+  reversalReason: string;
+  reversalNote?: string;
+  addNativeModNote: boolean;
+};
+
+const showReverseDialog = (
+  entry: LedgerEntryRow
+): Promise<ReverseDialogResult | null> =>
+  new Promise((resolve) => {
+    const dialog = create('dialog', 'modal');
+    const form = create('form', 'modal-form') as HTMLFormElement;
+    form.method = 'dialog';
+
+    const title = create('h2', 'title', 'Reverse strike');
+    const subtitle = create('p', 'subtitle', `${entry.actionLabel} · ${entry.ruleLabel}`);
+    const reasonLabel = create('label', 'field-label', 'Reason');
+    const reason = create('textarea', 'field-control') as HTMLTextAreaElement;
+    reason.required = true;
+    reason.rows = 4;
+    const noteLabel = create('label', 'field-label', 'Internal note');
+    const note = create('textarea', 'field-control') as HTMLTextAreaElement;
+    note.rows = 3;
+
+    const checkboxLabel = create('label', 'checkbox-label');
+    const checkbox = create('input') as HTMLInputElement;
+    checkbox.type = 'checkbox';
+    checkbox.checked = true;
+    checkboxLabel.append(checkbox, document.createTextNode('Add native mod note'));
+
+    reasonLabel.append(reason);
+    noteLabel.append(note);
+
+    const actions = create('div', 'modal-actions');
+    const cancel = create('button', 'secondary-button', 'Cancel');
+    cancel.type = 'button';
+    const submit = create('button', 'danger-button', 'Reverse');
+    submit.type = 'submit';
+    actions.append(cancel, submit);
+
+    form.append(title, subtitle, reasonLabel, noteLabel, checkboxLabel, actions);
+    dialog.append(form);
+    document.body.append(dialog);
+
+    const cleanup = (value: ReverseDialogResult | null) => {
+      dialog.close();
+      dialog.remove();
+      resolve(value);
+    };
+
+    cancel.addEventListener('click', () => cleanup(null));
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const reversalReason = reason.value.trim();
+      const reversalNote = note.value.trim();
+      if (!reversalReason) {
+        reason.reportValidity();
+        return;
+      }
+
+      cleanup({
+        reversalReason,
+        ...(reversalNote ? { reversalNote } : {}),
+        addNativeModNote: checkbox.checked,
+      });
+    });
+    dialog.addEventListener('cancel', () => cleanup(null));
+
+    if (typeof dialog.showModal === 'function') {
+      dialog.showModal();
+    } else {
+      dialog.setAttribute('open', '');
+    }
+  });
+
+const reverseEntry = async (entry: LedgerEntryRow) => {
+  const reversal = await showReverseDialog(entry);
+  if (!reversal) {
+    return;
+  }
+
+  try {
+    const response = await fetch('/api/reverse', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        entryId: entry.entryId,
+        ...reversal,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Reversal failed with ${response.status}.`);
+    }
+
+    const result = (await response.json()) as ReverseResponse;
+    historyNotice =
+      result.status === 'already_reversed'
+        ? 'Strike was already reversed.'
+        : `Strike reversed. Active total: ${result.activeTotal}.`;
+    await loadHistory(0);
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Reversal failed.');
+  }
 };
 
 const renderProfile = (response: ProfileResponse) => {

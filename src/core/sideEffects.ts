@@ -47,6 +47,14 @@ export type ExecuteSideEffectsInput = {
   publicCommentOverride?: string;
 };
 
+export type ExecuteReversalSideEffectsInput = {
+  entry: LedgerEntry;
+  activeTotal: number;
+  reddit: SideEffectRedditClient;
+  config: StrikeLedgerConfig;
+  addNativeModNote: boolean;
+};
+
 const succeededOrFailed = async (
   operation: () => Promise<void>
 ): Promise<SideEffectStatus> => {
@@ -249,5 +257,73 @@ export const executeSideEffects = async (
     ...(publicCommentId !== undefined ? { publicCommentId } : {}),
     ...(modNoteId !== undefined ? { modNoteId } : {}),
     ...(userNoticeId !== undefined ? { userNoticeId } : {}),
+  };
+};
+
+const buildReversalModNote = (
+  entry: LedgerEntry,
+  activeTotal: number
+): string =>
+  `StrikeLedger reversal: ${ACTION_LABELS[entry.action]} for ${entry.ruleLabel} was reversed by u/${entry.reversedBy ?? 'unknown'}. Reason: ${entry.reversalReason ?? 'No reason provided'}. Active total: ${activeTotal}. Target: ${entry.targetPermalink}`;
+
+const buildReversalUserNotice = (
+  entry: LedgerEntry,
+  activeTotal: number
+): string =>
+  `A previous moderation warning in r/${entry.subredditName} for ${entry.ruleLabel} was reversed. Your current active warning total is ${activeTotal}.`;
+
+export const executeReversalSideEffects = async (
+  input: ExecuteReversalSideEffectsInput
+): Promise<LedgerEntry> => {
+  const sideEffects: SideEffects = { ...input.entry.sideEffects };
+  let reversalModNoteId = input.entry.reversalModNoteId;
+  let reversalUserNoticeId = input.entry.reversalUserNoticeId;
+
+  if (input.config.reversalNativeModNotesEnabled && input.addNativeModNote) {
+    try {
+      const modNote = await input.reddit.addModNote({
+        subreddit: input.entry.subredditName,
+        user: input.entry.username,
+        redditId: input.entry.targetId,
+        note: buildReversalModNote(input.entry, input.activeTotal),
+      });
+      reversalModNoteId = modNote.id;
+      sideEffects.reversalModNote = 'succeeded';
+    } catch (error) {
+      console.error('StrikeLedger reversal mod note failed', error);
+      sideEffects.reversalModNote = 'failed';
+    }
+  } else {
+    sideEffects.reversalModNote = 'skipped';
+  }
+
+  if (input.config.userNoticesEnabled) {
+    try {
+      const response = await input.reddit.modMail.createConversation({
+        isAuthorHidden: true,
+        subredditName: input.entry.subredditName,
+        to: input.entry.username,
+        subject: `StrikeLedger reversal for r/${input.entry.subredditName}`.slice(
+          0,
+          100
+        ),
+        body: buildReversalUserNotice(input.entry, input.activeTotal),
+      });
+      reversalUserNoticeId = response.conversation.id;
+      sideEffects.reversalUserNotice = 'succeeded';
+    } catch (error) {
+      console.error('StrikeLedger reversal user notice failed', error);
+      sideEffects.reversalUserNotice = 'failed';
+    }
+  } else {
+    sideEffects.reversalUserNotice = 'skipped';
+  }
+
+  return {
+    ...input.entry,
+    status: 'reversed',
+    sideEffects,
+    ...(reversalModNoteId !== undefined ? { reversalModNoteId } : {}),
+    ...(reversalUserNoticeId !== undefined ? { reversalUserNoticeId } : {}),
   };
 };

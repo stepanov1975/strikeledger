@@ -199,11 +199,17 @@ tr:last-child td {
 }
 
 .empty,
-.error {
+.error,
+.notice {
   border: 1px solid #d8dde3;
   border-radius: 8px;
   padding: 18px;
   background: #ffffff;
+}
+
+.notice {
+  border-color: #a9d6ba;
+  color: #176c3a;
 }
 
 .error {
@@ -211,7 +217,9 @@ tr:last-child td {
   color: #9f1f1f;
 }
 
-.load-more {
+.load-more,
+.secondary-button,
+.danger-button {
   margin-top: 14px;
   border: 1px solid #116466;
   border-radius: 6px;
@@ -219,6 +227,67 @@ tr:last-child td {
   color: #ffffff;
   background: #116466;
   cursor: pointer;
+}
+
+.secondary-button {
+  margin-top: 0;
+  color: #334155;
+  border-color: #c7ced7;
+  background: #ffffff;
+}
+
+.danger-button {
+  margin-top: 0;
+  border-color: #b42318;
+  background: #b42318;
+}
+
+.modal {
+  width: min(520px, calc(100vw - 32px));
+  border: 1px solid #d8dde3;
+  border-radius: 8px;
+  padding: 0;
+  color: #1f2933;
+}
+
+.modal::backdrop {
+  background: rgb(15 23 42 / 42%);
+}
+
+.modal-form {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.field-label,
+.checkbox-label {
+  display: grid;
+  gap: 6px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.checkbox-label {
+  align-items: center;
+  grid-template-columns: auto 1fr;
+}
+
+.field-control {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid #c7ced7;
+  border-radius: 6px;
+  padding: 9px 10px;
+  color: #1f2933;
+  font: inherit;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 @media (max-width: 720px) {

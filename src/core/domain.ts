@@ -91,6 +91,8 @@ export type LedgerEntry = {
   publicCorrectionCommentId?: string;
   modNoteId?: string;
   userNoticeId?: string;
+  reversalModNoteId?: string;
+  reversalUserNoticeId?: string;
   moderatorNote?: string;
   reversedAtMs?: number;
   reversedBy?: string;

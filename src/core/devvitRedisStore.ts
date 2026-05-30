@@ -54,6 +54,16 @@ export class DevvitRedisStore implements RedisStore {
     await this.redis.zAdd(key, member);
   }
 
+  async zRem(key: string, members: string[]): Promise<void> {
+    if (this.transactionClient) {
+      await this.ensureTransactionStarted();
+      await this.transactionClient.zRem(key, members);
+      return;
+    }
+
+    await this.redis.zRem(key, members);
+  }
+
   async zRange(
     key: string,
     start: number,

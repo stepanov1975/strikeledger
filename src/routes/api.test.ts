@@ -59,6 +59,10 @@ class ApiRedisMock {
     }
 
     const normalizedStop = stop < 0 ? members.length + stop : stop;
+    if (normalizedStop < start) {
+      return [];
+    }
+
     return members.slice(start, normalizedStop + 1);
   }
 }

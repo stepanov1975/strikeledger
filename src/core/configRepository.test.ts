@@ -41,6 +41,9 @@ describe('ConfigRepository', () => {
     expect(result.audit.changedFields).toEqual(['actionPoints']);
     expect(result.audit.beforeHash).toBe(sha256Hex(canonicalJson(DEFAULT_CONFIG)));
     expect(store.transactionWatchKeys[0]).toEqual(['config']);
+    await expect(
+      store.get('settings_audit_snapshot:1767225600000:mod-a')
+    ).resolves.not.toBeNull();
     await expect(repo.getConfig()).resolves.toMatchObject({
       revision: DEFAULT_CONFIG.revision + 1,
       actionPoints: expect.objectContaining({ warn: 2 }),
@@ -71,5 +74,37 @@ describe('ConfigRepository', () => {
         timestampMs: nowMs,
       })
     ).resolves.toMatchObject({ status: 'invalid' });
+  });
+
+  it('keeps full config snapshots only for the latest twenty saves', async () => {
+    const { repo, store } = createRepo();
+
+    for (let index = 0; index < 25; index += 1) {
+      const currentConfig = await repo.getConfig();
+      await expect(
+        repo.saveConfig({
+          expectedRevision: currentConfig.revision,
+          nextConfig: {
+            ...currentConfig,
+            actionPoints: {
+              ...currentConfig.actionPoints,
+              warn: index,
+            },
+          },
+          moderatorUsername: 'mod-a',
+          timestampMs: nowMs + index,
+        })
+      ).resolves.toMatchObject({ status: 'saved' });
+    }
+
+    await expect(
+      store.zRange('settings_audit_snapshots', 0, -1)
+    ).resolves.toHaveLength(20);
+    await expect(
+      store.get('settings_audit_snapshot:1767225600000:mod-a')
+    ).resolves.toBeNull();
+    await expect(
+      store.get('settings_audit_snapshot:1767225600024:mod-a')
+    ).resolves.not.toBeNull();
   });
 });

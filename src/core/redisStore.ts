@@ -16,6 +16,7 @@ export interface RedisStore {
   set(key: string, value: string, options?: RedisSetOptions): Promise<void>;
   del(...keys: string[]): Promise<void>;
   zAdd(key: string, member: ZMember): Promise<void>;
+  zRem(key: string, members: string[]): Promise<void>;
   zRange(
     key: string,
     start: number,
@@ -73,6 +74,17 @@ export class FakeRedisStore implements RedisStore {
     this.sortedSets.set(key, set);
   }
 
+  async zRem(key: string, members: string[]): Promise<void> {
+    const set = this.sortedSets.get(key);
+    if (!set) {
+      return;
+    }
+
+    for (const member of members) {
+      set.delete(member);
+    }
+  }
+
   async zRange(
     key: string,
     start: number,
@@ -99,6 +111,10 @@ export class FakeRedisStore implements RedisStore {
     }
 
     const normalizedStop = stop < 0 ? members.length + stop : stop;
+    if (normalizedStop < start) {
+      return [];
+    }
+
     return members.slice(start, normalizedStop + 1);
   }
 

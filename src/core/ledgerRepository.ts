@@ -102,7 +102,20 @@ export class LedgerRepository {
   }
 
   async getUserLedger(userKey: string): Promise<LedgerEntry[]> {
-    const entryIds = await this.store.zRange(userLedgerKey(userKey), 0, -1, {
+    return this.getUserLedgerPage(userKey, 0, -1);
+  }
+
+  async getUserLedgerPage(
+    userKey: string,
+    offset: number,
+    limit: number
+  ): Promise<LedgerEntry[]> {
+    if (limit === 0) {
+      return [];
+    }
+
+    const stop = limit < 0 ? -1 : offset + limit - 1;
+    const entryIds = await this.store.zRange(userLedgerKey(userKey), offset, stop, {
       reverse: true,
     });
     const entries = await Promise.all(

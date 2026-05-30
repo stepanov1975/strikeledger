@@ -343,6 +343,37 @@ describe('LedgerRepository', () => {
     ).resolves.toMatchObject({ status: 'created', activeTotal: 2 });
   });
 
+  it('reads a page of user ledger entries from newest to oldest', async () => {
+    const { repo } = createRepo();
+
+    for (const index of [1, 2, 3]) {
+      const entry = buildEntry({
+        entryId: `entry-${index}`,
+        targetId: `t3_target_${index}`,
+        formNonce: `nonce-${index}`,
+        createdAtMs: nowMs + index,
+      });
+      await repo.saveFormNonce(
+        buildNonce({
+          nonce: entry.formNonce,
+          targetId: entry.targetId,
+          createdAtMs: entry.createdAtMs,
+        })
+      );
+      await repo.createLedgerEntry({
+        entry,
+        formNonce: entry.formNonce,
+        submittedAtMs: entry.createdAtMs,
+        nowMs: entry.createdAtMs,
+        config: DEFAULT_CONFIG,
+      });
+    }
+
+    await expect(repo.getUserLedgerPage('id:t2_user', 1, 1)).resolves.toEqual([
+      expect.objectContaining({ entryId: 'entry-2' }),
+    ]);
+  });
+
   it('keeps action labels available for side-effect rendering callers', () => {
     expect(ACTION_LABELS.warn_remove).toBe('Warn and remove');
   });

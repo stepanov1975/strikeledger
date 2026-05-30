@@ -1,0 +1,116 @@
+import type { TargetKind } from './domain';
+import type { RedisStore } from './redisStore';
+
+export const DASHBOARD_CONTEXT_TTL_MS = 15 * 60 * 1000;
+
+export type DashboardView = 'history' | 'profile' | 'settings';
+
+export type DashboardPostRecord = {
+  postId: string;
+  subredditName: string;
+  createdAtMs: number;
+  updatedAtMs: number;
+};
+
+export type ViewContextRecord = {
+  token: string;
+  targetId: string;
+  targetKind: TargetKind;
+  subredditName: string;
+  userKey: string;
+  createdAtMs: number;
+  expiresAtMs: number;
+  authorId?: string;
+  authorName?: string;
+};
+
+export type DashboardBootstrapRecord = {
+  view: DashboardView;
+  subredditName: string;
+  moderatorUsername: string;
+  createdAtMs: number;
+  expiresAtMs: number;
+  contextToken?: string;
+};
+
+const dashboardPostKey = 'dashboard_post_id';
+const viewContextKey = (token: string): string => `view_context:${token}`;
+const dashboardBootstrapKey = (
+  subredditName: string,
+  moderatorUsername: string
+): string =>
+  `dashboard_bootstrap:${subredditName.toLowerCase()}:${moderatorUsername.toLowerCase()}`;
+
+const parseJson = <T>(raw: string | null): T | null =>
+  raw === null ? null : (JSON.parse(raw) as T);
+
+export const createExpiringTimes = (
+  nowMs: number
+): Pick<ViewContextRecord, 'createdAtMs' | 'expiresAtMs'> => ({
+  createdAtMs: nowMs,
+  expiresAtMs: nowMs + DASHBOARD_CONTEXT_TTL_MS,
+});
+
+export class DashboardRepository {
+  constructor(private readonly store: RedisStore) {}
+
+  async saveDashboardPost(record: DashboardPostRecord): Promise<void> {
+    await this.store.set(dashboardPostKey, JSON.stringify(record));
+  }
+
+  async getDashboardPost(
+    subredditName: string
+  ): Promise<DashboardPostRecord | null> {
+    const record = parseJson<DashboardPostRecord>(
+      await this.store.get(dashboardPostKey)
+    );
+
+    if (!record) {
+      return null;
+    }
+
+    return record.subredditName.toLowerCase() === subredditName.toLowerCase()
+      ? record
+      : null;
+  }
+
+  async clearDashboardPost(): Promise<void> {
+    await this.store.del(dashboardPostKey);
+  }
+
+  async saveViewContext(record: ViewContextRecord): Promise<void> {
+    await this.store.set(viewContextKey(record.token), JSON.stringify(record), {
+      expiresAtMs: record.expiresAtMs,
+    });
+  }
+
+  async getViewContext(token: string): Promise<ViewContextRecord | null> {
+    return parseJson<ViewContextRecord>(
+      await this.store.get(viewContextKey(token))
+    );
+  }
+
+  async saveDashboardBootstrap(
+    record: DashboardBootstrapRecord
+  ): Promise<void> {
+    await this.store.set(
+      dashboardBootstrapKey(record.subredditName, record.moderatorUsername),
+      JSON.stringify(record),
+      { expiresAtMs: record.expiresAtMs }
+    );
+  }
+
+  async consumeDashboardBootstrap(
+    subredditName: string,
+    moderatorUsername: string
+  ): Promise<DashboardBootstrapRecord | null> {
+    const key = dashboardBootstrapKey(subredditName, moderatorUsername);
+    const record = parseJson<DashboardBootstrapRecord>(await this.store.get(key));
+
+    if (record) {
+      await this.store.del(key);
+    }
+
+    return record;
+  }
+}

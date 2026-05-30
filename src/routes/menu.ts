@@ -5,6 +5,11 @@ import type { Comment, Post } from '@devvit/web/server';
 import type { FormField } from '@devvit/shared-types/shared/form.js';
 import type { T1, T3 } from '@devvit/shared-types/tid.js';
 import { DEFAULT_CONFIG } from '../core/config';
+import {
+  DashboardRepository,
+  createExpiringTimes,
+  type DashboardView,
+} from '../core/dashboard';
 import { DevvitRedisStore } from '../core/devvitRedisStore';
 import { ACTION_LABELS, type StrikeAction, type TargetKind } from '../core/domain';
 import {
@@ -14,10 +19,117 @@ import {
 } from '../core/enforcement';
 import { getUserKey } from '../core/identity';
 import { LedgerRepository, type FormNonceRecord } from '../core/ledgerRepository';
+import { getModeratorAccess, type ModeratorAccess } from './permissions';
 
 export const menu = new Hono();
 
 const getRepository = () => new LedgerRepository(new DevvitRedisStore(redis));
+const getDashboardRepository = () =>
+  new DashboardRepository(new DevvitRedisStore(redis));
+
+type DashboardPost = Pick<Post, 'id' | 'permalink' | 'subredditName' | 'url'>;
+
+type DashboardPostResolution =
+  | { post: DashboardPost }
+  | { response: UiResponse };
+
+const dashboardNavigateTarget = (
+  post: DashboardPost
+): NonNullable<UiResponse['navigateTo']> => ({
+  url: post.url,
+  permalink: post.permalink,
+});
+
+const getStoredDashboardPost = async (
+  subredditName: string
+): Promise<DashboardPost | null> => {
+  const dashboardRepository = getDashboardRepository();
+  const record = await dashboardRepository.getDashboardPost(subredditName);
+  if (!record) {
+    return null;
+  }
+
+  try {
+    const post = await reddit.getPostById(record.postId as T3);
+    if (post.subredditName.toLowerCase() !== subredditName.toLowerCase()) {
+      await dashboardRepository.clearDashboardPost();
+      return null;
+    }
+
+    return post;
+  } catch (error) {
+    console.error('StrikeLedger dashboard post was not readable', error);
+    await dashboardRepository.clearDashboardPost();
+    return null;
+  }
+};
+
+const createDashboardPost = async (
+  subredditName: string,
+  nowMs: number
+): Promise<DashboardPost> => {
+  const post = await reddit.submitCustomPost({
+    subredditName,
+    title: 'StrikeLedger dashboard',
+    entry: 'dashboard',
+    textFallback: {
+      text: 'StrikeLedger moderation dashboard.',
+    },
+  });
+
+  await getDashboardRepository().saveDashboardPost({
+    postId: post.id,
+    subredditName,
+    createdAtMs: nowMs,
+    updatedAtMs: nowMs,
+  });
+
+  return post;
+};
+
+const resolveDashboardPost = async (
+  subredditName: string,
+  access: ModeratorAccess,
+  allowCreate: boolean,
+  nowMs: number
+): Promise<DashboardPostResolution> => {
+  const storedPost = await getStoredDashboardPost(subredditName);
+  if (storedPost) {
+    return { post: storedPost };
+  }
+
+  if (allowCreate && access.canManage) {
+    return { post: await createDashboardPost(subredditName, nowMs) };
+  }
+
+  return {
+    response: {
+      showToast:
+        'StrikeLedger dashboard has not been created. A moderator with all permission must open Settings first.',
+    },
+  };
+};
+
+const saveBootstrapAndNavigate = async (
+  post: DashboardPost,
+  subredditName: string,
+  access: ModeratorAccess,
+  view: DashboardView,
+  nowMs: number,
+  contextToken?: string
+): Promise<UiResponse> => {
+  const times = createExpiringTimes(nowMs);
+
+  await getDashboardRepository().saveDashboardBootstrap({
+    view,
+    subredditName,
+    moderatorUsername: access.username,
+    ...(contextToken !== undefined ? { contextToken } : {}),
+    ...times,
+  });
+
+  return { navigateTo: dashboardNavigateTarget(post) };
+};
 
 const buildRuleOptions = () =>
   getEnabledRules(DEFAULT_CONFIG).map((rule) => ({
@@ -121,23 +233,6 @@ const buildNonceRecord = (
   };
 };
 
-const ensureModeratorCanEnforce = async (subredditName: string) => {
-  const user = await reddit.getCurrentUser();
-  if (!user) {
-    return null;
-  }
-
-  const permissions = await user.getModPermissionsForSubreddit(subredditName);
-  const canEnforce =
-    permissions.includes('all') || permissions.includes('posts');
-
-  if (!canEnforce) {
-    return null;
-  }
-
-  return user.username;
-};
-
 const openEnforcementForm = async (
   request: MenuItemRequest,
   action: StrikeAction,
@@ -148,9 +243,9 @@ const openEnforcementForm = async (
     targetKind === 'post'
       ? await reddit.getPostById(request.targetId as T3)
       : await reddit.getCommentById(request.targetId as T1);
-  const moderatorUsername = await ensureModeratorCanEnforce(target.subredditName);
+  const access = await getModeratorAccess(target.subredditName);
 
-  if (!moderatorUsername) {
+  if (!access?.canEnforce) {
     return {
       showToast: 'StrikeLedger requires posts or all moderator permission.',
     };
@@ -160,7 +255,7 @@ const openEnforcementForm = async (
     target,
     targetKind,
     action,
-    moderatorUsername,
+    access.username,
     nowMs
   );
   if (!nonceRecord) {
@@ -175,6 +270,96 @@ const openEnforcementForm = async (
       form: buildEnforcementForm(nonceRecord.nonce, action),
     },
   };
+};
+
+const buildViewContext = (
+  target: Post | Comment,
+  targetKind: TargetKind,
+  nowMs: number
+) => {
+  const author = snapshotAuthor(target.authorId, target.authorName);
+  if (!author) {
+    return null;
+  }
+
+  return {
+    token: crypto.randomUUID(),
+    targetId: target.id,
+    targetKind,
+    subredditName: target.subredditName,
+    ...author,
+    ...createExpiringTimes(nowMs),
+  };
+};
+
+const openTargetDashboardView = async (
+  request: MenuItemRequest,
+  targetKind: TargetKind,
+  view: Extract<DashboardView, 'history' | 'profile'>
+): Promise<UiResponse> => {
+  const nowMs = Date.now();
+  const target =
+    targetKind === 'post'
+      ? await reddit.getPostById(request.targetId as T3)
+      : await reddit.getCommentById(request.targetId as T1);
+  const access = await getModeratorAccess(target.subredditName);
+
+  if (!access?.canRead) {
+    return { showToast: 'StrikeLedger requires moderator permission.' };
+  }
+
+  const resolution = await resolveDashboardPost(
+    target.subredditName,
+    access,
+    false,
+    nowMs
+  );
+  if ('response' in resolution) {
+    return resolution.response;
+  }
+
+  const viewContext = buildViewContext(target, targetKind, nowMs);
+  if (!viewContext) {
+    return { showToast: 'StrikeLedger cannot open a view without an author.' };
+  }
+
+  await getDashboardRepository().saveViewContext(viewContext);
+  return saveBootstrapAndNavigate(
+    resolution.post,
+    target.subredditName,
+    access,
+    view,
+    nowMs,
+    viewContext.token
+  );
+};
+
+const openSettingsDashboard = async (): Promise<UiResponse> => {
+  const nowMs = Date.now();
+  const subreddit = await reddit.getCurrentSubreddit();
+  const access = await getModeratorAccess(subreddit.name);
+
+  if (!access?.canRead) {
+    return { showToast: 'StrikeLedger requires moderator permission.' };
+  }
+
+  const resolution = await resolveDashboardPost(
+    subreddit.name,
+    access,
+    true,
+    nowMs
+  );
+  if ('response' in resolution) {
+    return resolution.response;
+  }
+
+  return saveBootstrapAndNavigate(
+    resolution.post,
+    subreddit.name,
+    access,
+    'settings',
+    nowMs
+  );
 };
 
 menu.post('/warn-post', async (c) => {
@@ -210,14 +395,22 @@ menu.post('/warn-nsfw-post', async (c) => {
   );
 });
 
-menu.post('/history', (c) =>
-  c.json<UiResponse>({ showToast: 'StrikeLedger history UI is not wired yet.' })
-);
+menu.post('/history', async (c) => {
+  const request = await c.req.json<MenuItemRequest>();
+  const targetKind = request.location === 'comment' ? 'comment' : 'post';
+  return c.json<UiResponse>(
+    await openTargetDashboardView(request, targetKind, 'history')
+  );
+});
 
-menu.post('/profile', (c) =>
-  c.json<UiResponse>({ showToast: 'StrikeLedger profile UI is not wired yet.' })
-);
+menu.post('/profile', async (c) => {
+  const request = await c.req.json<MenuItemRequest>();
+  const targetKind = request.location === 'comment' ? 'comment' : 'post';
+  return c.json<UiResponse>(
+    await openTargetDashboardView(request, targetKind, 'profile')
+  );
+});
 
-menu.post('/settings', (c) =>
-  c.json<UiResponse>({ showToast: 'StrikeLedger settings UI is not wired yet.' })
+menu.post('/settings', async (c) =>
+  c.json<UiResponse>(await openSettingsDashboard())
 );

@@ -90,15 +90,27 @@ const choosePrivateTemplate = (
 const chooseNativeModNoteTemplate = (
   entry: LedgerEntry,
   config: StrikeLedgerConfig
-): string =>
-  entry.originalPoints === 0
+): string => {
+  const ruleTemplate = config.rules.find(
+    (rule) => rule.id === entry.ruleId
+  )?.internalNoteTemplate;
+  if (ruleTemplate) {
+    return ruleTemplate;
+  }
+
+  return entry.originalPoints === 0
     ? config.defaultZeroPointNativeModNoteTemplate
     : config.defaultNativeModNoteTemplate;
+};
 
 const choosePublicTemplate = (
+  entry: LedgerEntry,
   config: StrikeLedgerConfig,
   publicCommentOverride: string | undefined
-): string => publicCommentOverride ?? config.defaultPublicCommentTemplate;
+): string =>
+  publicCommentOverride ??
+  config.rules.find((rule) => rule.id === entry.ruleId)?.publicTemplate ??
+  config.defaultPublicCommentTemplate;
 
 const getFinalStatus = (sideEffects: SideEffects): LedgerEntry['status'] => {
   const statuses: SideEffectStatus[] = [
@@ -176,6 +188,7 @@ export const executeSideEffects = async (
       input.target,
       renderTemplate(
         choosePublicTemplate(
+          input.entry,
           input.config,
           input.publicCommentOverride
         ),

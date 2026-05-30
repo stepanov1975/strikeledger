@@ -154,6 +154,45 @@ describe('executeSideEffects', () => {
     );
   });
 
+  it('uses selected rule templates before global defaults', async () => {
+    const publicComment = {
+      id: 'comment-1',
+      distinguish: vi.fn(async () => undefined),
+      lock: vi.fn(async () => undefined),
+    };
+    const target = {
+      addComment: vi.fn(async () => publicComment),
+      remove: vi.fn(async () => undefined),
+    };
+    const reddit = buildReddit();
+
+    await executeSideEffects({
+      entry: buildEntry(),
+      activeTotal: 3,
+      target,
+      reddit,
+      config: {
+        ...DEFAULT_CONFIG,
+        rules: [
+          {
+            id: 'rule-general',
+            label: 'Community rule violation',
+            enabled: true,
+            publicTemplate: 'Rule public: {ruleLabel}',
+            internalNoteTemplate: 'Rule internal: {activeTotal}',
+          },
+        ],
+      },
+    });
+
+    expect(target.addComment).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Rule public: Community rule violation' })
+    );
+    expect(reddit.addModNote).toHaveBeenCalledWith(
+      expect.objectContaining({ note: 'Rule internal: 3' })
+    );
+  });
+
   it('marks NSFW failures partial', async () => {
     const publicComment = {
       id: 'comment-1',

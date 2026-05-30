@@ -12,6 +12,7 @@
     "lint": "eslint src",
     "login": "devvit login",
     "prettier": "prettier --write .",
+    "test": "vitest run --dir src",
     "type-check": "tsc --build"
   },
   "engines": {
@@ -32,6 +33,7 @@
     "prettier": "3.8.3",
     "typescript": "6.0.3",
     "typescript-eslint": "8.59.4",
-    "vite": "8.0.13"
+    "vite": "8.0.13",
+    "vitest": "^4.1.7"
   }
 }

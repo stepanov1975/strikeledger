@@ -30,7 +30,16 @@ The MVP includes these in-app web UI views:
 - Reversal launched from an individual history entry.
 - Settings for rules, templates, points, decay, notices, side-effect options, config import/export, and manual user-total recalculation.
 
-History and profile menu handlers create short-lived Redis view context records and navigate to `/app?view=history&context={token}` or `/app?view=profile&context={token}`. Settings can navigate directly to `/app?view=settings`.
+History and profile menu handlers create short-lived Redis view context records and open the configured StrikeLedger web UI with the requested view and context token. The MVP must not assume that a bare relative URL such as `/app?view=history&context={token}` is directly navigable from a Reddit menu response.
+
+The MVP UI launch path is a StrikeLedger dashboard custom post/webview entrypoint that renders the plain TypeScript client and reads the selected view/context from the URL or an app-provided bootstrap endpoint. Settings open the same web UI without a target context token. The app must provide a clear first-run way for moderators with `all` permission to create or locate the dashboard surface.
+
+Implementation decision:
+
+- `devvit.json` must define a `post.dir` and a `dashboard` entrypoint.
+- The subreddit-level `StrikeLedger: Settings` menu handler checks for a stored dashboard post ID. If one exists and is readable, it navigates to that post. If none exists, a moderator with `all` permission can create it with `reddit.submitCustomPost({ subredditName, title, entry: 'dashboard' })`; the returned post ID is stored in Redis.
+- History and profile menu handlers store a pending view request in Redis keyed by subreddit and moderator username, then navigate to the dashboard post. The dashboard client calls `/api/bootstrap` to resolve the current moderator's pending view request. Query parameters are optional hints only.
+- The dashboard post is a launch surface, not an authorization boundary. Do not store ledger data, user identities, or target context in custom-post `postData`. Non-moderators who open the dashboard see no moderation data because every API route re-checks access server-side.
 
 ### Non-Goals
 
@@ -44,6 +53,7 @@ History and profile menu handlers create short-lived Redis view context records 
 - Automatic severe-violation detection.
 - Automatic retry worker for failed side effects.
 - Public correction comments on reversal.
+- Form-only history, profile, reversal, or settings workflows as the primary MVP UI.
 - Rollback UI for settings changes.
 - Bulk background active-total recalculation.
 - React or another frontend framework.
@@ -65,7 +75,11 @@ The rule dropdown shows enabled rules only, sorted by configured order. Sub-rule
 
 A blank public override uses the selected rule public template, then the global default public template. A submitted override is validated with the same public-template placeholder allowlist as configured public templates. It must reject private placeholders such as `{pointsAdded}` and `{activeTotal}`. The ledger stores whether an override was used.
 
-When opening an enforcement form, generate a `formNonce` server-side and include it as a hidden field if supported. If Devvit forms cannot truly hide it, include a disabled or read-only field with an internal-looking label. Submitted nonces are validated against Redis records and client-side changes are ignored.
+When opening an enforcement form, generate a `formNonce` server-side and store all trusted submit context in Redis at `form_nonce:{nonce}`. The nonce record contains `nonce`, `targetId`, `targetKind`, `subredditName`, author identity snapshot, action, moderator username, `createdAtMs`, `expiresAtMs`, `consumedAtMs`, and `entryId` once a submission succeeds.
+
+Devvit Web forms do not provide a true hidden/read-only field in the installed MVP target version. The form may include the nonce as a normal string field with an internal label, or pass it as initial form data, but submitted target IDs, author IDs, usernames, action names, point values, and subreddit identity are never trusted. On submit, the server uses the Redis nonce record as the source of truth and ignores client-side changes to those values. If the submitted nonce is missing, expired, unknown, for another moderator, or for another subreddit, block before ledger creation.
+
+Devvit moderator menu forms must be completed within the platform's 10 minute moderator action window. `expiresAtMs` therefore must be no later than `createdAtMs + 10 minutes`; do not let a Redis nonce remain server-valid beyond the platform form window.
 
 At form and menu time, snapshot target author identity from the target object into the form nonce or view context. On submit, re-fetch the target for current state checks, but use the original author snapshot if current author data disappeared and the snapshot is still valid.
 
@@ -106,9 +120,22 @@ All enforcement preconditions are checked before ledger creation. If a precondit
 
 The ledger is written before Reddit side effects run. Create the entry with `status = pending`, then update side-effect statuses as each step succeeds, fails, or is skipped.
 
-If all required side effects succeed, the moderator toast says the strike was recorded and includes the new active total. If the ledger write succeeds but one or more side effects fail, the toast says the strike was recorded but identifies failed side effects such as public comment, user notice, or mod note. History and profile show compact side-effect status per entry.
+Run side effects in this order:
+
+1. Recalculate the active total including the new entry and update the rebuildable cache.
+2. Submit the public explanation comment.
+3. Apply configured public-comment options: distinguish as mod, sticky, and lock.
+4. Run action-specific moderation: remove for `warn_remove`, mark NSFW for `warn_nsfw`.
+5. Add the native Reddit mod note if enabled.
+6. Send the private user notice if enabled.
+
+Required side effects are the public explanation comment and the action-specific moderation effect for `warn_remove` or `warn_nsfw`. Configured side effects are attempted when enabled. Failure of any required or configured side effect leaves the ledger valid and sets final status to `partial`. Public-comment option failures are tracked in side-effect details without deleting `publicCommentId`; a failed configured option still makes the entry `partial`.
+
+If all required and enabled configured side effects succeed, the moderator toast says the strike was recorded and includes the new active total. If the ledger write succeeds but one or more side effects fail, the toast says the strike was recorded but identifies failed side effects such as public comment, user notice, or mod note. History and profile show compact side-effect status per entry.
 
 Entries with a successful ledger write count toward active totals unless reversed, even if one or more side effects failed. Moderators can reverse partial entries the same way as fully successful entries. The MVP does not include an automatic retry worker.
+
+If the runtime exits after durable ledger creation but before final status is written, a `pending` entry may remain. History and profile show stale pending entries explicitly, and reversal is still allowed. MVP does not auto-retry stale pending side effects.
 
 Public comments must not expose point totals or strike totals. Private user notices and native mod notes may include point totals and active totals.
 
@@ -122,6 +149,7 @@ Required fields:
 
 - `schemaVersion`: `1`
 - `entryId`
+- `subredditName`
 - `userId` when available
 - `username`
 - `userKey`
@@ -135,15 +163,16 @@ Required fields:
 - `originalPoints`
 - `moderatorUsername`
 - `createdAtMs`
-- `status`: `pending`, `succeeded`, `partial`, `failed`, or `reversed`
+- `status`: `pending`, `succeeded`, `partial`, or `reversed`
 - `idempotencyKey`
+- `duplicateKey`
+- `moderatorRetryKey`
 - `idempotencyInputs`
 - `formNonce`
 - `sideEffects`
 
 Recommended MVP fields:
 
-- `subredditName`
 - `publicCommentId`
 - `publicCorrectionCommentId`
 - `modNoteId`
@@ -166,6 +195,7 @@ Store timestamps as epoch milliseconds in fields ending with `Ms`, for example `
 `sideEffects` tracks these fields where relevant:
 
 - `publicComment`: `pending`, `skipped`, `succeeded`, or `failed`
+- `publicCommentOptions`: structured details for distinguish, sticky, and lock attempts when configured
 - `remove`: `pending`, `skipped`, `succeeded`, or `failed`
 - `markNsfw`: `pending`, `skipped`, `succeeded`, or `failed`
 - `modNote`: `pending`, `skipped`, `succeeded`, or `failed`
@@ -175,10 +205,11 @@ Store timestamps as epoch milliseconds in fields ending with `Ms`, for example `
 
 Final entry status is:
 
-- `succeeded` when the ledger entry and all required side effects succeed.
-- `partial` when the ledger entry succeeds but one or more side effects fail.
-- `failed` when the ledger entry cannot be safely completed.
+- `succeeded` when the ledger entry, all required side effects, and all enabled configured side effects succeed. Disabled configured side effects are `skipped`.
+- `partial` when the ledger entry succeeds but one or more attempted side effects fail.
 - `reversed` when a moderator reverses the active strike.
+
+Precondition failures and failed ledger writes create no ledger entry. If the app cannot safely create the ledger entry and indexes atomically, it returns a moderator-facing failure message and performs no Reddit side effects. Do not persist a `failed` ledger status in MVP; failures before durable ledger creation should be observable through logs, not through user history.
 
 ### Identity Keys And Migration
 
@@ -215,8 +246,11 @@ Default step decay examples:
 ### Idempotency And Duplicates
 
 - Use `crypto.randomUUID()` for `entryId`.
-- Use a deterministic idempotency key hash from `targetId`, `action`, `ruleId`, `moderatorUsername`, and a form nonce or submitted timestamp bucket.
-- Store raw idempotency inputs in the ledger entry for debugging.
+- Use a deterministic duplicate key hash from `targetId`, `action`, and `ruleId`.
+- Use a deterministic moderator retry key hash from `targetId`, `action`, `ruleId`, `moderatorUsername`, and `floor(submittedAtMs / 10 minutes)`.
+- Do not include `formNonce` in the duplicate key or moderator retry key; nonce replay is handled separately.
+- Store raw duplicate/retry inputs in the ledger entry for debugging.
+- For backward-readable ledger shape, `idempotencyKey` is the same value as `moderatorRetryKey` in MVP.
 - Allow multiple strikes on the same target only when rule or action differs.
 - If the same moderator submits the same target, action, and rule again within 10 minutes, treat it as the same idempotent submission and return the existing entry.
 - If another moderator submits the same target, action, and rule while an active or partial non-reversed entry already exists, block and show the existing entry regardless of age.
@@ -226,10 +260,18 @@ Default step decay examples:
 Form nonce handling:
 
 - Store form nonces at `form_nonce:{nonce}`.
-- Expire form nonces after 30 minutes.
+- Expire form nonces after 10 minutes.
 - A submitted expired nonce blocks enforcement before ledger creation with a "form expired, reopen the action" message.
-- Successful submission marks the nonce consumed.
-- Reusing a consumed nonce returns the existing idempotent result if present.
+- Successful submission sets `consumedAtMs` and `entryId` on the nonce record.
+- Reusing a consumed nonce returns the existing entry result only when `entryId` is present and the nonce still belongs to the same moderator and subreddit. Otherwise, block before ledger creation.
+
+Duplicate handling:
+
+- Store active duplicate claims at `duplicate:{targetId}:{action}:{ruleId}` with the current non-reversed entry ID.
+- Store moderator retry claims at `retry:{targetId}:{action}:{ruleId}:{moderatorUsername}:{bucket}` with the entry ID and an expiration of at least 10 minutes.
+- If the same moderator retries the same target, action, and rule within 10 minutes, return the existing entry from the retry key.
+- If any moderator submits the same target, action, and rule while the duplicate key points to an active or partial non-reversed entry, block and show the existing entry.
+- On reversal, delete the duplicate key only if it still points to the reversed entry.
 
 ### Reversal
 
@@ -264,7 +306,8 @@ Use a small Vite client app for the in-app web UI, backed by Hono JSON endpoints
 
 Proposed routes:
 
-- `/app` serves the web UI.
+- Web UI entrypoint: use the Devvit Web custom post/webview entrypoint configured in `devvit.json`. The client may render a route-like `/app` view internally, but menu handlers must navigate through a supported Devvit target rather than assuming a relative server route is user-openable.
+- `/api/bootstrap` resolves the dashboard view for the current moderator, using pending view request records or explicit settings mode.
 - `/api/history` reads paginated ledger history.
 - `/api/profile` reads the selected user's moderation profile.
 - `/api/settings` reads and writes runtime configuration.
@@ -272,6 +315,8 @@ Proposed routes:
 - `/api/recalculate-user-total` recalculates a selected user's cached active total.
 
 Every `/api/*` route re-checks Devvit context and moderator permissions server-side. The server must not trust target IDs, user IDs, or subreddit identity passed from the client without checking current subreddit context. Enforcement still runs through Devvit menu and form handlers, not arbitrary client POSTs, in MVP.
+
+Devvit select fields return arrays in form submissions. All form handlers normalize select values with `Array.isArray(value) ? value[0] : value` before validation.
 
 ### View Context Tokens
 
@@ -283,6 +328,8 @@ History and profile APIs resolve view context tokens server-side from Redis reco
 - Selected author identity if available
 
 Tokens expire after 15 minutes, can be reused until expiry, and are read-only. They do not authorize mutations. Raw target or user IDs in query params are ignored unless backed by a valid context token.
+
+Dashboard bootstrap records are stored separately from context tokens, keyed by subreddit and moderator username. They contain the selected `view`, optional `contextToken`, and `createdAtMs`; they expire after 15 minutes and are consumed or overwritten by the next menu launch for that moderator.
 
 ### History View
 
@@ -372,7 +419,7 @@ Recommended side-effect settings:
 - Lock app explanation comments, default on.
 - Add native mod notes, default on.
 - Add native mod notes for reversals, default on when mod notes are enabled.
-- Native mod notes should be unlabeled where Devvit allows it; if a label is required by the API, use only the neutral `NOTE` or equivalent label.
+- Native mod notes should be unlabeled. Devvit's `addModNote` user-note labels are warning/action labels such as spam, abuse, ban, and contributor labels; the `NOTE` value is a mod-note type/filter, not a user-note label. If an unlabeled native mod note fails because a label is required, record `sideEffects.modNote = failed`, surface the failure compactly, and leave the ledger valid. Do not substitute a warning, spam, or ban label in MVP.
 
 ### Rule Schema
 
@@ -464,11 +511,13 @@ Default zero-point text:
 Your content in r/{subredditName} violated {ruleLabel}. This action was recorded as a warning without adding warning points. Your current active warning total is {activeTotal}. Please review the community rules before participating again.
 ```
 
-Private notices should be sent as hidden-identity modmail conversations where Devvit supports it. Store the modmail conversation ID when available. If sending fails, enforcement or reversal still succeeds when the ledger write succeeds, and the relevant side-effect status records the failure.
+Private notices should be sent with `reddit.modMail.createConversation({ isAuthorHidden: true, subredditName, to: username, subject, body })`. Store the modmail conversation ID when available. Do not use deprecated subreddit private-message APIs. If sending fails, enforcement or reversal still succeeds when the ledger write succeeds, and the relevant side-effect status records the failure.
+
+Private notice subjects must be validated to 100 characters or fewer before calling Modmail. If the target user is a moderator or the app account and Reddit routes the conversation to Mod Discussions, record the returned conversation ID and show the notice side effect as succeeded because the platform accepted it. Do not add moderator/app-account special cases in MVP.
 
 ### Native Mod Note Template
 
-When native Reddit mod notes are enabled, the MVP adds neutral notes without warning, spam, ban, or other action labels that could trigger unwanted or unexpected Reddit-wide behavior. Use unlabeled notes where Devvit allows it. If a label is required by the API, use only the neutral `NOTE` or equivalent label.
+When native Reddit mod notes are enabled, the MVP adds neutral unlabeled notes without warning, spam, ban, or other action labels that could trigger unwanted or unexpected Reddit-wide behavior. If the platform rejects an unlabeled note, record the native mod note side effect as failed and continue because Redis is the source of truth.
 
 Allowed native mod note placeholders:
 
@@ -504,8 +553,10 @@ Use Devvit Redis for:
 - Settings audit records.
 - Form nonces.
 - View context tokens.
+- Active duplicate and moderator retry claims.
 - User post-rate counters in accepted extension phase.
 - Daily digest snapshots in accepted extension phase.
+- Dashboard post ID and per-moderator pending dashboard bootstrap records.
 
 Suggested key layout:
 
@@ -520,11 +571,30 @@ digest:{yyyy-mm-dd}
 settings_audit:{timestamp}:{moderatorUsername}
 form_nonce:{nonce}
 view_context:{token}
+dashboard_post_id
+dashboard_bootstrap:{subredditName}:{moderatorUsername}
+duplicate:{targetId}:{action}:{ruleId}
+retry:{targetId}:{action}:{ruleId}:{moderatorUsername}:{bucket}
 ```
 
 `ledger_entry:{entryId}` stores the full JSON ledger entry. `user:{userKey}:ledger` is a sorted set where the score is `createdAtMs` and the member is `entryId`. `target:{targetId}:entries` is a sorted set for target lookups. `config` stores runtime configuration JSON. `user:{userKey}:active_total` is a rebuildable cache.
 
+Ledger creation must be atomic across the durable entry, nonce, duplicate claim, retry claim, and indexes. Use Redis `watch`/transaction semantics around:
+
+- `form_nonce:{nonce}`
+- `duplicate:{targetId}:{action}:{ruleId}`
+- `retry:{targetId}:{action}:{ruleId}:{moderatorUsername}:{bucket}`
+- `ledger_entry:{entryId}`
+- `user:{userKey}:ledger`
+- `target:{targetId}:entries`
+
+The transaction validates the nonce, duplicate key, and retry key, then writes the pending ledger entry, indexes, consumed nonce, duplicate claim, and retry claim together. Reddit side effects run only after this transaction succeeds.
+
+The active-total cache is rebuildable and must not be the reason durable ledger creation fails after the entry and indexes are otherwise safe. Recalculate and overwrite `user:{userKey}:active_total` immediately after the ledger transaction succeeds and before private notices or mod notes are rendered. If cache update fails after the total was calculated, record the error in logs and continue with side effects using the calculated total.
+
 Native Reddit mod notes are a secondary moderation trail, not the source of truth, because the app needs structured data for history, reversal, scoring, and settings audit.
+
+Redis data is app-installation scoped. Because bulk ledger export is not in MVP, launch documentation must warn moderators that uninstalling or reinstalling the app may remove or orphan ledger history unless Reddit provides a documented retention path.
 
 ## Permissions
 
@@ -603,6 +673,38 @@ Possible moderator actions:
 - Remove all over-limit posts.
 - Add configured strike points.
 
+## Reviewed References
+
+### Reddit Documentation
+
+Reviewed during this MVP pass:
+
+- [Devvit menu actions](https://developers.reddit.com/docs/capabilities/client/menu-actions): menu items support `post`, `comment`, and `subreddit` locations, `forUserType: moderator`, UI responses such as `showForm` and `navigateTo`, and a 10 minute moderator form completion window.
+- [Creating a custom post](https://developers.reddit.com/docs/capabilities/creating_custom_post): custom post webviews require `post.dir` and named entrypoints in `devvit.json`, then `reddit.submitCustomPost` creates a post for an entrypoint.
+- [Devvit Redis](https://developers.reddit.com/docs/capabilities/server/redis): Redis supports strings, hashes, sorted sets, expirations, and `watch`/transaction semantics, but not key listing, Lua scripts, or pipelining. This supports the explicit key layout and sorted-set indexes.
+- [Reddit API overview](https://developers.reddit.com/docs/capabilities/server/reddit-api): Devvit handles Reddit API authentication when `reddit` permission is enabled, and Reddit Thing IDs use `t1_`, `t2_`, `t3_`, and `t5_` prefixes.
+- [RedditAPIClient addModNote](https://developers.reddit.com/docs/api/redditapi/RedditAPIClient/classes/RedditAPIClient#addmodnote): native mod-note labels are optional typed user-note labels, not a free-form neutral `NOTE` label.
+- [ModMailService createConversation](https://developers.reddit.com/docs/api/redditapi/models/classes/ModMailService#createconversation): Modmail notices support `isAuthorHidden`, `subredditName`, `subject`, `body`, and `to`; subject length is capped at 100 characters.
+
+### GitHub Reference Projects
+
+Use these as reference, not as authority:
+
+- [manavrenjith/redlex-mod](https://github.com/manavrenjith/redlex-mod): closest product reference. It implements a Devvit strike ledger with post/comment menu launch, Hono routes, Redis storage, and select-value normalization. Reuse the native menu/form ergonomics and select normalization pattern. Do not reuse its trusted username form field, single JSON-array ledger storage, or deprecated private-message pattern.
+- [shiruken/user-scorer](https://github.com/shiruken/user-scorer): useful moderation scoring reference. It documents setup limits, delayed processing, settings, modmail reports, and the limitation that historical data only starts after install. Reuse the explicit limitation wording style and clear settings constraints.
+- [fsvreddit/bot-bouncer](https://github.com/fsvreddit/bot-bouncer): useful policy/workflow reference. It documents staged enforcement modes, exemptions, false-positive appeals, and visible limitations. Reuse the pattern of explaining safety defaults and appeal/reversal expectations; keep exemptions out of MVP because `Do not special-case moderator authors or approved submitters` is already an explicit MVP decision.
+
+### Review Findings Incorporated
+
+- Align form nonce expiry with Devvit's 10 minute moderator form window.
+- Make the dashboard custom post mechanics explicit and add `/api/bootstrap`.
+- Treat the public dashboard post as untrusted/public and keep all authorization server-side.
+- Make `subredditName` required on ledger entries.
+- Define side-effect order, required/configured side effects, public-comment option tracking, and stale `pending` behavior.
+- Keep atomic Redis writes focused on durable ledger data and indexes; rebuild active-total cache immediately after the transaction.
+- Add Modmail subject validation and document moderator/app-account notice routing behavior.
+- Add installation-scoped Redis data-loss warning because bulk ledger export is outside MVP.
+
 ## Implementation Plan
 
 1. Domain types and config defaults/validation.
@@ -654,6 +756,8 @@ Use `vitest` for unit, repository, and route tests.
 - Moderators can recalculate cached active totals for a selected user.
 - No non-moderator can use enforcement, history, profile, reversal, or settings actions.
 
-## Open Product Decisions
+## Product Decisions
 
-Remaining implementation decisions should be resolved before core implementation starts.
+The MVP UI launch path is the StrikeLedger dashboard custom post/webview entrypoint. Form-only history, profile, reversal, and settings workflows are not part of the primary MVP UI.
+
+The reviewed references and incorporated findings above are part of the MVP contract for implementation.

@@ -105,5 +105,8 @@
   "permissions": {
     "reddit": true,
     "redis": true
+  },
+  "dev": {
+    "subreddit": "strikeledger_dev"
   }
 }

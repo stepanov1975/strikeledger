@@ -93,7 +93,10 @@ const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => ({
   ...overrides,
 });
 
-const loadApi = async (permissions: string[] | null) => {
+const loadApi = async (
+  permissions: string[] | null,
+  options: { listedModerator?: boolean } = {}
+) => {
   vi.resetModules();
   const redis = new ApiRedisMock();
   const user =
@@ -106,6 +109,13 @@ const loadApi = async (permissions: string[] | null) => {
   const reddit = {
     getCurrentSubreddit: vi.fn(async () => ({ name: 'testsub' })),
     getCurrentUser: vi.fn(async () => user),
+    getModerators: vi.fn(() => ({
+      all: vi.fn(async () =>
+        options.listedModerator && user
+          ? [{ username: user.username }]
+          : []
+      ),
+    })),
   };
 
   vi.doMock('@devvit/web/server', () => ({ reddit, redis }));
@@ -166,6 +176,17 @@ describe('api routes', () => {
     });
   });
 
+  it('allows read APIs for listed moderators with no explicit permissions', async () => {
+    const { api } = await loadApi([], { listedModerator: true });
+
+    const response = await api.request('/settings');
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      canManage: false,
+    });
+  });
+
   it('reads history from a server-side view context token', async () => {
     const { api, redis } = await loadApi(['posts']);
     await seedViewContext(redis);
@@ -210,6 +231,47 @@ describe('api routes', () => {
           entryId: 'entry-1',
         },
       ],
+    });
+  });
+
+  it('normalizes username input when recalculating a user total', async () => {
+    const { api, redis } = await loadApi(['all']);
+    const entry = buildEntry({
+      userKey: 'name:someuser',
+      username: 'SomeUser',
+    });
+    await seedLedger(redis, entry);
+
+    const response = await api.request('/recalculate-user-total', {
+      method: 'POST',
+      body: JSON.stringify({ username: 'u/SomeUser' }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      userKey: 'name:someuser',
+      activeTotal: 3,
+    });
+  });
+
+  it('requires posts or all permission for reversal', async () => {
+    const { api, redis } = await loadApi(['wiki']);
+    await seedLedger(redis);
+
+    const response = await api.request('/reverse', {
+      method: 'POST',
+      body: JSON.stringify({
+        entryId: 'entry-1',
+        reversalReason: 'issued in error',
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: 'posts_permission_required',
     });
   });
 });

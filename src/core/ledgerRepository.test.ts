@@ -91,6 +91,7 @@ const buildNonce = (overrides: Partial<FormNonceRecord> = {}): FormNonceRecord =
   targetId: overrides.targetId ?? 't3_target',
   targetKind: overrides.targetKind ?? 'post',
   subredditName: overrides.subredditName ?? 'testsub',
+  ...(overrides.userKey !== undefined ? { userKey: overrides.userKey } : {}),
   authorId: overrides.authorId ?? 't2_user',
   authorName: overrides.authorName ?? 'target-user',
   action: overrides.action ?? 'warn',
@@ -390,6 +391,19 @@ describe('LedgerRepository', () => {
     await expect(repo.getUserLedgerPage('id:t2_user', 1, 1)).resolves.toEqual([
       expect.objectContaining({ entryId: 'entry-2' }),
     ]);
+  });
+
+  it('rejects ledger entries from future schema versions', async () => {
+    const { repo, store } = createRepo();
+    const entry = buildEntry();
+    await store.set(
+      `ledger_entry:${entry.entryId}`,
+      JSON.stringify({ ...entry, schemaVersion: 2 })
+    );
+
+    await expect(repo.getLedgerEntry(entry.entryId)).rejects.toThrow(
+      'Unsupported StrikeLedger schema version 2.'
+    );
   });
 
   it('keeps action labels available for side-effect rendering callers', () => {

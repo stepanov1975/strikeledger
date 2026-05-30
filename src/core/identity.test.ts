@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { getUserKey, normalizeUsername } from './identity';
+import {
+  getTargetAuthorUserKey,
+  getUserKey,
+  normalizeUsername,
+} from './identity';
 
 describe('identity helpers', () => {
   it('normalizes fallback usernames', () => {
@@ -19,5 +23,17 @@ describe('identity helpers', () => {
   it('blocks deleted or missing usernames without a user ID', () => {
     expect(getUserKey({ username: '[deleted]' })).toBeNull();
     expect(getUserKey({})).toBeNull();
+  });
+
+  it('normalizes target-author fallback identity from nonce snapshots', () => {
+    expect(getTargetAuthorUserKey({ authorName: 'u/SomeUser' })).toBe(
+      'name:someuser'
+    );
+    expect(
+      getTargetAuthorUserKey({
+        userKey: 'name:existing',
+        authorName: 'u/SomeUser',
+      })
+    ).toBe('name:existing');
   });
 });

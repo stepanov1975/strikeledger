@@ -8,7 +8,9 @@ import {
   type LedgerEntry,
   type StrikeLedgerConfig,
 } from '../core/domain';
+import { getUserKey } from '../core/identity';
 import { LedgerRepository } from '../core/ledgerRepository';
+import { logInfo, logWarn, type LogDetails } from '../core/logging';
 import { calculateActivePoints, recalculateActiveTotal } from '../core/scoring';
 import { executeReversalSideEffects } from '../core/sideEffects';
 import { getModeratorAccess, type ModeratorAccess } from './permissions';
@@ -31,11 +33,16 @@ type ApiAccess = {
   access: ModeratorAccess;
 };
 
-const getApiAccess = async (): Promise<ApiAccess | null> => {
+const getApiAccess = async (route: string): Promise<ApiAccess | null> => {
   const subreddit = await reddit.getCurrentSubreddit();
   const access = await getModeratorAccess(subreddit.name);
 
   if (!access?.canRead) {
+    logWarn('api.access.denied', {
+      route,
+      subredditName: subreddit.name,
+      moderatorUsername: access?.username,
+    });
     return null;
   }
 
@@ -53,6 +60,22 @@ const parseOffset = (value: string | undefined): number => {
 
 const trimString = (value: unknown): string | null =>
   typeof value === 'string' ? value.trim() : null;
+
+const parseUserKeyInput = (
+  rawUserKey: string | null,
+  username: string | null
+): string | null => {
+  if (rawUserKey?.startsWith('id:')) {
+    const userId = rawUserKey.slice(3).trim();
+    return userId ? `id:${userId}` : null;
+  }
+
+  if (rawUserKey?.startsWith('name:')) {
+    return getUserKey({ username: rawUserKey.slice(5) });
+  }
+
+  return username ? getUserKey({ username }) : null;
+};
 
 const getAuthorizedViewContext = async (
   token: string | undefined,
@@ -101,8 +124,27 @@ const serializeEntry = (
   reversalReason: entry.reversalReason,
 });
 
+const buildReversalLogDetails = (
+  entry: LedgerEntry,
+  activeTotal: number
+): LogDetails => ({
+  entryId: entry.entryId,
+  subredditName: entry.subredditName,
+  moderatorUsername: entry.reversedBy,
+  username: entry.username,
+  userKey: entry.userKey,
+  targetId: entry.targetId,
+  targetKind: entry.targetKind,
+  action: entry.action,
+  ruleId: entry.ruleId,
+  status: entry.status,
+  activeTotal,
+  reversalModNote: entry.sideEffects.reversalModNote,
+  reversalUserNotice: entry.sideEffects.reversalUserNotice,
+});
+
 api.get('/bootstrap', async (c) => {
-  const apiAccess = await getApiAccess();
+  const apiAccess = await getApiAccess('bootstrap');
   if (!apiAccess) {
     return c.json({ error: 'moderator_required' }, 403);
   }
@@ -113,6 +155,12 @@ api.get('/bootstrap', async (c) => {
     apiAccess.access.username
   );
   const view = bootstrap?.view ?? 'settings';
+  logInfo('api.bootstrap.ok', {
+    view,
+    subredditName: apiAccess.subredditName,
+    moderatorUsername: apiAccess.access.username,
+    hasContextToken: bootstrap?.contextToken !== undefined,
+  });
 
   return c.json({
     view,
@@ -125,7 +173,7 @@ api.get('/bootstrap', async (c) => {
 });
 
 api.get('/history', async (c) => {
-  const apiAccess = await getApiAccess();
+  const apiAccess = await getApiAccess('history');
   if (!apiAccess) {
     return c.json({ error: 'moderator_required' }, 403);
   }
@@ -139,6 +187,11 @@ api.get('/history', async (c) => {
     dashboardRepository
   );
   if (!context) {
+    logWarn('api.history.invalid_context', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+      hasContextToken: c.req.query('contextToken') !== undefined,
+    });
     return c.json({ error: 'invalid_context' }, 404);
   }
 
@@ -154,6 +207,16 @@ api.get('/history', async (c) => {
     config,
     nowMs
   );
+  logInfo('api.history.ok', {
+    subredditName: apiAccess.subredditName,
+    moderatorUsername: apiAccess.access.username,
+    userKey: context.userKey,
+    targetId: context.targetId,
+    targetKind: context.targetKind,
+    offset,
+    entryCount: entries.length,
+    activeTotal,
+  });
 
   return c.json({
     context,
@@ -165,7 +228,7 @@ api.get('/history', async (c) => {
 });
 
 api.get('/profile', async (c) => {
-  const apiAccess = await getApiAccess();
+  const apiAccess = await getApiAccess('profile');
   if (!apiAccess) {
     return c.json({ error: 'moderator_required' }, 403);
   }
@@ -179,6 +242,11 @@ api.get('/profile', async (c) => {
     dashboardRepository
   );
   if (!context) {
+    logWarn('api.profile.invalid_context', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+      hasContextToken: c.req.query('contextToken') !== undefined,
+    });
     return c.json({ error: 'invalid_context' }, 404);
   }
 
@@ -198,6 +266,17 @@ api.get('/profile', async (c) => {
       counts[entry.ruleLabel] = (counts[entry.ruleLabel] ?? 0) + 1;
       return counts;
     }, {});
+  logInfo('api.profile.ok', {
+    subredditName: apiAccess.subredditName,
+    moderatorUsername: apiAccess.access.username,
+    userKey: context.userKey,
+    targetId: context.targetId,
+    targetKind: context.targetKind,
+    entryCount: entries.length,
+    activeTotal,
+    reversedEntries: entries.filter((entry) => entry.status === 'reversed')
+      .length,
+  });
 
   return c.json({
     context,
@@ -216,13 +295,19 @@ api.get('/profile', async (c) => {
 });
 
 api.get('/settings', async (c) => {
-  const apiAccess = await getApiAccess();
+  const apiAccess = await getApiAccess('settings');
   if (!apiAccess) {
     return c.json({ error: 'moderator_required' }, 403);
   }
 
   const { configRepository } = getRepositories();
   const config = await configRepository.getConfig();
+  logInfo('api.settings.read.ok', {
+    subredditName: apiAccess.subredditName,
+    moderatorUsername: apiAccess.access.username,
+    canManage: apiAccess.access.canManage,
+    revision: config.revision,
+  });
 
   return c.json({
     subredditName: apiAccess.subredditName,
@@ -232,12 +317,16 @@ api.get('/settings', async (c) => {
 });
 
 api.post('/settings', async (c) => {
-  const apiAccess = await getApiAccess();
+  const apiAccess = await getApiAccess('settings.save');
   if (!apiAccess) {
     return c.json({ error: 'moderator_required' }, 403);
   }
 
   if (!apiAccess.access.canManage) {
+    logWarn('api.settings.save.denied', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+    });
     return c.json({ error: 'all_permission_required' }, 403);
   }
 
@@ -245,6 +334,10 @@ api.post('/settings', async (c) => {
   try {
     payload = await c.req.json<Record<string, unknown>>();
   } catch {
+    logWarn('api.settings.save.invalid_json', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+    });
     return c.json({ error: 'invalid_json' }, 400);
   }
 
@@ -256,6 +349,11 @@ api.post('/settings', async (c) => {
     typeof nextConfig !== 'object' ||
     Array.isArray(nextConfig)
   ) {
+    logWarn('api.settings.save.invalid_payload', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+      hasConfig: nextConfig !== undefined,
+    });
     return c.json({ error: 'invalid_settings_payload' }, 400);
   }
 
@@ -268,23 +366,44 @@ api.post('/settings', async (c) => {
   });
 
   if (result.status === 'conflict') {
+    logWarn('api.settings.save.conflict', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+      expectedRevision,
+      currentRevision: result.currentRevision,
+    });
     return c.json(result, 409);
   }
 
   if (result.status === 'invalid') {
+    logWarn('api.settings.save.invalid_config', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+      expectedRevision,
+      issueCount: result.issues.length,
+    });
     return c.json(result, 400);
   }
+  logInfo('api.settings.save.ok', {
+    subredditName: apiAccess.subredditName,
+    moderatorUsername: apiAccess.access.username,
+    revision: result.config.revision,
+  });
 
   return c.json(result);
 });
 
 api.post('/recalculate-user-total', async (c) => {
-  const apiAccess = await getApiAccess();
+  const apiAccess = await getApiAccess('recalculate-user-total');
   if (!apiAccess) {
     return c.json({ error: 'moderator_required' }, 403);
   }
 
   if (!apiAccess.access.canManage) {
+    logWarn('api.recalculate.denied', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+    });
     return c.json({ error: 'all_permission_required' }, 403);
   }
 
@@ -292,6 +411,10 @@ api.post('/recalculate-user-total', async (c) => {
   try {
     payload = await c.req.json<Record<string, unknown>>();
   } catch {
+    logWarn('api.recalculate.invalid_json', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+    });
     return c.json({ error: 'invalid_json' }, 400);
   }
 
@@ -304,15 +427,16 @@ api.post('/recalculate-user-total', async (c) => {
   );
   const rawUserKey = trimString(payload.userKey);
   const username = trimString(payload.username);
-  const userKey =
-    context?.userKey ??
-    (rawUserKey?.startsWith('id:') || rawUserKey?.startsWith('name:')
-      ? rawUserKey
-      : username
-        ? `name:${username.toLowerCase()}`
-        : null);
+  const userKey = context?.userKey ?? parseUserKeyInput(rawUserKey, username);
 
   if (!userKey) {
+    logWarn('api.recalculate.missing_user', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+      hasContext: context !== null,
+      hasRawUserKey: Boolean(rawUserKey),
+      hasUsername: Boolean(username),
+    });
     return c.json({ error: 'missing_user' }, 400);
   }
 
@@ -321,20 +445,38 @@ api.post('/recalculate-user-total', async (c) => {
     await configRepository.getConfig(),
     Date.now()
   );
+  logInfo('api.recalculate.ok', {
+    subredditName: apiAccess.subredditName,
+    moderatorUsername: apiAccess.access.username,
+    userKey,
+    activeTotal,
+  });
 
   return c.json({ userKey, activeTotal });
 });
 
 api.post('/reverse', async (c) => {
-  const apiAccess = await getApiAccess();
+  const apiAccess = await getApiAccess('reverse');
   if (!apiAccess) {
     return c.json({ error: 'moderator_required' }, 403);
+  }
+
+  if (!apiAccess.access.canEnforce) {
+    logWarn('api.reverse.denied', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+    });
+    return c.json({ error: 'posts_permission_required' }, 403);
   }
 
   let payload: Record<string, unknown>;
   try {
     payload = await c.req.json<Record<string, unknown>>();
   } catch {
+    logWarn('api.reverse.invalid_json', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+    });
     return c.json({ error: 'invalid_json' }, 400);
   }
 
@@ -349,6 +491,12 @@ api.post('/reverse', async (c) => {
       : config.reversalNativeModNotesEnabled;
 
   if (!entryId || !reversalReason) {
+    logWarn('api.reverse.missing_fields', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+      hasEntryId: Boolean(entryId),
+      hasReversalReason: Boolean(reversalReason),
+    });
     return c.json({ error: 'missing_required_fields' }, 400);
   }
 
@@ -358,6 +506,11 @@ api.post('/reverse', async (c) => {
     existingEntry.subredditName.toLowerCase() !==
       apiAccess.subredditName.toLowerCase()
   ) {
+    logWarn('api.reverse.not_found', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+      entryId,
+    });
     return c.json({ error: 'not_found' }, 404);
   }
 
@@ -373,10 +526,19 @@ api.post('/reverse', async (c) => {
   });
 
   if (result.status === 'not_found') {
+    logWarn('api.reverse.not_found', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+      entryId,
+    });
     return c.json({ error: 'not_found' }, 404);
   }
 
   if (result.status === 'already_reversed') {
+    logInfo(
+      'api.reverse.already_reversed',
+      buildReversalLogDetails(result.entry, result.activeTotal)
+    );
     return c.json({
       status: 'already_reversed',
       activeTotal: result.activeTotal,
@@ -392,6 +554,10 @@ api.post('/reverse', async (c) => {
     addNativeModNote,
   });
   await ledgerRepository.updateLedgerEntry(updatedEntry);
+  logInfo(
+    'api.reverse.ok',
+    buildReversalLogDetails(updatedEntry, result.activeTotal)
+  );
 
   return c.json({
     status: 'reversed',

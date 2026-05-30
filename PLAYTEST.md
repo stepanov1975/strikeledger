@@ -16,6 +16,24 @@ npm run build
 - Use a separate test account or known test author for enforcement.
 - Open `StrikeLedger: Settings` from the subreddit menu first and confirm the dashboard post opens.
 
+## Logs
+
+- Prefer the `npm run dev` terminal while playtesting. `devvit playtest` already streams logs and owns the local `:5678` connection used for browser-forwarded logs.
+- Do not run another `devvit logs --connect` while `npm run dev` or another connected log stream is running. `listen EADDRINUSE: address already in use :::5678` means that connection is already owned by another process.
+- To inspect recent server logs without the local browser connection, run:
+
+```sh
+npx devvit logs strikeledger_dev strikeledger --since 30m --show-timestamps --log-runtime
+```
+
+- To stream browser-forwarded playtest logs separately, stop other playtest/log streams first, then run:
+
+```sh
+npx devvit logs strikeledger_dev strikeledger --connect --show-timestamps --log-runtime
+```
+
+- Trigger Settings, Warn, History, Profile, and Reverse while the stream is open. Expected operational log prefixes look like `StrikeLedger menu.enforcement.form_opened`, `StrikeLedger enforcement.submit.created`, `StrikeLedger api.history.ok`, and `StrikeLedger api.profile.ok`.
+
 ## Enforcement
 
 - On a test post, run `StrikeLedger: Warn`; confirm exactly one ledger entry appears in history.

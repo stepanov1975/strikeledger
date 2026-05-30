@@ -1,13 +1,11 @@
-import type {
-  LedgerEntry,
-  StrikeLedgerConfig,
-  TargetKind,
-} from './domain';
+import type { LedgerEntry, StrikeLedgerConfig, TargetKind } from './domain';
+import { SCHEMA_VERSION as CURRENT_SCHEMA_VERSION } from './domain';
 import {
   RETRY_WINDOW_MS,
   getDuplicateClaimKey,
   getRetryClaimKey,
 } from './idempotency';
+import { logError } from './logging';
 import type { RedisStore } from './redisStore';
 import { recalculateActiveTotal as calculateActiveTotalFromEntries } from './scoring';
 
@@ -16,6 +14,7 @@ export type FormNonceRecord = {
   targetId: string;
   targetKind: TargetKind;
   subredditName: string;
+  userKey?: string;
   authorId?: string;
   authorName?: string;
   action: LedgerEntry['action'];
@@ -96,11 +95,28 @@ type ReverseLedgerEntryTransactionResult =
 const parseJson = <T>(raw: string | null): T | null =>
   raw === null ? null : (JSON.parse(raw) as T);
 
+const parseLedgerEntry = (raw: string | null): LedgerEntry | null => {
+  const entry = parseJson<LedgerEntry>(raw);
+  if (!entry) {
+    return null;
+  }
+
+  if (entry.schemaVersion !== CURRENT_SCHEMA_VERSION) {
+    throw new Error(
+      `Unsupported StrikeLedger schema version ${entry.schemaVersion}.`
+    );
+  }
+
+  return entry;
+};
+
 const ledgerEntryKey = (entryId: string): string => `ledger_entry:${entryId}`;
 const formNonceKey = (nonce: string): string => `form_nonce:${nonce}`;
 const userLedgerKey = (userKey: string): string => `user:${userKey}:ledger`;
-const targetEntriesKey = (targetId: string): string => `target:${targetId}:entries`;
-const activeTotalKey = (userKey: string): string => `user:${userKey}:active_total`;
+const targetEntriesKey = (targetId: string): string =>
+  `target:${targetId}:entries`;
+const activeTotalKey = (userKey: string): string =>
+  `user:${userKey}:active_total`;
 
 export class LedgerRepository {
   constructor(private readonly store: RedisStore) {}
@@ -112,11 +128,13 @@ export class LedgerRepository {
   }
 
   async getFormNonce(nonce: string): Promise<FormNonceRecord | null> {
-    return parseJson<FormNonceRecord>(await this.store.get(formNonceKey(nonce)));
+    return parseJson<FormNonceRecord>(
+      await this.store.get(formNonceKey(nonce))
+    );
   }
 
   async getLedgerEntry(entryId: string): Promise<LedgerEntry | null> {
-    return parseJson<LedgerEntry>(await this.store.get(ledgerEntryKey(entryId)));
+    return parseLedgerEntry(await this.store.get(ledgerEntryKey(entryId)));
   }
 
   async updateLedgerEntry(entry: LedgerEntry): Promise<void> {
@@ -137,9 +155,14 @@ export class LedgerRepository {
     }
 
     const stop = limit < 0 ? -1 : offset + limit - 1;
-    const entryIds = await this.store.zRange(userLedgerKey(userKey), offset, stop, {
-      reverse: true,
-    });
+    const entryIds = await this.store.zRange(
+      userLedgerKey(userKey),
+      offset,
+      stop,
+      {
+        reverse: true,
+      }
+    );
     const entries = await Promise.all(
       entryIds.map((entryId) => this.getLedgerEntry(entryId))
     );
@@ -166,7 +189,10 @@ export class LedgerRepository {
         if (nonce.status === 'consumed') {
           const entry = await this.getLedgerEntry(nonce.entryId);
           if (!entry) {
-            return { status: 'blocked', reason: 'nonce_consumed_without_entry' };
+            return {
+              status: 'blocked',
+              reason: 'nonce_consumed_without_entry',
+            };
           }
 
           return {
@@ -280,7 +306,14 @@ export class LedgerRepository {
     try {
       await this.store.set(activeTotalKey(userKey), String(activeTotal));
     } catch (error) {
-      console.error('StrikeLedger active-total cache update failed', error);
+      logError(
+        'ledger.active_total_cache_failed',
+        {
+          userKey,
+          activeTotal,
+        },
+        error
+      );
     }
     return activeTotal;
   }

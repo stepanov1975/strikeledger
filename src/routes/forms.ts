@@ -5,14 +5,23 @@ import type { Comment, Post } from '@devvit/web/server';
 import type { T1, T3 } from '@devvit/shared-types/tid.js';
 import { ConfigRepository } from '../core/configRepository';
 import { DevvitRedisStore } from '../core/devvitRedisStore';
-import { ACTION_LABELS, type LedgerEntry, type TargetKind } from '../core/domain';
+import {
+  ACTION_LABELS,
+  type LedgerEntry,
+  type TargetKind,
+} from '../core/domain';
 import {
   buildLedgerEntry,
   findEnabledRule,
   normalizeSelectValue,
   type TargetSnapshot,
 } from '../core/enforcement';
-import { LedgerRepository, type FormNonceRecord } from '../core/ledgerRepository';
+import { getTargetAuthorUserKey } from '../core/identity';
+import {
+  LedgerRepository,
+  type FormNonceRecord,
+} from '../core/ledgerRepository';
+import { logError, logInfo, logWarn, type LogDetails } from '../core/logging';
 import { executeSideEffects } from '../core/sideEffects';
 import {
   PUBLIC_PLACEHOLDERS,
@@ -105,20 +114,26 @@ const validateTargetPreconditions = (
 const buildTargetSnapshot = (
   nonce: FormNonceRecord,
   target: Post | Comment
-): TargetSnapshot => ({
-  targetId: nonce.targetId,
-  targetKind: nonce.targetKind as TargetKind,
-  targetPermalink: target.permalink,
-  subredditName: nonce.subredditName,
-  author: {
-    userKey:
-      nonce.authorId !== undefined
-        ? `id:${nonce.authorId}`
-        : `name:${nonce.authorName?.toLowerCase() ?? '[unknown]'}`,
-    ...(nonce.authorId !== undefined ? { authorId: nonce.authorId } : {}),
-    ...(nonce.authorName !== undefined ? { authorName: nonce.authorName } : {}),
-  },
-});
+): TargetSnapshot | null => {
+  const userKey = getTargetAuthorUserKey(nonce);
+  if (!userKey) {
+    return null;
+  }
+
+  return {
+    targetId: nonce.targetId,
+    targetKind: nonce.targetKind as TargetKind,
+    targetPermalink: target.permalink,
+    subredditName: nonce.subredditName,
+    author: {
+      userKey,
+      ...(nonce.authorId !== undefined ? { authorId: nonce.authorId } : {}),
+      ...(nonce.authorName !== undefined
+        ? { authorName: nonce.authorName }
+        : {}),
+    },
+  };
+};
 
 const formatCreatedToast = (
   entry: LedgerEntry,
@@ -133,12 +148,38 @@ const formatCreatedToast = (
   return `${prefix}: ${ACTION_LABELS[entry.action]} for ${entry.ruleLabel}. Active total: ${activeTotal}.`;
 };
 
+const buildEntryLogDetails = (
+  entry: LedgerEntry,
+  activeTotal: number
+): LogDetails => ({
+  entryId: entry.entryId,
+  subredditName: entry.subredditName,
+  moderatorUsername: entry.moderatorUsername,
+  username: entry.username,
+  userKey: entry.userKey,
+  targetId: entry.targetId,
+  targetKind: entry.targetKind,
+  action: entry.action,
+  ruleId: entry.ruleId,
+  status: entry.status,
+  activeTotal,
+  publicComment: entry.sideEffects.publicComment,
+  remove: entry.sideEffects.remove,
+  markNsfw: entry.sideEffects.markNsfw,
+  modNote: entry.sideEffects.modNote,
+  userNotice: entry.sideEffects.userNotice,
+});
+
 forms.post('/enforcement-submit', async (c) => {
   const values = await c.req.json<EnforcementFormValues>();
   const formNonce = normalizeSelectValue(values.formNonce);
   const ruleId = normalizeSelectValue(values.ruleId);
 
   if (!formNonce || !ruleId) {
+    logWarn('enforcement.submit.invalid', {
+      hasFormNonce: formNonce !== null,
+      hasRuleId: ruleId !== null,
+    });
     return c.json<UiResponse>(
       { showToast: 'StrikeLedger form is missing required fields.' },
       200
@@ -149,6 +190,9 @@ forms.post('/enforcement-submit', async (c) => {
   const config = await getConfigRepository().getConfig();
   const nonce = await repository.getFormNonce(formNonce);
   if (!nonce) {
+    logWarn('enforcement.submit.nonce_missing', {
+      ruleId,
+    });
     return c.json<UiResponse>(
       { showToast: 'StrikeLedger form expired. Reopen the action.' },
       200
@@ -157,6 +201,14 @@ forms.post('/enforcement-submit', async (c) => {
 
   const rule = findEnabledRule(ruleId, config);
   if (!rule) {
+    logWarn('enforcement.submit.rule_disabled', {
+      ruleId,
+      action: nonce.action,
+      targetId: nonce.targetId,
+      targetKind: nonce.targetKind,
+      subredditName: nonce.subredditName,
+      moderatorUsername: nonce.moderatorUsername,
+    });
     return c.json<UiResponse>(
       { showToast: 'Selected StrikeLedger rule is no longer enabled.' },
       200
@@ -171,17 +223,42 @@ forms.post('/enforcement-submit', async (c) => {
       PUBLIC_PLACEHOLDERS
     );
     if (templateIssues.length > 0) {
+      logWarn('enforcement.submit.invalid_public_override', {
+        ruleId,
+        action: nonce.action,
+        targetId: nonce.targetId,
+        targetKind: nonce.targetKind,
+        subredditName: nonce.subredditName,
+        moderatorUsername: nonce.moderatorUsername,
+        issueCount: templateIssues.length,
+      });
       return c.json<UiResponse>(
-        { showToast: 'Public comment override contains a private or unsupported placeholder.' },
+        {
+          showToast:
+            'Public comment override contains a private or unsupported placeholder.',
+        },
         200
       );
     }
   }
 
-  const moderatorUsername = await getCurrentModeratorUsername(nonce.subredditName);
+  const moderatorUsername = await getCurrentModeratorUsername(
+    nonce.subredditName
+  );
   if (!moderatorUsername || moderatorUsername !== nonce.moderatorUsername) {
+    logWarn('enforcement.submit.moderator_mismatch', {
+      action: nonce.action,
+      targetId: nonce.targetId,
+      targetKind: nonce.targetKind,
+      subredditName: nonce.subredditName,
+      expectedModeratorUsername: nonce.moderatorUsername,
+      actualModeratorUsername: moderatorUsername,
+    });
     return c.json<UiResponse>(
-      { showToast: 'StrikeLedger form can only be submitted by the moderator who opened it.' },
+      {
+        showToast:
+          'StrikeLedger form can only be submitted by the moderator who opened it.',
+      },
       200
     );
   }
@@ -190,7 +267,17 @@ forms.post('/enforcement-submit', async (c) => {
   try {
     targetState = await fetchTargetState(nonce);
   } catch (error) {
-    console.error('StrikeLedger target fetch failed', error);
+    logError(
+      'enforcement.submit.target_fetch_failed',
+      {
+        action: nonce.action,
+        targetId: nonce.targetId,
+        targetKind: nonce.targetKind,
+        subredditName: nonce.subredditName,
+        moderatorUsername: nonce.moderatorUsername,
+      },
+      error
+    );
     return c.json<UiResponse>(
       { showToast: 'StrikeLedger could not re-check the selected content.' },
       200
@@ -199,17 +286,40 @@ forms.post('/enforcement-submit', async (c) => {
 
   const preconditionFailure = validateTargetPreconditions(nonce, targetState);
   if (preconditionFailure) {
+    logWarn('enforcement.submit.precondition_failed', {
+      action: nonce.action,
+      targetId: nonce.targetId,
+      targetKind: nonce.targetKind,
+      subredditName: nonce.subredditName,
+      moderatorUsername: nonce.moderatorUsername,
+      reason: preconditionFailure,
+    });
     return c.json<UiResponse>({ showToast: preconditionFailure }, 200);
   }
 
   const nowMs = Date.now();
   const moderatorNote = trimOptional(values.moderatorNote);
+  const targetSnapshot = buildTargetSnapshot(nonce, targetState.target);
+  if (!targetSnapshot) {
+    logWarn('enforcement.submit.no_author', {
+      action: nonce.action,
+      targetId: nonce.targetId,
+      targetKind: nonce.targetKind,
+      subredditName: nonce.subredditName,
+      moderatorUsername,
+    });
+    return c.json<UiResponse>(
+      { showToast: 'StrikeLedger cannot warn content without an author.' },
+      200
+    );
+  }
+
   const entry = buildLedgerEntry({
     entryId: crypto.randomUUID(),
     formNonce,
     action: nonce.action,
     rule,
-    target: buildTargetSnapshot(nonce, targetState.target),
+    target: targetSnapshot,
     moderatorUsername,
     createdAtMs: nowMs,
     publicCommentOverrideUsed: publicCommentOverride !== undefined,
@@ -233,9 +343,15 @@ forms.post('/enforcement-submit', async (c) => {
         target: targetState.target,
         reddit,
         config,
-        ...(publicCommentOverride !== undefined ? { publicCommentOverride } : {}),
+        ...(publicCommentOverride !== undefined
+          ? { publicCommentOverride }
+          : {}),
       });
       await repository.updateLedgerEntry(updatedEntry);
+      logInfo(
+        'enforcement.submit.created',
+        buildEntryLogDetails(updatedEntry, result.activeTotal)
+      );
 
       return c.json<UiResponse>(
         {
@@ -245,6 +361,10 @@ forms.post('/enforcement-submit', async (c) => {
       );
     }
     case 'idempotent':
+      logInfo(
+        'enforcement.submit.idempotent',
+        buildEntryLogDetails(result.entry, result.activeTotal)
+      );
       return c.json<UiResponse>(
         {
           showToast: formatCreatedToast(result.entry, result.activeTotal, true),
@@ -252,6 +372,18 @@ forms.post('/enforcement-submit', async (c) => {
         200
       );
     case 'duplicate':
+      logWarn('enforcement.submit.duplicate', {
+        entryId: entry.entryId,
+        existingEntryId: result.existingEntry.entryId,
+        subredditName: entry.subredditName,
+        moderatorUsername: entry.moderatorUsername,
+        username: entry.username,
+        userKey: entry.userKey,
+        targetId: entry.targetId,
+        targetKind: entry.targetKind,
+        action: entry.action,
+        ruleId: entry.ruleId,
+      });
       return c.json<UiResponse>(
         {
           showToast: `Duplicate blocked. Existing entry: ${result.existingEntry.entryId}.`,
@@ -259,6 +391,15 @@ forms.post('/enforcement-submit', async (c) => {
         200
       );
     case 'blocked':
+      logWarn('enforcement.submit.blocked', {
+        entryId: entry.entryId,
+        subredditName: entry.subredditName,
+        moderatorUsername: entry.moderatorUsername,
+        targetId: entry.targetId,
+        targetKind: entry.targetKind,
+        action: entry.action,
+        ruleId: entry.ruleId,
+      });
       return c.json<UiResponse>(
         { showToast: 'StrikeLedger form expired. Reopen the action.' },
         200

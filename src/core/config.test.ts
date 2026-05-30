@@ -43,6 +43,19 @@ describe('config validation', () => {
     );
   });
 
+  it('rejects duplicate rule IDs', () => {
+    const config = cloneConfig();
+    config.rules = [
+      DEFAULT_RULE,
+      { ...DEFAULT_RULE, label: 'Duplicate rule label' },
+    ];
+
+    expect(validateConfig(config)).toContainEqual({
+      path: 'rules.1.id',
+      message: 'Rule ID must be unique.',
+    });
+  });
+
   it('rejects invalid point and decay values', () => {
     const config = cloneConfig();
     config.actionPoints.warn_remove = 101;
@@ -63,6 +76,16 @@ describe('config validation', () => {
           path: 'decayIntervalDays',
           message: 'Decay interval must be an integer from 1 to 3650 days.',
         },
+      ])
+    );
+  });
+
+  it('reports malformed imported config objects instead of throwing', () => {
+    expect(validateConfig({})).toEqual(
+      expect.arrayContaining([
+        { path: 'rules', message: 'Rules must be an array.' },
+        { path: 'actionPoints', message: 'Action points must be an object.' },
+        { path: 'userNoticesEnabled', message: 'Value must be true or false.' },
       ])
     );
   });

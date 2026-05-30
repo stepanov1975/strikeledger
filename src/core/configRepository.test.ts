@@ -76,6 +76,24 @@ describe('ConfigRepository', () => {
     ).resolves.toMatchObject({ status: 'invalid' });
   });
 
+  it('rejects malformed imported config without throwing', async () => {
+    const { repo } = createRepo();
+
+    await expect(
+      repo.saveConfig({
+        expectedRevision: 1,
+        nextConfig: {} as typeof DEFAULT_CONFIG,
+        moderatorUsername: 'mod-a',
+        timestampMs: nowMs,
+      })
+    ).resolves.toMatchObject({
+      status: 'invalid',
+      issues: expect.arrayContaining([
+        { path: 'rules', message: 'Rules must be an array.' },
+      ]),
+    });
+  });
+
   it('keeps full config snapshots only for the latest twenty saves', async () => {
     const { repo, store } = createRepo();
 

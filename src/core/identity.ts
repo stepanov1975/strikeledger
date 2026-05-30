@@ -20,3 +20,18 @@ export const getUserKey = (identity: {
 
   return `name:${username}`;
 };
+
+export const getTargetAuthorUserKey = (identity: {
+  userKey?: string;
+  authorId?: string;
+  authorName?: string;
+}): string | null => {
+  if (identity.userKey?.trim()) {
+    return identity.userKey.trim();
+  }
+
+  return getUserKey({
+    ...(identity.authorId !== undefined ? { userId: identity.authorId } : {}),
+    ...(identity.authorName !== undefined ? { username: identity.authorName } : {}),
+  });
+};

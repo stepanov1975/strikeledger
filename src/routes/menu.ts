@@ -24,7 +24,11 @@ import {
   type TargetAuthorSnapshot,
 } from '../core/enforcement';
 import { getUserKey } from '../core/identity';
-import { LedgerRepository, type FormNonceRecord } from '../core/ledgerRepository';
+import {
+  LedgerRepository,
+  type FormNonceRecord,
+} from '../core/ledgerRepository';
+import { logError, logInfo, logWarn } from '../core/logging';
 import { getModeratorAccess, type ModeratorAccess } from './permissions';
 
 export const menu = new Hono();
@@ -66,7 +70,14 @@ const getStoredDashboardPost = async (
 
     return post;
   } catch (error) {
-    console.error('StrikeLedger dashboard post was not readable', error);
+    logError(
+      'dashboard.post_unreadable',
+      {
+        subredditName,
+        postId: record.postId,
+      },
+      error
+    );
     await dashboardRepository.clearDashboardPost();
     return null;
   }
@@ -91,6 +102,10 @@ const createDashboardPost = async (
     createdAtMs: nowMs,
     updatedAtMs: nowMs,
   });
+  logInfo('dashboard.post_created', {
+    subredditName,
+    postId: post.id,
+  });
 
   return post;
 };
@@ -109,6 +124,13 @@ const resolveDashboardPost = async (
   if (allowCreate && access.canManage) {
     return { post: await createDashboardPost(subredditName, nowMs) };
   }
+
+  logWarn('dashboard.post_missing', {
+    subredditName,
+    moderatorUsername: access.username,
+    allowCreate,
+    canManage: access.canManage,
+  });
 
   return {
     response: {
@@ -134,6 +156,12 @@ const saveBootstrapAndNavigate = async (
     moderatorUsername: access.username,
     ...(contextToken !== undefined ? { contextToken } : {}),
     ...times,
+  });
+  logInfo('dashboard.navigate', {
+    view,
+    subredditName,
+    moderatorUsername: access.username,
+    hasContextToken: contextToken !== undefined,
   });
 
   return { navigateTo: dashboardNavigateTarget(post) };
@@ -242,8 +270,11 @@ const buildNonceRecord = (
     targetId: target.id,
     targetKind,
     subredditName: target.subredditName,
+    userKey: author.userKey,
     ...(author.authorId !== undefined ? { authorId: author.authorId } : {}),
-    ...(author.authorName !== undefined ? { authorName: author.authorName } : {}),
+    ...(author.authorName !== undefined
+      ? { authorName: author.authorName }
+      : {}),
     action,
     moderatorUsername,
     ...times,
@@ -264,6 +295,13 @@ const openEnforcementForm = async (
   const access = await getModeratorAccess(target.subredditName);
 
   if (!access?.canEnforce) {
+    logWarn('menu.enforcement.denied', {
+      action,
+      targetKind,
+      targetId: target.id,
+      subredditName: target.subredditName,
+      moderatorUsername: access?.username,
+    });
     return {
       showToast: 'StrikeLedger requires posts or all moderator permission.',
     };
@@ -277,10 +315,24 @@ const openEnforcementForm = async (
     nowMs
   );
   if (!nonceRecord) {
+    logWarn('menu.enforcement.no_author', {
+      action,
+      targetKind,
+      targetId: target.id,
+      subredditName: target.subredditName,
+      moderatorUsername: access.username,
+    });
     return { showToast: 'StrikeLedger cannot warn content without an author.' };
   }
 
   await getRepository().saveFormNonce(nonceRecord);
+  logInfo('menu.enforcement.form_opened', {
+    action,
+    targetKind,
+    targetId: target.id,
+    subredditName: target.subredditName,
+    moderatorUsername: access.username,
+  });
 
   return {
     showForm: {
@@ -323,6 +375,13 @@ const openTargetDashboardView = async (
   const access = await getModeratorAccess(target.subredditName);
 
   if (!access?.canRead) {
+    logWarn('menu.dashboard.denied', {
+      view,
+      targetKind,
+      targetId: target.id,
+      subredditName: target.subredditName,
+      moderatorUsername: access?.username,
+    });
     return { showToast: 'StrikeLedger requires moderator permission.' };
   }
 
@@ -338,6 +397,13 @@ const openTargetDashboardView = async (
 
   const viewContext = buildViewContext(target, targetKind, nowMs);
   if (!viewContext) {
+    logWarn('menu.dashboard.no_author', {
+      view,
+      targetKind,
+      targetId: target.id,
+      subredditName: target.subredditName,
+      moderatorUsername: access.username,
+    });
     return { showToast: 'StrikeLedger cannot open a view without an author.' };
   }
 
@@ -358,6 +424,10 @@ const openSettingsDashboard = async (): Promise<UiResponse> => {
   const access = await getModeratorAccess(subreddit.name);
 
   if (!access?.canRead) {
+    logWarn('menu.settings.denied', {
+      subredditName: subreddit.name,
+      moderatorUsername: access?.username,
+    });
     return { showToast: 'StrikeLedger requires moderator permission.' };
   }
 

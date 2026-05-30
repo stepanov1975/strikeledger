@@ -5,6 +5,7 @@ import {
   type SideEffects,
   type StrikeLedgerConfig,
 } from './domain';
+import { logError } from './logging';
 import { renderTemplate, type TemplateValues } from './templates';
 
 export type PublicComment = {
@@ -14,8 +15,14 @@ export type PublicComment = {
 };
 
 export type SideEffectTarget = {
-  addComment?(opts: { text: string; runAs?: 'USER' | 'APP' }): Promise<PublicComment>;
-  reply?(opts: { text: string; runAs?: 'USER' | 'APP' }): Promise<PublicComment>;
+  addComment?(opts: {
+    text: string;
+    runAs?: 'USER' | 'APP';
+  }): Promise<PublicComment>;
+  reply?(opts: {
+    text: string;
+    runAs?: 'USER' | 'APP';
+  }): Promise<PublicComment>;
   remove(isSpam?: boolean): Promise<void>;
   markAsNsfw?(): Promise<void>;
 };
@@ -62,7 +69,7 @@ const succeededOrFailed = async (
     await operation();
     return 'succeeded';
   } catch (error) {
-    console.error('StrikeLedger side effect failed', error);
+    logError('side_effect.failed', {}, error);
     return 'failed';
   }
 };
@@ -206,12 +213,25 @@ export const executeSideEffects = async (
       sideEffects.publicCommentOptions = publicCommentOptions;
     }
   } catch (error) {
-    console.error('StrikeLedger public comment failed', error);
+    logError(
+      'side_effect.public_comment_failed',
+      {
+        entryId: input.entry.entryId,
+        subredditName: input.entry.subredditName,
+        targetId: input.entry.targetId,
+        targetKind: input.entry.targetKind,
+        action: input.entry.action,
+        ruleId: input.entry.ruleId,
+      },
+      error
+    );
     sideEffects.publicComment = 'failed';
   }
 
   if (input.entry.action === 'warn_remove') {
-    sideEffects.remove = await succeededOrFailed(() => input.target.remove(false));
+    sideEffects.remove = await succeededOrFailed(() =>
+      input.target.remove(false)
+    );
   }
 
   if (input.entry.action === 'warn_nsfw') {
@@ -238,7 +258,18 @@ export const executeSideEffects = async (
       modNoteId = modNote.id;
       sideEffects.modNote = 'succeeded';
     } catch (error) {
-      console.error('StrikeLedger native mod note failed', error);
+      logError(
+        'side_effect.native_mod_note_failed',
+        {
+          entryId: input.entry.entryId,
+          subredditName: input.entry.subredditName,
+          targetId: input.entry.targetId,
+          targetKind: input.entry.targetKind,
+          action: input.entry.action,
+          ruleId: input.entry.ruleId,
+        },
+        error
+      );
       sideEffects.modNote = 'failed';
     }
   }
@@ -253,12 +284,26 @@ export const executeSideEffects = async (
           0,
           100
         ),
-        body: renderTemplate(choosePrivateTemplate(input.entry, input.config), values),
+        body: renderTemplate(
+          choosePrivateTemplate(input.entry, input.config),
+          values
+        ),
       });
       userNoticeId = response.conversation.id;
       sideEffects.userNotice = 'succeeded';
     } catch (error) {
-      console.error('StrikeLedger user notice failed', error);
+      logError(
+        'side_effect.user_notice_failed',
+        {
+          entryId: input.entry.entryId,
+          subredditName: input.entry.subredditName,
+          targetId: input.entry.targetId,
+          targetKind: input.entry.targetKind,
+          action: input.entry.action,
+          ruleId: input.entry.ruleId,
+        },
+        error
+      );
       sideEffects.userNotice = 'failed';
     }
   }
@@ -303,7 +348,18 @@ export const executeReversalSideEffects = async (
       reversalModNoteId = modNote.id;
       sideEffects.reversalModNote = 'succeeded';
     } catch (error) {
-      console.error('StrikeLedger reversal mod note failed', error);
+      logError(
+        'side_effect.reversal_mod_note_failed',
+        {
+          entryId: input.entry.entryId,
+          subredditName: input.entry.subredditName,
+          targetId: input.entry.targetId,
+          targetKind: input.entry.targetKind,
+          action: input.entry.action,
+          ruleId: input.entry.ruleId,
+        },
+        error
+      );
       sideEffects.reversalModNote = 'failed';
     }
   } else {
@@ -316,16 +372,28 @@ export const executeReversalSideEffects = async (
         isAuthorHidden: true,
         subredditName: input.entry.subredditName,
         to: input.entry.username,
-        subject: `StrikeLedger reversal for r/${input.entry.subredditName}`.slice(
-          0,
-          100
-        ),
+        subject:
+          `StrikeLedger reversal for r/${input.entry.subredditName}`.slice(
+            0,
+            100
+          ),
         body: buildReversalUserNotice(input.entry, input.activeTotal),
       });
       reversalUserNoticeId = response.conversation.id;
       sideEffects.reversalUserNotice = 'succeeded';
     } catch (error) {
-      console.error('StrikeLedger reversal user notice failed', error);
+      logError(
+        'side_effect.reversal_user_notice_failed',
+        {
+          entryId: input.entry.entryId,
+          subredditName: input.entry.subredditName,
+          targetId: input.entry.targetId,
+          targetKind: input.entry.targetKind,
+          action: input.entry.action,
+          ruleId: input.entry.ruleId,
+        },
+        error
+      );
       sideEffects.reversalUserNotice = 'failed';
     }
   } else {

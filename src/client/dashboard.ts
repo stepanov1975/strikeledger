@@ -104,11 +104,6 @@ type RedditRulesResponse = {
 
 type RuleImportMode = 'add-missing' | 'replace' | 'sync-labels-order';
 
-type UserLookup = {
-  userKey?: string;
-  username?: string;
-};
-
 const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) {
   throw new Error('Missing #app root.');
@@ -123,7 +118,6 @@ let historyContext: ViewContext | null = null;
 let historyActiveTotal = 0;
 let historyNotice: string | null = null;
 let settingsNotice: string | null = null;
-let selectedUserLookup: UserLookup | null = null;
 
 const create = <K extends keyof HTMLElementTagNameMap>(
   tagName: K,
@@ -161,30 +155,9 @@ const formatDate = (value: number): string =>
 const formatTargetUser = (context: ViewContext): string =>
   context.authorName ? `u/${context.authorName}` : context.userKey;
 
-const buildUserLookup = (rawValue: string): UserLookup | null => {
-  const value = rawValue.trim();
-  if (!value) {
-    return null;
-  }
-
-  return value.startsWith('id:') || value.startsWith('name:')
-    ? { userKey: value }
-    : { username: value };
-};
-
-const appendUserContextParams = (params: URLSearchParams): boolean => {
+const appendContextTokenParam = (params: URLSearchParams): boolean => {
   if (bootstrap?.contextToken) {
     params.set('contextToken', bootstrap.contextToken);
-    return true;
-  }
-
-  if (selectedUserLookup?.userKey) {
-    params.set('userKey', selectedUserLookup.userKey);
-    return true;
-  }
-
-  if (selectedUserLookup?.username) {
-    params.set('username', selectedUserLookup.username);
     return true;
   }
 
@@ -450,52 +423,25 @@ const renderHistory = () => {
   main.replaceChildren(...children);
 };
 
-const renderUserLookup = (
+const renderContextRequired = (
   view: Extract<DashboardView, 'history' | 'profile'>
 ) => {
   if (!main) {
     return;
   }
 
-  const form = create('form', 'settings-form') as HTMLFormElement;
-  const label = create('label', 'field-label', 'Username or user key');
-  const input = create('input', 'field-control') as HTMLInputElement;
-  input.type = 'text';
-  input.value =
-    selectedUserLookup?.username ?? selectedUserLookup?.userKey ?? '';
-  input.required = true;
-  label.append(input);
-
-  const actions = create('div', 'modal-actions');
-  const load = create('button', 'load-more', `Load ${view}`);
-  load.type = 'submit';
-  actions.append(load);
-  form.append(label, actions);
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
-    selectedUserLookup = buildUserLookup(input.value);
-    if (!selectedUserLookup) {
-      input.reportValidity();
-      return;
-    }
-
-    if (view === 'history') {
-      void loadHistory(0);
-      return;
-    }
-
-    void loadProfile();
-  });
-
-  main.replaceChildren(renderToolbar(titleCase(view), 'User lookup'), form);
+  main.replaceChildren(
+    renderToolbar(titleCase(view), 'No selected author'),
+    create('div', 'empty', 'Open this view from a post or comment menu item.')
+  );
 };
 
 const loadHistory = async (offset: number) => {
   const params = new URLSearchParams({
     offset: String(offset),
   });
-  if (!appendUserContextParams(params)) {
-    renderUserLookup('history');
+  if (!appendContextTokenParam(params)) {
+    renderContextRequired('history');
     return;
   }
 
@@ -506,7 +452,6 @@ const loadHistory = async (offset: number) => {
   }
 
   historyContext = response.context;
-  selectedUserLookup = { userKey: response.context.userKey };
   historyActiveTotal = response.activeTotal;
   historyEntries = [...historyEntries, ...response.entries];
   historyNextOffset = response.nextOffset;
@@ -666,13 +611,12 @@ const renderProfile = (response: ProfileResponse) => {
 
 const loadProfile = async () => {
   const params = new URLSearchParams();
-  if (!appendUserContextParams(params)) {
-    renderUserLookup('profile');
+  if (!appendContextTokenParam(params)) {
+    renderContextRequired('profile');
     return;
   }
 
   const response = await fetchJson<ProfileResponse>(`/api/profile?${params}`);
-  selectedUserLookup = { userKey: response.context.userKey };
   renderProfile(response);
 };
 

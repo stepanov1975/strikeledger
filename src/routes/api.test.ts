@@ -143,9 +143,12 @@ const loadApi = async (
   return { api, reddit, redis };
 };
 
-const seedViewContext = async (redis: ApiRedisMock) => {
+const seedViewContext = async (
+  redis: ApiRedisMock,
+  overrides: Record<string, unknown> = {}
+) => {
   await redis.set(
-    'view_context:token-1',
+    `view_context:${String(overrides.token ?? 'token-1')}`,
     JSON.stringify({
       token: 'token-1',
       targetId: 't3_target',
@@ -156,6 +159,7 @@ const seedViewContext = async (redis: ApiRedisMock) => {
       authorName: 'target-user',
       createdAtMs: Date.UTC(2026, 0, 1),
       expiresAtMs: Date.UTC(2026, 0, 1) + 15 * 60 * 1000,
+      ...overrides,
     })
   );
 };
@@ -328,7 +332,7 @@ describe('api routes', () => {
     expect(redis.values.get('user:id:t2_user:active_total')).toBe('3');
   });
 
-  it('reads history from a username lookup', async () => {
+  it('rejects raw username lookups for history', async () => {
     const { api, redis } = await loadApi(['posts']);
     const entry = buildEntry({
       userKey: 'name:someuser',
@@ -337,21 +341,10 @@ describe('api routes', () => {
     await seedLedger(redis, entry);
 
     const response = await api.request('/history?username=u%2FSomeUser');
-    const body = await response.json();
 
-    expect(response.status).toBe(200);
-    expect(body).toMatchObject({
-      context: {
-        subredditName: 'testsub',
-        userKey: 'name:someuser',
-        authorName: 'SomeUser',
-      },
-      activeTotal: 3,
-      entries: [
-        {
-          entryId: 'entry-1',
-        },
-      ],
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      error: 'invalid_context',
     });
   });
 
@@ -412,7 +405,7 @@ describe('api routes', () => {
   it('calculates average post score for current subreddit posts in the profile window', async () => {
     const daysAgo = (days: number): Date =>
       new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    const { api, reddit } = await loadApi(['posts'], {
+    const { api, reddit, redis } = await loadApi(['posts'], {
       postsByUser: [
         { subredditName: 'testsub', createdAt: daysAgo(10), score: 10 },
         { subredditName: 'othersub', createdAt: daysAgo(12), score: 999 },
@@ -420,8 +413,9 @@ describe('api routes', () => {
         { subredditName: 'testsub', createdAt: daysAgo(31), score: 100 },
       ],
     });
+    await seedViewContext(redis);
 
-    const response = await api.request('/profile?username=target-user');
+    const response = await api.request('/profile?contextToken=token-1');
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -441,6 +435,10 @@ describe('api routes', () => {
   it('uses the cached post score summary for profile lookups', async () => {
     const nowMs = Date.now();
     const { api, reddit, redis } = await loadApi(['posts']);
+    await seedViewContext(redis, {
+      userKey: 'name:target-user',
+      authorName: 'target-user',
+    });
     await redis.set(
       'user:name:target-user:post_score_summary',
       JSON.stringify({
@@ -457,7 +455,7 @@ describe('api routes', () => {
       })
     );
 
-    const response = await api.request('/profile?username=target-user');
+    const response = await api.request('/profile?contextToken=token-1');
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -469,7 +467,7 @@ describe('api routes', () => {
     });
   });
 
-  it('reads profile summaries from a user key lookup', async () => {
+  it('rejects raw user key lookups for profile', async () => {
     const { api, redis } = await loadApi(['posts']);
     const entry = buildEntry({
       userKey: 'name:someuser',
@@ -478,18 +476,10 @@ describe('api routes', () => {
     await seedLedger(redis, entry);
 
     const response = await api.request('/profile?userKey=name%3Asomeuser');
-    const body = await response.json();
 
-    expect(response.status).toBe(200);
-    expect(body).toMatchObject({
-      context: {
-        subredditName: 'testsub',
-        userKey: 'name:someuser',
-        authorName: 'someuser',
-      },
-      summary: {
-        activeTotal: 3,
-      },
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      error: 'invalid_context',
     });
   });
 

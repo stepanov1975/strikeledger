@@ -200,15 +200,9 @@ const getAuthorizedViewContext = async (
 const getAuthorizedUserViewContext = async (
   token: string | undefined,
   subredditName: string,
-  dashboardRepository: DashboardRepository,
-  rawUserKey: string | null,
-  username: string | null
+  dashboardRepository: DashboardRepository
 ): Promise<UserViewContext | null> => {
-  if (token) {
-    return getAuthorizedViewContext(token, subredditName, dashboardRepository);
-  }
-
-  return getUserLookupContext(subredditName, rawUserKey, username);
+  return getAuthorizedViewContext(token, subredditName, dashboardRepository);
 };
 
 const serializeEntry = (
@@ -299,9 +293,7 @@ api.get('/history', async (c) => {
   const context = await getAuthorizedUserViewContext(
     c.req.query('contextToken'),
     apiAccess.subredditName,
-    dashboardRepository,
-    trimString(c.req.query('userKey')),
-    trimString(c.req.query('username'))
+    dashboardRepository
   );
   if (!context) {
     logWarn('api.history.invalid_context', {
@@ -362,9 +354,7 @@ api.get('/profile', async (c) => {
   const context = await getAuthorizedUserViewContext(
     c.req.query('contextToken'),
     apiAccess.subredditName,
-    dashboardRepository,
-    trimString(c.req.query('userKey')),
-    trimString(c.req.query('username'))
+    dashboardRepository
   );
   if (!context) {
     logWarn('api.profile.invalid_context', {

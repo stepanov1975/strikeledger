@@ -250,7 +250,7 @@ export class LedgerRepository {
         }
 
         const retryEntry = await this.getRetryEntry(request);
-        if (retryEntry) {
+        if (retryEntry && retryEntry.status !== 'reversed') {
           return {
             status: 'idempotent',
             entry: retryEntry,

@@ -292,6 +292,54 @@ describe('LedgerRepository', () => {
     ).resolves.toMatchObject({ status: 'created', activeTotal: 1 });
   });
 
+  it('allows the same moderator to reissue immediately after reversal', async () => {
+    const { repo } = createRepo();
+    const firstEntry = buildEntry({ originalPoints: 3 });
+    await repo.saveFormNonce(buildNonce());
+    await repo.createLedgerEntry({
+      entry: firstEntry,
+      formNonce: firstEntry.formNonce,
+      submittedAtMs: nowMs,
+      nowMs,
+      config: DEFAULT_CONFIG,
+    });
+
+    await repo.reverseLedgerEntry({
+      entryId: firstEntry.entryId,
+      reversedAtMs: nowMs + 1000,
+      reversedBy: 'mod-a',
+      reversalReason: 'issued in error',
+      config: DEFAULT_CONFIG,
+      nowMs,
+    });
+
+    const secondEntry = buildEntry({
+      entryId: 'entry-2',
+      formNonce: 'nonce-2',
+      createdAtMs: nowMs + 60_000,
+    });
+    await repo.saveFormNonce(
+      buildNonce({
+        nonce: 'nonce-2',
+        createdAtMs: nowMs + 60_000,
+      })
+    );
+
+    await expect(
+      repo.createLedgerEntry({
+        entry: secondEntry,
+        formNonce: secondEntry.formNonce,
+        submittedAtMs: nowMs + 60_000,
+        nowMs: nowMs + 60_000,
+        config: DEFAULT_CONFIG,
+      })
+    ).resolves.toMatchObject({
+      status: 'created',
+      entry: expect.objectContaining({ entryId: 'entry-2' }),
+      activeTotal: 1,
+    });
+  });
+
   it('blocks expired and mismatched nonces before ledger creation', async () => {
     const { repo, store } = createRepo();
     const entry = buildEntry();

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CONFIG } from './config';
+import { DEFAULT_CONFIG, DEFAULT_RULE } from './config';
 import { ConfigRepository, canonicalJson, sha256Hex } from './configRepository';
 import { FakeRedisStore } from './redisStore';
 
@@ -101,6 +101,60 @@ describe('ConfigRepository', () => {
       status: 'invalid',
       issues: expect.arrayContaining([
         { path: 'rules', message: 'Rules must be an array.' },
+      ]),
+    });
+  });
+
+  it('rejects unsupported imported schema versions', async () => {
+    const { repo } = createRepo();
+
+    await expect(
+      repo.saveConfig({
+        expectedRevision: 1,
+        nextConfig: {
+          ...DEFAULT_CONFIG,
+          schemaVersion: 2 as typeof DEFAULT_CONFIG.schemaVersion,
+        },
+        moderatorUsername: 'mod-a',
+        timestampMs: nowMs,
+      })
+    ).resolves.toMatchObject({
+      status: 'invalid',
+      issues: expect.arrayContaining([
+        {
+          path: 'schemaVersion',
+          message: 'Unsupported config schema version 2.',
+        },
+      ]),
+    });
+  });
+
+  it('rejects changes that remove existing rule IDs', async () => {
+    const { repo } = createRepo();
+
+    await expect(
+      repo.saveConfig({
+        expectedRevision: 1,
+        nextConfig: {
+          ...DEFAULT_CONFIG,
+          rules: [
+            {
+              ...DEFAULT_RULE,
+              id: 'rule-renamed',
+            },
+          ],
+        },
+        moderatorUsername: 'mod-a',
+        timestampMs: nowMs,
+      })
+    ).resolves.toMatchObject({
+      status: 'invalid',
+      issues: expect.arrayContaining([
+        {
+          path: 'rules',
+          message:
+            'Existing rule ID "rule-general" cannot be removed or changed; disable it instead.',
+        },
       ]),
     });
   });

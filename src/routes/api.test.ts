@@ -301,6 +301,33 @@ describe('api routes', () => {
     expect(redis.values.get('user:id:t2_user:active_total')).toBe('3');
   });
 
+  it('checks the username fallback ledger for ID-key history contexts', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await seedViewContext(redis);
+    await seedLedger(
+      redis,
+      buildEntry({
+        userKey: 'name:target-user',
+        username: 'TargetUser',
+      })
+    );
+
+    const response = await api.request('/history?contextToken=token-1');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      activeTotal: 3,
+      entries: [
+        {
+          entryId: 'entry-1',
+          activePoints: 3,
+        },
+      ],
+    });
+    expect(redis.values.get('user:id:t2_user:active_total')).toBe('3');
+  });
+
   it('reads history from a username lookup', async () => {
     const { api, redis } = await loadApi(['posts']);
     const entry = buildEntry({
@@ -345,6 +372,34 @@ describe('api routes', () => {
         removalsByRule: {
           'Community rule violation': 1,
         },
+      },
+      recentEntries: [
+        {
+          entryId: 'entry-1',
+        },
+      ],
+    });
+  });
+
+  it('checks the username fallback ledger for ID-key profile contexts', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await seedViewContext(redis);
+    await seedLedger(
+      redis,
+      buildEntry({
+        userKey: 'name:target-user',
+        username: 'TargetUser',
+      })
+    );
+
+    const response = await api.request('/profile?contextToken=token-1');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      summary: {
+        activeTotal: 3,
+        lifetimeOriginalPoints: 3,
       },
       recentEntries: [
         {

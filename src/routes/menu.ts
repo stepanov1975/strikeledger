@@ -281,6 +281,53 @@ const buildNonceRecord = (
   };
 };
 
+const migrateAuthorLedgerIfPossible = async (input: {
+  authorId?: string;
+  authorName?: string;
+  subredditName: string;
+  moderatorUsername: string;
+  targetId: string;
+  targetKind: TargetKind;
+  source: string;
+}): Promise<void> => {
+  if (!input.authorId || !input.authorName) {
+    return;
+  }
+
+  try {
+    const result = await getRepository().migrateUsernameLedgerToUserId({
+      username: input.authorName,
+      userId: input.authorId,
+    });
+    if (result.migratedCount === 0) {
+      return;
+    }
+
+    logInfo('ledger.identity_migrated', {
+      subredditName: input.subredditName,
+      moderatorUsername: input.moderatorUsername,
+      targetId: input.targetId,
+      targetKind: input.targetKind,
+      source: input.source,
+      fromUserKey: result.fromUserKey,
+      toUserKey: result.toUserKey,
+      migratedCount: result.migratedCount,
+    });
+  } catch (error) {
+    logError(
+      'ledger.identity_migration_failed',
+      {
+        subredditName: input.subredditName,
+        moderatorUsername: input.moderatorUsername,
+        targetId: input.targetId,
+        targetKind: input.targetKind,
+        source: input.source,
+      },
+      error
+    );
+  }
+};
+
 const openEnforcementForm = async (
   request: MenuItemRequest,
   action: StrikeAction,
@@ -325,6 +372,19 @@ const openEnforcementForm = async (
     return { showToast: 'StrikeLedger cannot warn content without an author.' };
   }
 
+  await migrateAuthorLedgerIfPossible({
+    subredditName: nonceRecord.subredditName,
+    moderatorUsername: access.username,
+    targetId: target.id,
+    targetKind,
+    source: `enforcement:${action}`,
+    ...(nonceRecord.authorId !== undefined
+      ? { authorId: nonceRecord.authorId }
+      : {}),
+    ...(nonceRecord.authorName !== undefined
+      ? { authorName: nonceRecord.authorName }
+      : {}),
+  });
   await getRepository().saveFormNonce(nonceRecord);
   logInfo('menu.enforcement.form_opened', {
     action,
@@ -407,6 +467,19 @@ const openTargetDashboardView = async (
     return { showToast: 'StrikeLedger cannot open a view without an author.' };
   }
 
+  await migrateAuthorLedgerIfPossible({
+    subredditName: viewContext.subredditName,
+    moderatorUsername: access.username,
+    targetId: target.id,
+    targetKind,
+    source: `dashboard:${view}`,
+    ...(viewContext.authorId !== undefined
+      ? { authorId: viewContext.authorId }
+      : {}),
+    ...(viewContext.authorName !== undefined
+      ? { authorName: viewContext.authorName }
+      : {}),
+  });
   await getDashboardRepository().saveViewContext(viewContext);
   return saveBootstrapAndNavigate(
     resolution.post,

@@ -104,6 +104,17 @@ const buildNonce = (overrides: Partial<FormNonceRecord> = {}): FormNonceRecord =
   ...(overrides.entryId !== undefined ? { entryId: overrides.entryId } : {}),
 });
 
+const seedEntry = async (
+  store: FakeRedisStore,
+  entry: LedgerEntry
+): Promise<void> => {
+  await store.set(`ledger_entry:${entry.entryId}`, JSON.stringify(entry));
+  await store.zAdd(`user:${entry.userKey}:ledger`, {
+    member: entry.entryId,
+    score: entry.createdAtMs,
+  });
+};
+
 describe('LedgerRepository', () => {
   it('creates a pending ledger entry, consumes nonce, indexes, and caches total', async () => {
     const { repo, store } = createRepo();
@@ -390,6 +401,77 @@ describe('LedgerRepository', () => {
 
     await expect(repo.getUserLedgerPage('id:t2_user', 1, 1)).resolves.toEqual([
       expect.objectContaining({ entryId: 'entry-2' }),
+    ]);
+  });
+
+  it('reads and recalculates across primary and fallback user keys', async () => {
+    const { repo, store } = createRepo();
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'entry-fallback',
+        userKey: 'name:someuser',
+        username: 'SomeUser',
+        originalPoints: 3,
+        createdAtMs: nowMs,
+      })
+    );
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'entry-id',
+        userKey: 'id:t2_user',
+        userId: 't2_user',
+        originalPoints: 1,
+        createdAtMs: nowMs + 1,
+      })
+    );
+
+    await expect(
+      repo.getUserLedgerPageForKeys(['id:t2_user', 'name:someuser'], 0, 2)
+    ).resolves.toEqual([
+      expect.objectContaining({ entryId: 'entry-id' }),
+      expect.objectContaining({ entryId: 'entry-fallback' }),
+    ]);
+    await expect(
+      repo.recalculateActiveTotalForKeys(
+        ['id:t2_user', 'name:someuser'],
+        'id:t2_user',
+        DEFAULT_CONFIG,
+        nowMs
+      )
+    ).resolves.toBe(4);
+    await expect(repo.getCachedActiveTotal('id:t2_user')).resolves.toBe(4);
+  });
+
+  it('migrates username fallback entries into the user ID ledger', async () => {
+    const { repo, store } = createRepo();
+    const fallbackEntry = buildEntry({
+      entryId: 'entry-fallback',
+      userKey: 'name:someuser',
+      username: 'SomeUser',
+    });
+    await seedEntry(store, fallbackEntry);
+
+    await expect(
+      repo.migrateUsernameLedgerToUserId({
+        username: 'u/SomeUser',
+        userId: 't2_user',
+      })
+    ).resolves.toEqual({
+      fromUserKey: 'name:someuser',
+      toUserKey: 'id:t2_user',
+      migratedCount: 1,
+    });
+    await expect(repo.getUserLedger('name:someuser')).resolves.toEqual([]);
+    await expect(repo.getUserLedger('id:t2_user')).resolves.toEqual([
+      expect.objectContaining({
+        entryId: 'entry-fallback',
+        username: 'SomeUser',
+        userKey: 'id:t2_user',
+        userId: 't2_user',
+        migratedFromUsername: 'someuser',
+      }),
     ]);
   });
 

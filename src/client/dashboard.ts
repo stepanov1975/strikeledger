@@ -835,7 +835,7 @@ const ruleImportModeSelect = (): HTMLSelectElement => {
   const select = create('select', 'field-control') as HTMLSelectElement;
   const options: Array<[RuleImportMode, string]> = [
     ['add-missing', 'Add missing rules'],
-    ['replace', 'Replace current rules'],
+    ['replace', 'Replace active rules'],
     ['sync-labels-order', 'Sync labels and order'],
   ];
 
@@ -878,32 +878,71 @@ const getRuleTextarea = (
   return textarea;
 };
 
-const updateRuleRemoveButtons = (rulesList: HTMLElement) => {
-  const rows = rulesList.querySelectorAll<HTMLElement>('[data-rule-row]');
-  for (const button of rulesList.querySelectorAll<HTMLButtonElement>(
-    '.rule-remove'
-  )) {
-    button.disabled = rows.length <= 1;
-  }
+type RuleEditorOptions = {
+  isExisting: boolean;
+};
+
+const updateRuleControls = (rulesList: HTMLElement) => {
+  const rows = Array.from(
+    rulesList.querySelectorAll<HTMLElement>('[data-rule-row]')
+  );
+  rows.forEach((row, index) => {
+    row.querySelector<HTMLButtonElement>('.rule-move-up')?.toggleAttribute(
+      'disabled',
+      index === 0
+    );
+    row.querySelector<HTMLButtonElement>('.rule-move-down')?.toggleAttribute(
+      'disabled',
+      index === rows.length - 1
+    );
+    row.querySelector<HTMLButtonElement>('.rule-remove')?.toggleAttribute(
+      'disabled',
+      rows.length <= 1
+    );
+  });
 };
 
 const createRuleEditor = (
   rule: RuleConfig,
   config: StrikeLedgerConfig,
-  rulesList: HTMLElement
+  rulesList: HTMLElement,
+  options: RuleEditorOptions
 ): HTMLElement => {
   const item = create('article', 'rule-editor');
   item.dataset.ruleRow = 'true';
 
   const header = create('div', 'rule-editor-header');
   header.append(create('h4', 'rule-title', rule.label || 'New rule'));
-  const remove = create('button', 'secondary-button rule-remove', 'Remove');
-  remove.type = 'button';
-  remove.addEventListener('click', () => {
-    item.remove();
-    updateRuleRemoveButtons(rulesList);
+  const ruleActions = create('div', 'rule-actions');
+  const moveUp = create('button', 'secondary-button rule-move-up', 'Up');
+  moveUp.type = 'button';
+  moveUp.addEventListener('click', () => {
+    const previous = item.previousElementSibling;
+    if (previous) {
+      rulesList.insertBefore(item, previous);
+      updateRuleControls(rulesList);
+    }
   });
-  header.append(remove);
+  const moveDown = create('button', 'secondary-button rule-move-down', 'Down');
+  moveDown.type = 'button';
+  moveDown.addEventListener('click', () => {
+    const next = item.nextElementSibling;
+    if (next) {
+      rulesList.insertBefore(next, item);
+      updateRuleControls(rulesList);
+    }
+  });
+  ruleActions.append(moveUp, moveDown);
+  if (!options.isExisting) {
+    const remove = create('button', 'secondary-button rule-remove', 'Remove');
+    remove.type = 'button';
+    remove.addEventListener('click', () => {
+      item.remove();
+      updateRuleControls(rulesList);
+    });
+    ruleActions.append(remove);
+  }
+  header.append(ruleActions);
 
   const fields = create('div', 'settings-grid');
   const id = textField('Rule ID', '', rule.id, {
@@ -912,6 +951,9 @@ const createRuleEditor = (
   });
   const idInput = id.querySelector('input');
   idInput?.setAttribute('data-rule-field', 'id');
+  if (idInput && options.isExisting) {
+    idInput.disabled = true;
+  }
 
   const label = textField('Label', '', rule.label, {
     required: true,
@@ -1051,17 +1093,33 @@ const mergeImportedRules = (
   mode: RuleImportMode
 ): RuleConfig[] => {
   const importedConfigs = importedRules.map(importedRuleToConfig);
-
-  if (mode === 'replace') {
-    return importedConfigs;
-  }
-
   const currentById = new Map(
     currentRules.map((rule) => [normalizeRuleMatchValue(rule.id), rule])
   );
   const currentByLabel = new Map(
     currentRules.map((rule) => [normalizeRuleMatchValue(rule.label), rule])
   );
+
+  if (mode === 'replace') {
+    const usedIds = buildUsedRuleIds(currentRules);
+    const matched = new Set<RuleConfig>();
+    const replacementRules = importedConfigs.map((importedRule) => {
+      const existing =
+        currentById.get(normalizeRuleMatchValue(importedRule.id)) ??
+        currentByLabel.get(normalizeRuleMatchValue(importedRule.label));
+      if (!existing) {
+        return withAvailableRuleId(importedRule, usedIds);
+      }
+
+      matched.add(existing);
+      return { ...existing, label: importedRule.label, enabled: true };
+    });
+    const disabledCurrentRules = currentRules
+      .filter((rule) => !matched.has(rule))
+      .map((rule) => ({ ...rule, enabled: false }));
+
+    return [...replacementRules, ...disabledCurrentRules];
+  }
 
   if (mode === 'sync-labels-order') {
     const matched = new Set<RuleConfig>();
@@ -1097,9 +1155,13 @@ const replaceRuleEditors = (
   config: StrikeLedgerConfig
 ) => {
   rulesList.replaceChildren(
-    ...rules.map((rule) => createRuleEditor(rule, config, rulesList))
+    ...rules.map((rule) =>
+      createRuleEditor(rule, config, rulesList, {
+        isExisting: config.rules.some((existing) => existing.id === rule.id),
+      })
+    )
   );
-  updateRuleRemoveButtons(rulesList);
+  updateRuleControls(rulesList);
 };
 
 const buildRuleImportSection = (
@@ -1177,6 +1239,55 @@ const buildRuleImportSection = (
     importButton,
     preview
   );
+};
+
+const buildConfigJsonSection = (
+  revision: number,
+  config: StrikeLedgerConfig,
+  getCurrentConfig: () => StrikeLedgerConfig
+): HTMLElement => {
+  const status = create('div', 'rule-import-preview');
+  const label = create('label', 'field-label', 'Config JSON');
+  const textarea = create(
+    'textarea',
+    'field-control config-json-editor'
+  ) as HTMLTextAreaElement;
+  textarea.rows = 12;
+  textarea.maxLength = 100000;
+  textarea.value = JSON.stringify(config, null, 2);
+  label.append(textarea);
+
+  const refresh = create('button', 'secondary-button', 'Refresh export');
+  refresh.type = 'button';
+  refresh.addEventListener('click', () => {
+    textarea.value = JSON.stringify(getCurrentConfig(), null, 2);
+    status.replaceChildren(create('div', 'notice', 'Config JSON refreshed.'));
+  });
+
+  const importButton = create('button', 'secondary-button', 'Save imported JSON');
+  importButton.type = 'button';
+  importButton.addEventListener('click', () => {
+    try {
+      const parsed = JSON.parse(textarea.value) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Config JSON must be an object.');
+      }
+
+      void saveSettings(revision, parsed as StrikeLedgerConfig);
+    } catch (error) {
+      status.replaceChildren(
+        create(
+          'div',
+          'error',
+          error instanceof Error ? error.message : 'Invalid config JSON.'
+        )
+      );
+    }
+  });
+
+  const actions = create('div', 'modal-actions');
+  actions.append(refresh, importButton);
+  return settingsSection('Config JSON', null, label, actions, status);
 };
 
 const collectSettingsConfig = (
@@ -1364,24 +1475,31 @@ const buildSettingsForm = (response: SettingsResponse): HTMLFormElement => {
 
   const rulesList = create('div', 'rule-editor-list');
   for (const rule of config.rules) {
-    rulesList.append(createRuleEditor(rule, config, rulesList));
+    rulesList.append(
+      createRuleEditor(rule, config, rulesList, { isExisting: true })
+    );
   }
-  updateRuleRemoveButtons(rulesList);
+  updateRuleControls(rulesList);
 
   const addRule = create('button', 'secondary-button', 'Add rule');
   addRule.type = 'button';
   addRule.addEventListener('click', () => {
-    const nextIndex =
-      rulesList.querySelectorAll<HTMLElement>('[data-rule-row]').length + 1;
+    const usedIds = buildUsedRuleIds(getCurrentRuleEditors(rulesList));
     rulesList.append(
       createRuleEditor(
-        { id: `rule-${nextIndex}`, label: '', enabled: true },
+        { id: nextAvailableRuleId(usedIds), label: '', enabled: true },
         config,
-        rulesList
+        rulesList,
+        { isExisting: false }
       )
     );
-    updateRuleRemoveButtons(rulesList);
+    updateRuleControls(rulesList);
   });
+  const configJsonSection = buildConfigJsonSection(
+    config.revision,
+    config,
+    () => collectSettingsConfig(form, config)
+  );
 
   const actions = create('div', 'modal-actions');
   const save = create('button', 'load-more', 'Save settings');
@@ -1402,6 +1520,7 @@ const buildSettingsForm = (response: SettingsResponse): HTMLFormElement => {
       rulesList,
       addRule
     ),
+    configJsonSection,
     actions
   );
 

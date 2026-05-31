@@ -12,7 +12,7 @@ import { getUserKey } from '../core/identity';
 import { LedgerRepository } from '../core/ledgerRepository';
 import { logInfo, logWarn, type LogDetails } from '../core/logging';
 import { getCachedOrLivePostScoreSummary } from '../core/postScore';
-import { calculateActivePoints, recalculateActiveTotal } from '../core/scoring';
+import { calculateActivePoints } from '../core/scoring';
 import { executeReversalSideEffects } from '../core/sideEffects';
 import { getModeratorAccess, type ModeratorAccess } from './permissions';
 
@@ -166,6 +166,18 @@ const getUserLookupContext = (
   };
 };
 
+const getContextUserKeys = (context: UserViewContext): string[] => {
+  const userKeys = [context.userKey];
+  if (context.userKey.startsWith('id:') && context.authorName) {
+    const fallbackUserKey = getUserKey({ username: context.authorName });
+    if (fallbackUserKey && !userKeys.includes(fallbackUserKey)) {
+      userKeys.push(fallbackUserKey);
+    }
+  }
+
+  return userKeys;
+};
+
 const getAuthorizedViewContext = async (
   token: string | undefined,
   subredditName: string,
@@ -305,12 +317,14 @@ api.get('/history', async (c) => {
 
   const nowMs = Date.now();
   const offset = parseOffset(c.req.query('offset'));
-  const entries = await ledgerRepository.getUserLedgerPage(
-    context.userKey,
+  const userKeys = getContextUserKeys(context);
+  const entries = await ledgerRepository.getUserLedgerPageForKeys(
+    userKeys,
     offset,
     HISTORY_PAGE_SIZE
   );
-  const activeTotal = await ledgerRepository.recalculateActiveTotal(
+  const activeTotal = await ledgerRepository.recalculateActiveTotalForKeys(
+    userKeys,
     context.userKey,
     config,
     nowMs
@@ -319,6 +333,7 @@ api.get('/history', async (c) => {
     subredditName: apiAccess.subredditName,
     moderatorUsername: apiAccess.access.username,
     userKey: context.userKey,
+    fallbackUserKeyCount: userKeys.length - 1,
     targetId: context.targetId,
     targetKind: context.targetKind,
     offset,
@@ -364,8 +379,14 @@ api.get('/profile', async (c) => {
   }
 
   const nowMs = Date.now();
-  const entries = await ledgerRepository.getUserLedger(context.userKey);
-  const activeTotal = recalculateActiveTotal(entries, config, nowMs);
+  const userKeys = getContextUserKeys(context);
+  const entries = await ledgerRepository.getUserLedgerForKeys(userKeys);
+  const activeTotal = await ledgerRepository.recalculateActiveTotalForKeys(
+    userKeys,
+    context.userKey,
+    config,
+    nowMs
+  );
   const postScoreSummary = await getCachedOrLivePostScoreSummary({
     store,
     client: reddit,
@@ -398,6 +419,7 @@ api.get('/profile', async (c) => {
     subredditName: apiAccess.subredditName,
     moderatorUsername: apiAccess.access.username,
     userKey: context.userKey,
+    fallbackUserKeyCount: userKeys.length - 1,
     targetId: context.targetId,
     targetKind: context.targetKind,
     entryCount: entries.length,
@@ -595,7 +617,11 @@ api.post('/recalculate-user-total', async (c) => {
   );
   const rawUserKey = trimString(payload.userKey);
   const username = trimString(payload.username);
-  const userKey = context?.userKey ?? parseUserKeyInput(rawUserKey, username);
+  const lookupContext =
+    context ??
+    getUserLookupContext(apiAccess.subredditName, rawUserKey, username);
+  const userKey = lookupContext?.userKey;
+  const userKeys = lookupContext ? getContextUserKeys(lookupContext) : [];
 
   if (!userKey) {
     logWarn('api.recalculate.missing_user', {
@@ -608,7 +634,8 @@ api.post('/recalculate-user-total', async (c) => {
     return c.json({ error: 'missing_user' }, 400);
   }
 
-  const activeTotal = await ledgerRepository.recalculateActiveTotal(
+  const activeTotal = await ledgerRepository.recalculateActiveTotalForKeys(
+    userKeys,
     userKey,
     await configRepository.getConfig(),
     Date.now()

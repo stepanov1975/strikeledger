@@ -359,6 +359,13 @@ tr:last-child td {
   gap: 12px;
 }
 
+.rule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .field-label,
 .checkbox-label {
   display: grid;
@@ -385,6 +392,12 @@ tr:last-child td {
 
 .template-editor {
   min-height: 120px;
+}
+
+.config-json-editor {
+  min-height: 280px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
 }
 
 .modal-actions {

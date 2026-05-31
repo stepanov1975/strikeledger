@@ -5,6 +5,7 @@ import {
   getDuplicateClaimKey,
   getRetryClaimKey,
 } from './idempotency';
+import { getUserKey, normalizeUsername } from './identity';
 import { logError } from './logging';
 import type { RedisStore } from './redisStore';
 import { recalculateActiveTotal as calculateActiveTotalFromEntries } from './scoring';
@@ -81,6 +82,12 @@ export type ReverseLedgerEntryResult =
     }
   | { status: 'not_found' };
 
+export type IdentityMigrationResult = {
+  fromUserKey: string;
+  toUserKey: string;
+  migratedCount: number;
+};
+
 type ReverseLedgerEntryTransactionResult =
   | {
       status: 'reversed';
@@ -118,6 +125,20 @@ const targetEntriesKey = (targetId: string): string =>
 const activeTotalKey = (userKey: string): string =>
   `user:${userKey}:active_total`;
 
+const uniqueUserKeys = (userKeys: string[]): string[] =>
+  Array.from(new Set(userKeys.map((userKey) => userKey.trim()).filter(Boolean)));
+
+const compareEntriesNewestFirst = (
+  left: LedgerEntry,
+  right: LedgerEntry
+): number => {
+  if (left.createdAtMs !== right.createdAtMs) {
+    return right.createdAtMs - left.createdAtMs;
+  }
+
+  return right.entryId.localeCompare(left.entryId);
+};
+
 export class LedgerRepository {
   constructor(private readonly store: RedisStore) {}
 
@@ -145,6 +166,10 @@ export class LedgerRepository {
     return this.getUserLedgerPage(userKey, 0, -1);
   }
 
+  async getUserLedgerForKeys(userKeys: string[]): Promise<LedgerEntry[]> {
+    return this.getUserLedgerPageForKeys(userKeys, 0, -1);
+  }
+
   async getUserLedgerPage(
     userKey: string,
     offset: number,
@@ -168,6 +193,29 @@ export class LedgerRepository {
     );
 
     return entries.filter((entry): entry is LedgerEntry => entry !== null);
+  }
+
+  async getUserLedgerPageForKeys(
+    userKeys: string[],
+    offset: number,
+    limit: number
+  ): Promise<LedgerEntry[]> {
+    if (limit === 0) {
+      return [];
+    }
+
+    const uniqueKeys = uniqueUserKeys(userKeys);
+    const entriesById = new Map<string, LedgerEntry>();
+    for (const userKey of uniqueKeys) {
+      for (const entry of await this.getUserLedger(userKey)) {
+        entriesById.set(entry.entryId, entry);
+      }
+    }
+
+    const entries = Array.from(entriesById.values()).sort(
+      compareEntriesNewestFirst
+    );
+    return limit < 0 ? entries.slice(offset) : entries.slice(offset, offset + limit);
   }
 
   async getCachedActiveTotal(userKey: string): Promise<number | null> {
@@ -302,6 +350,76 @@ export class LedgerRepository {
     nowMs: number
   ): Promise<number> {
     const entries = await this.getUserLedger(userKey);
+    return this.cacheActiveTotal(userKey, entries, config, nowMs);
+  }
+
+  async recalculateActiveTotalForKeys(
+    userKeys: string[],
+    cacheUserKey: string,
+    config: StrikeLedgerConfig,
+    nowMs: number
+  ): Promise<number> {
+    const entries = await this.getUserLedgerForKeys(userKeys);
+    return this.cacheActiveTotal(cacheUserKey, entries, config, nowMs);
+  }
+
+  async migrateUsernameLedgerToUserId(input: {
+    username: string;
+    userId: string;
+  }): Promise<IdentityMigrationResult> {
+    const fromUserKey = getUserKey({ username: input.username });
+    const toUserKey = getUserKey({ userId: input.userId });
+    if (!fromUserKey || !toUserKey || fromUserKey === toUserKey) {
+      return {
+        fromUserKey: fromUserKey ?? '',
+        toUserKey: toUserKey ?? '',
+        migratedCount: 0,
+      };
+    }
+
+    const normalizedUsername = normalizeUsername(input.username);
+    return this.store.runTransaction(
+      [
+        userLedgerKey(fromUserKey),
+        userLedgerKey(toUserKey),
+        activeTotalKey(fromUserKey),
+      ],
+      async (): Promise<IdentityMigrationResult> => {
+        const entries = await this.getUserLedger(fromUserKey);
+        for (const entry of entries) {
+          const migratedEntry: LedgerEntry = {
+            ...entry,
+            userKey: toUserKey,
+            userId: input.userId.trim(),
+            migratedFromUsername:
+              entry.migratedFromUsername ?? normalizedUsername,
+          };
+          await this.store.set(
+            ledgerEntryKey(migratedEntry.entryId),
+            JSON.stringify(migratedEntry)
+          );
+          await this.store.zAdd(userLedgerKey(toUserKey), {
+            member: migratedEntry.entryId,
+            score: migratedEntry.createdAtMs,
+          });
+        }
+
+        await this.store.del(userLedgerKey(fromUserKey), activeTotalKey(fromUserKey));
+        return {
+          fromUserKey,
+          toUserKey,
+          migratedCount: entries.length,
+        };
+      }
+    );
+  }
+
+  private async cacheActiveTotal(
+    userKey: string,
+    entries: LedgerEntry[],
+    config: StrikeLedgerConfig,
+    nowMs: number
+  ): Promise<number> {
     const activeTotal = calculateActiveTotalFromEntries(entries, config, nowMs);
     try {
       await this.store.set(activeTotalKey(userKey), String(activeTotal));

@@ -8,6 +8,8 @@ import { DevvitRedisStore } from '../core/devvitRedisStore';
 import {
   ACTION_LABELS,
   type LedgerEntry,
+  type PublicCommentOptionStatus,
+  type SideEffects,
   type TargetKind,
 } from '../core/domain';
 import {
@@ -135,14 +137,64 @@ const buildTargetSnapshot = (
   };
 };
 
-const formatCreatedToast = (
+const SIDE_EFFECT_LABELS: Record<
+  Exclude<keyof SideEffects, 'publicCommentOptions'>,
+  string
+> = {
+  publicComment: 'public comment',
+  remove: 'remove target',
+  markNsfw: 'mark NSFW',
+  modNote: 'native mod note',
+  userNotice: 'private user notice',
+  reversalModNote: 'reversal native mod note',
+  reversalUserNotice: 'reversal private user notice',
+};
+
+const PUBLIC_COMMENT_OPTION_LABELS: Record<
+  keyof PublicCommentOptionStatus,
+  string
+> = {
+  distinguish: 'distinguish warning comment',
+  sticky: 'sticky warning comment',
+  lock: 'lock warning comment',
+};
+
+export const failedSideEffectLabels = (sideEffects: SideEffects): string[] => {
+  const labels: string[] = [];
+  for (const [name, label] of Object.entries(SIDE_EFFECT_LABELS)) {
+    if (sideEffects[name as keyof typeof SIDE_EFFECT_LABELS] === 'failed') {
+      labels.push(label);
+    }
+  }
+
+  for (const [name, status] of Object.entries(
+    sideEffects.publicCommentOptions ?? {}
+  )) {
+    if (status === 'failed') {
+      labels.push(
+        PUBLIC_COMMENT_OPTION_LABELS[
+          name as keyof PublicCommentOptionStatus
+        ]
+      );
+    }
+  }
+
+  return labels;
+};
+
+export const formatCreatedToast = (
   entry: LedgerEntry,
   activeTotal: number,
   wasIdempotent = false
 ): string => {
   const prefix = wasIdempotent ? 'Strike already recorded' : 'Strike recorded';
   if (entry.status === 'partial') {
-    return `${prefix}, but one or more Reddit side effects failed. Active total: ${activeTotal}.`;
+    const failedLabels = failedSideEffectLabels(entry.sideEffects);
+    const detail =
+      failedLabels.length > 0
+        ? failedLabels.join(', ')
+        : 'unknown Reddit side effect';
+    return `${prefix}, but failed Reddit side effects: ${detail}. Active total: ${activeTotal}.`;
   }
 
   return `${prefix}: ${ACTION_LABELS[entry.action]} for ${entry.ruleLabel}. Active total: ${activeTotal}.`;

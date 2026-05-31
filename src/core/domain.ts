@@ -98,6 +98,7 @@ export type LedgerEntry = {
   reversedBy?: string;
   reversalReason?: string;
   reversalNote?: string;
+  migratedFromUsername?: string;
 };
 
 export const ACTION_LABELS: Record<StrikeAction, string> = {

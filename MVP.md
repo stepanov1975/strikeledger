@@ -566,6 +566,7 @@ ledger_entry:{entryId}
 user:{userKey}:active_total
 user:{userKey}:ledger
 target:{targetId}:entries
+user:{userKey}:post_score_summary
 user:{userKey}:post_rate
 digest:{yyyy-mm-dd}
 settings_audit:{timestamp}:{moderatorUsername}
@@ -577,7 +578,7 @@ duplicate:{targetId}:{action}:{ruleId}
 retry:{targetId}:{action}:{ruleId}:{moderatorUsername}:{bucket}
 ```
 
-`ledger_entry:{entryId}` stores the full JSON ledger entry. `user:{userKey}:ledger` is a sorted set where the score is `createdAtMs` and the member is `entryId`. `target:{targetId}:entries` is a sorted set for target lookups. `config` stores runtime configuration JSON. `user:{userKey}:active_total` is a rebuildable cache.
+`ledger_entry:{entryId}` stores the full JSON ledger entry. `user:{userKey}:ledger` is a sorted set where the score is `createdAtMs` and the member is `entryId`. `target:{targetId}:entries` is a sorted set for target lookups. `config` stores runtime configuration JSON. `user:{userKey}:active_total` and `user:{userKey}:post_score_summary` are rebuildable caches.
 
 Ledger creation must be atomic across the durable entry, nonce, duplicate claim, retry claim, and indexes. Use Redis `watch`/transaction semantics around:
 
@@ -693,6 +694,15 @@ Use these as reference, not as authority:
 - [manavrenjith/redlex-mod](https://github.com/manavrenjith/redlex-mod): closest product reference. It implements a Devvit strike ledger with post/comment menu launch, Hono routes, Redis storage, and select-value normalization. Reuse the native menu/form ergonomics and select normalization pattern. Do not reuse its trusted username form field, single JSON-array ledger storage, or deprecated private-message pattern.
 - [shiruken/user-scorer](https://github.com/shiruken/user-scorer): useful moderation scoring reference. It documents setup limits, delayed processing, settings, modmail reports, and the limitation that historical data only starts after install. Reuse the explicit limitation wording style and clear settings constraints.
 - [fsvreddit/bot-bouncer](https://github.com/fsvreddit/bot-bouncer): useful policy/workflow reference. It documents staged enforcement modes, exemptions, false-positive appeals, and visible limitations. Reuse the pattern of explaining safety defaults and appeal/reversal expectations; keep exemptions out of MVP because `Do not special-case moderator authors or approved submitters` is already an explicit MVP decision.
+- [FoxxMD/context-mod](https://github.com/FoxxMD/context-mod): useful user-history moderation reference. It checks author activity over timeframes, supports caching to control Reddit API usage, and can perform moderator actions such as remove, report, comment, and lock. Reuse the explicit caching and API-cost discipline for post-rate scoring extensions.
+
+### Post-Rate And Throttling References
+
+Use these as product references for the accepted Post Rate Ledger extension:
+
+- [ratelimit-bot](https://developers.reddit.com/apps/ratelimit-bot): published Devvit app that limits how often users can post or comment in a subreddit within a configured timeframe. Reuse the plain moderator-facing framing for limit, window, and reply-message variables.
+- [Flair Rate Limit Tool](https://developers.reddit.com/apps/flair-frequency): published Devvit app that enforces per-user, per-flair post limits and automatically removes posts that exceed rolling-window limits. Reuse the trigger-driven remove-after-submit model and explicit rolling-window wording.
+- [MQCC / queuezero](https://developers.reddit.com/apps/queuezero): published Devvit moderation dashboard that uses triggers for post/comment tracking, Redis-backed rate limiting, and cached user context enrichment. Reuse the trigger-based tracking pattern and the note that adding new triggers may require reinstalling the app for the platform to register them.
 
 ### Review Findings Incorporated
 

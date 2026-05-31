@@ -11,6 +11,7 @@ import {
 import { getUserKey } from '../core/identity';
 import { LedgerRepository } from '../core/ledgerRepository';
 import { logInfo, logWarn, type LogDetails } from '../core/logging';
+import { getCachedOrLivePostScoreSummary } from '../core/postScore';
 import { calculateActivePoints, recalculateActiveTotal } from '../core/scoring';
 import { executeReversalSideEffects } from '../core/sideEffects';
 import { getModeratorAccess, type ModeratorAccess } from './permissions';
@@ -18,13 +19,11 @@ import { getModeratorAccess, type ModeratorAccess } from './permissions';
 export const api = new Hono();
 
 const HISTORY_PAGE_SIZE = 25;
-const POST_SCORE_LOOKUP_LIMIT = 1000;
-const POST_SCORE_PAGE_SIZE = 100;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const getRepositories = () => {
   const store = new DevvitRedisStore(redis);
   return {
+    store,
     configRepository: new ConfigRepository(store),
     dashboardRepository: new DashboardRepository(store),
     ledgerRepository: new LedgerRepository(store),
@@ -53,12 +52,6 @@ type RedditRuleImport = {
   violationReason: string;
   priority: number;
   enabled: true;
-};
-
-type PostScoreSummary = {
-  averagePostScore: number | null;
-  postScorePostCount: number;
-  postScoreWindowDays: number;
 };
 
 const getApiAccess = async (route: string): Promise<ApiAccess | null> => {
@@ -150,61 +143,6 @@ const resolveProfileUsername = (
       ?.username;
 
   return username ? trimUsernamePrefix(username) : null;
-};
-
-const summarizeUserPostScores = async (
-  subredditName: string,
-  username: string | null,
-  windowDays: number,
-  nowMs: number
-): Promise<PostScoreSummary> => {
-  const emptySummary: PostScoreSummary = {
-    averagePostScore: null,
-    postScorePostCount: 0,
-    postScoreWindowDays: windowDays,
-  };
-  if (!username) {
-    return emptySummary;
-  }
-
-  const cutoffMs = nowMs - windowDays * MS_PER_DAY;
-  let totalScore = 0;
-  let postCount = 0;
-
-  try {
-    const posts = reddit.getPostsByUser({
-      username,
-      sort: 'new',
-      limit: POST_SCORE_LOOKUP_LIMIT,
-      pageSize: POST_SCORE_PAGE_SIZE,
-    });
-
-    for await (const post of posts) {
-      if (post.createdAt.getTime() < cutoffMs) {
-        break;
-      }
-
-      if (post.subredditName.toLowerCase() !== subredditName.toLowerCase()) {
-        continue;
-      }
-
-      totalScore += post.score;
-      postCount += 1;
-    }
-  } catch (error) {
-    logWarn('api.profile.post_score_lookup_failed', {
-      subredditName,
-      username,
-      message: error instanceof Error ? error.message : String(error),
-    });
-    return emptySummary;
-  }
-
-  return {
-    averagePostScore: postCount > 0 ? totalScore / postCount : null,
-    postScorePostCount: postCount,
-    postScoreWindowDays: windowDays,
-  };
 };
 
 const getUserLookupContext = (
@@ -403,7 +341,7 @@ api.get('/profile', async (c) => {
     return c.json({ error: 'moderator_required' }, 403);
   }
 
-  const { configRepository, dashboardRepository, ledgerRepository } =
+  const { store, configRepository, dashboardRepository, ledgerRepository } =
     getRepositories();
   const config = await configRepository.getConfig();
   const context = await getAuthorizedUserViewContext(
@@ -428,12 +366,21 @@ api.get('/profile', async (c) => {
   const nowMs = Date.now();
   const entries = await ledgerRepository.getUserLedger(context.userKey);
   const activeTotal = recalculateActiveTotal(entries, config, nowMs);
-  const postScoreSummary = await summarizeUserPostScores(
-    apiAccess.subredditName,
-    resolveProfileUsername(context, entries),
-    config.postScoreWindowDays,
-    nowMs
-  );
+  const postScoreSummary = await getCachedOrLivePostScoreSummary({
+    store,
+    client: reddit,
+    userKey: context.userKey,
+    username: resolveProfileUsername(context, entries),
+    subredditName: apiAccess.subredditName,
+    windowDays: config.postScoreWindowDays,
+    nowMs,
+    onLookupFailure: (error) =>
+      logWarn('api.profile.post_score_lookup_failed', {
+        subredditName: apiAccess.subredditName,
+        userKey: context.userKey,
+        message: error instanceof Error ? error.message : String(error),
+      }),
+  });
   const activeOriginalPoints = entries
     .filter((entry) => entry.status !== 'reversed')
     .reduce((total, entry) => total + entry.originalPoints, 0);

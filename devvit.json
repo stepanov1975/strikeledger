@@ -96,7 +96,8 @@
     "strikeledgerEnforcement": "/internal/form/enforcement-submit"
   },
   "triggers": {
-    "onAppInstall": "/internal/triggers/on-app-install"
+    "onAppInstall": "/internal/triggers/on-app-install",
+    "onPostSubmit": "/internal/triggers/on-post-submit"
   },
   "scripts": {
     "build": "vite build",

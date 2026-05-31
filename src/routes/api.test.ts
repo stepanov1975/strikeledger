@@ -383,6 +383,37 @@ describe('api routes', () => {
     });
   });
 
+  it('uses the cached post score summary for profile lookups', async () => {
+    const nowMs = Date.now();
+    const { api, reddit, redis } = await loadApi(['posts']);
+    await redis.set(
+      'user:name:target-user:post_score_summary',
+      JSON.stringify({
+        schemaVersion: 1,
+        subredditName: 'testsub',
+        username: 'target-user',
+        calculatedAtMs: nowMs,
+        expiresAtMs: nowMs + 60 * 60 * 1000,
+        summary: {
+          averagePostScore: 42,
+          postScorePostCount: 3,
+          postScoreWindowDays: 30,
+        },
+      })
+    );
+
+    const response = await api.request('/profile?username=target-user');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(reddit.getPostsByUser).not.toHaveBeenCalled();
+    expect(body.summary).toMatchObject({
+      averagePostScore: 42,
+      postScorePostCount: 3,
+      postScoreWindowDays: 30,
+    });
+  });
+
   it('reads profile summaries from a user key lookup', async () => {
     const { api, redis } = await loadApi(['posts']);
     const entry = buildEntry({

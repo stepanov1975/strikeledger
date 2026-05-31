@@ -1,5 +1,7 @@
 # StrikeLedger User Manual
 
+App version: `0.1.0`
+
 StrikeLedger helps moderators record rule violations in a durable warning ledger. It adds moderator menu actions for warnings, removal warnings, NSFW warnings, history, profile, and settings. The app records what happened, calculates active warning totals with decay, and keeps a reversible audit trail for future moderator review.
 
 StrikeLedger is for moderator use only. Public comments explain the rule violation but do not expose warning points or a user's active total. Private user notices and native moderator notes can include point totals when those options are enabled.
@@ -87,6 +89,8 @@ The Profile view shows ledger totals and subreddit-specific post activity for th
 `Avg post score, last 30 days` is calculated from retrievable Reddit posts by that user in the current subreddit. The timeframe is configurable in Settings with `Post score window days`; the default is 30 days. If no matching retrievable posts are found, the metric shows `n/a`.
 
 Reddit exposes post score, not exact upvote count, so this metric uses average post score as the available approximation.
+
+StrikeLedger caches the post score summary for a short period to avoid repeated Reddit lookups. The cache is refreshed when Profile needs a fresh value and after new post submissions are received by the app. If Reddit cannot return the user's post history, the profile remains usable and shows `n/a` for the metric.
 
 ## Templates
 
@@ -187,7 +191,7 @@ If a moderator can open the dashboard but cannot edit settings, the Settings vie
 
 ## Data Retention
 
-StrikeLedger stores ledger history in Devvit Redis for the app installation. Uninstalling or reinstalling the app may remove or orphan ledger history. Treat uninstall and reinstall actions as data-retention events.
+StrikeLedger stores ledger history, active-total caches, profile metric caches, and post submission counters in Devvit Redis for the app installation. Uninstalling or reinstalling the app may remove or orphan stored data. Treat uninstall and reinstall actions as data-retention events.
 
 ## Practical Moderation Notes
 

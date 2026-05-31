@@ -1,8 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
-import { EMPTY_SIDE_EFFECTS, SCHEMA_VERSION, type LedgerEntry } from '../core/domain';
+import {
+  EMPTY_SIDE_EFFECTS,
+  SCHEMA_VERSION,
+  type LedgerEntry,
+} from '../core/domain';
 
 type RedisZMember = {
   member: string;
+  score: number;
+};
+
+type PostScoreMock = {
+  subredditName: string;
+  createdAt: Date;
   score: number;
 };
 
@@ -95,7 +105,17 @@ const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => ({
 
 const loadApi = async (
   permissions: string[] | null,
-  options: { listedModerator?: boolean } = {}
+  options: {
+    listedModerator?: boolean;
+    redditRules?: Array<{
+      shortName: string;
+      description: string;
+      kind: string;
+      violationReason: string;
+      priority: number;
+    }>;
+    postsByUser?: PostScoreMock[];
+  } = {}
 ) => {
   vi.resetModules();
   const redis = new ApiRedisMock();
@@ -111,11 +131,11 @@ const loadApi = async (
     getCurrentUser: vi.fn(async () => user),
     getModerators: vi.fn(() => ({
       all: vi.fn(async () =>
-        options.listedModerator && user
-          ? [{ username: user.username }]
-          : []
+        options.listedModerator && user ? [{ username: user.username }] : []
       ),
     })),
+    getRules: vi.fn(async () => options.redditRules ?? []),
+    getPostsByUser: vi.fn(() => buildAsyncListing(options.postsByUser ?? [])),
   };
 
   vi.doMock('@devvit/web/server', () => ({ reddit, redis }));
@@ -147,6 +167,16 @@ const seedLedger = async (redis: ApiRedisMock, entry = buildEntry()) => {
     score: entry.createdAtMs,
   });
 };
+
+const buildAsyncListing = <T>(items: T[]) => ({
+  all: vi.fn(async () => items),
+  get: vi.fn(async (count: number) => items.slice(0, count)),
+  async *[Symbol.asyncIterator]() {
+    for (const item of items) {
+      yield item;
+    }
+  },
+});
 
 describe('api routes', () => {
   it('rejects non-moderators', async () => {
@@ -187,6 +217,69 @@ describe('api routes', () => {
     });
   });
 
+  it('imports current subreddit rules as a flat ordered preview', async () => {
+    const { api, reddit } = await loadApi(['all'], {
+      redditRules: [
+        {
+          shortName: 'Rule 2: Spam',
+          description: 'No spam.',
+          kind: 'all',
+          violationReason: 'Spam',
+          priority: 2,
+        },
+        {
+          shortName: 'Rule 1.1 - Personal attacks',
+          description: 'No attacks.',
+          kind: 'comment',
+          violationReason: 'Personal attacks',
+          priority: 1,
+        },
+      ],
+    });
+
+    const response = await api.request('/settings/reddit-rules');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(reddit.getRules).toHaveBeenCalledWith('testsub');
+    expect(body).toEqual({
+      subredditName: 'testsub',
+      rules: [
+        {
+          id: 'rule-1',
+          label: 'Rule 1 - Personal attacks',
+          redditShortName: 'Rule 1.1 - Personal attacks',
+          description: 'No attacks.',
+          kind: 'comment',
+          violationReason: 'Personal attacks',
+          priority: 1,
+          enabled: true,
+        },
+        {
+          id: 'rule-2',
+          label: 'Rule 2 - Spam',
+          redditShortName: 'Rule 2: Spam',
+          description: 'No spam.',
+          kind: 'all',
+          violationReason: 'Spam',
+          priority: 2,
+          enabled: true,
+        },
+      ],
+    });
+  });
+
+  it('requires all permission to import subreddit rules', async () => {
+    const { api } = await loadApi(['posts']);
+
+    const response = await api.request('/settings/reddit-rules');
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: 'all_permission_required',
+    });
+  });
+
   it('reads history from a server-side view context token', async () => {
     const { api, redis } = await loadApi(['posts']);
     await seedViewContext(redis);
@@ -206,6 +299,33 @@ describe('api routes', () => {
       ],
     });
     expect(redis.values.get('user:id:t2_user:active_total')).toBe('3');
+  });
+
+  it('reads history from a username lookup', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    const entry = buildEntry({
+      userKey: 'name:someuser',
+      username: 'SomeUser',
+    });
+    await seedLedger(redis, entry);
+
+    const response = await api.request('/history?username=u%2FSomeUser');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      context: {
+        subredditName: 'testsub',
+        userKey: 'name:someuser',
+        authorName: 'SomeUser',
+      },
+      activeTotal: 3,
+      entries: [
+        {
+          entryId: 'entry-1',
+        },
+      ],
+    });
   });
 
   it('reads profile summaries from a server-side view context token', async () => {
@@ -231,6 +351,59 @@ describe('api routes', () => {
           entryId: 'entry-1',
         },
       ],
+    });
+  });
+
+  it('calculates average post score for current subreddit posts in the profile window', async () => {
+    const daysAgo = (days: number): Date =>
+      new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const { api, reddit } = await loadApi(['posts'], {
+      postsByUser: [
+        { subredditName: 'testsub', createdAt: daysAgo(10), score: 10 },
+        { subredditName: 'othersub', createdAt: daysAgo(12), score: 999 },
+        { subredditName: 'TESTSUB', createdAt: daysAgo(29), score: 20 },
+        { subredditName: 'testsub', createdAt: daysAgo(31), score: 100 },
+      ],
+    });
+
+    const response = await api.request('/profile?username=target-user');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(reddit.getPostsByUser).toHaveBeenCalledWith({
+      username: 'target-user',
+      sort: 'new',
+      limit: 1000,
+      pageSize: 100,
+    });
+    expect(body.summary).toMatchObject({
+      averagePostScore: 15,
+      postScorePostCount: 2,
+      postScoreWindowDays: 30,
+    });
+  });
+
+  it('reads profile summaries from a user key lookup', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    const entry = buildEntry({
+      userKey: 'name:someuser',
+      username: 'SomeUser',
+    });
+    await seedLedger(redis, entry);
+
+    const response = await api.request('/profile?userKey=name%3Asomeuser');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      context: {
+        subredditName: 'testsub',
+        userKey: 'name:someuser',
+        authorName: 'someuser',
+      },
+      summary: {
+        activeTotal: 3,
+      },
     });
   });
 

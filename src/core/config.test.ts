@@ -56,11 +56,12 @@ describe('config validation', () => {
     });
   });
 
-  it('rejects invalid point and decay values', () => {
+  it('rejects invalid point, decay, and profile metric values', () => {
     const config = cloneConfig();
     config.actionPoints.warn_remove = 101;
     config.decayAmount = -1;
     config.decayIntervalDays = 0;
+    config.postScoreWindowDays = 0;
 
     expect(validateConfig(config)).toEqual(
       expect.arrayContaining([
@@ -75,6 +76,10 @@ describe('config validation', () => {
         {
           path: 'decayIntervalDays',
           message: 'Decay interval must be an integer from 1 to 3650 days.',
+        },
+        {
+          path: 'postScoreWindowDays',
+          message: 'Post score window must be an integer from 1 to 3650 days.',
         },
       ])
     );

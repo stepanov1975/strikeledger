@@ -1,4 +1,11 @@
 import './dashboard.css';
+import {
+  ACTION_LABELS,
+  STRIKE_ACTIONS,
+  type RuleConfig,
+  type StrikeLedgerConfig,
+  type StrikeAction,
+} from '../core/domain';
 
 type DashboardView = 'history' | 'profile' | 'settings';
 
@@ -10,10 +17,10 @@ type BootstrapResponse = {
 };
 
 type ViewContext = {
-  targetId: string;
-  targetKind: 'post' | 'comment';
   subredditName: string;
   userKey: string;
+  targetId?: string;
+  targetKind?: 'post' | 'comment';
   authorName?: string;
 };
 
@@ -47,6 +54,9 @@ type ProfileResponse = {
     lifetimeOriginalPoints: number;
     decayedPoints: number;
     reversedEntries: number;
+    averagePostScore: number | null;
+    postScorePostCount: number;
+    postScoreWindowDays: number;
     removalsByRule: Record<string, number>;
   };
   recentEntries: LedgerEntryRow[];
@@ -60,18 +70,7 @@ type ReverseResponse = {
 type SettingsResponse = {
   subredditName: string;
   canManage: boolean;
-  config: {
-    revision: number;
-    rules: Array<{ id: string; label: string; enabled: boolean }>;
-    actionPoints: Record<string, number>;
-    decayAmount: number;
-    decayIntervalDays: number;
-    userNoticesEnabled: boolean;
-    nativeModNotesEnabled: boolean;
-    reversalNativeModNotesEnabled: boolean;
-    distinguishAppComments: boolean;
-    lockAppComments: boolean;
-  };
+  config: StrikeLedgerConfig;
 };
 
 type SettingsSaveResponse =
@@ -85,6 +84,29 @@ type SettingsSaveResponse =
 type RecalculateResponse = {
   userKey: string;
   activeTotal: number;
+};
+
+type ImportedRedditRule = {
+  id: string;
+  label: string;
+  redditShortName: string;
+  description: string;
+  kind: string;
+  violationReason: string;
+  priority: number;
+  enabled: true;
+};
+
+type RedditRulesResponse = {
+  subredditName: string;
+  rules: ImportedRedditRule[];
+};
+
+type RuleImportMode = 'add-missing' | 'replace' | 'sync-labels-order';
+
+type UserLookup = {
+  userKey?: string;
+  username?: string;
 };
 
 const app = document.querySelector<HTMLDivElement>('#app');
@@ -101,6 +123,7 @@ let historyContext: ViewContext | null = null;
 let historyActiveTotal = 0;
 let historyNotice: string | null = null;
 let settingsNotice: string | null = null;
+let selectedUserLookup: UserLookup | null = null;
 
 const create = <K extends keyof HTMLElementTagNameMap>(
   tagName: K,
@@ -138,6 +161,36 @@ const formatDate = (value: number): string =>
 const formatTargetUser = (context: ViewContext): string =>
   context.authorName ? `u/${context.authorName}` : context.userKey;
 
+const buildUserLookup = (rawValue: string): UserLookup | null => {
+  const value = rawValue.trim();
+  if (!value) {
+    return null;
+  }
+
+  return value.startsWith('id:') || value.startsWith('name:')
+    ? { userKey: value }
+    : { username: value };
+};
+
+const appendUserContextParams = (params: URLSearchParams): boolean => {
+  if (bootstrap?.contextToken) {
+    params.set('contextToken', bootstrap.contextToken);
+    return true;
+  }
+
+  if (selectedUserLookup?.userKey) {
+    params.set('userKey', selectedUserLookup.userKey);
+    return true;
+  }
+
+  if (selectedUserLookup?.username) {
+    params.set('username', selectedUserLookup.username);
+    return true;
+  }
+
+  return false;
+};
+
 const renderFrame = () => {
   if (!bootstrap) {
     return;
@@ -156,12 +209,15 @@ const renderFrame = () => {
   );
 
   const tabs = create('div', 'tabs');
-  for (const view of ['history', 'profile', 'settings'] satisfies DashboardView[]) {
+  for (const view of [
+    'history',
+    'profile',
+    'settings',
+  ] satisfies DashboardView[]) {
     const button = create('button', 'tab', titleCase(view));
     button.type = 'button';
     button.setAttribute('role', 'tab');
     button.setAttribute('aria-selected', String(view === activeView));
-    button.disabled = view !== 'settings' && bootstrap.contextToken === undefined;
     button.addEventListener('click', () => {
       void setActiveView(view);
     });
@@ -194,7 +250,10 @@ const renderToolbar = (
 ): HTMLElement => {
   const toolbar = create('div', 'toolbar');
   const heading = create('div');
-  heading.append(create('h2', 'title', title), create('p', 'subtitle', subtitle));
+  heading.append(
+    create('h2', 'title', title),
+    create('p', 'subtitle', subtitle)
+  );
   toolbar.append(heading);
   if (action) {
     toolbar.append(action);
@@ -211,13 +270,56 @@ const metric = (label: string, value: string | number): HTMLElement => {
   return item;
 };
 
-const renderMetrics = (items: Array<[string, string | number]>): HTMLElement => {
+const renderMetrics = (
+  items: Array<[string, string | number]>
+): HTMLElement => {
   const metrics = create('section', 'metrics');
   for (const [label, value] of items) {
     metrics.append(metric(label, value));
   }
   return metrics;
 };
+
+const formatAverageScore = (score: number | null): string => {
+  if (score === null) {
+    return 'n/a';
+  }
+
+  return Number.isInteger(score) ? String(score) : score.toFixed(1);
+};
+
+const getRequiredInput = (
+  form: HTMLFormElement,
+  name: string
+): HTMLInputElement => {
+  const element = form.elements.namedItem(name);
+  if (!(element instanceof HTMLInputElement)) {
+    throw new Error(`Missing settings field: ${name}.`);
+  }
+
+  return element;
+};
+
+const getRequiredTextarea = (
+  form: HTMLFormElement,
+  name: string
+): HTMLTextAreaElement => {
+  const element = form.elements.namedItem(name);
+  if (!(element instanceof HTMLTextAreaElement)) {
+    throw new Error(`Missing settings field: ${name}.`);
+  }
+
+  return element;
+};
+
+const numberValue = (form: HTMLFormElement, name: string): number =>
+  Number(getRequiredInput(form, name).value);
+
+const checkboxValue = (form: HTMLFormElement, name: string): boolean =>
+  getRequiredInput(form, name).checked;
+
+const textareaValue = (form: HTMLFormElement, name: string): string =>
+  getRequiredTextarea(form, name).value;
 
 const sideEffectSummary = (sideEffects: SideEffects): string => {
   const notable: string[] = [];
@@ -277,7 +379,9 @@ const renderEntryTable = (
     );
 
     const statusCell = create('td');
-    statusCell.append(create('span', `status ${entry.status}`, titleCase(entry.status)));
+    statusCell.append(
+      create('span', `status ${entry.status}`, titleCase(entry.status))
+    );
     row.append(statusCell);
 
     const targetCell = create('td');
@@ -346,16 +450,55 @@ const renderHistory = () => {
   main.replaceChildren(...children);
 };
 
-const loadHistory = async (offset: number) => {
-  if (!bootstrap?.contextToken) {
-    showError('Missing view context.');
+const renderUserLookup = (
+  view: Extract<DashboardView, 'history' | 'profile'>
+) => {
+  if (!main) {
     return;
   }
 
+  const form = create('form', 'settings-form') as HTMLFormElement;
+  const label = create('label', 'field-label', 'Username or user key');
+  const input = create('input', 'field-control') as HTMLInputElement;
+  input.type = 'text';
+  input.value =
+    selectedUserLookup?.username ?? selectedUserLookup?.userKey ?? '';
+  input.required = true;
+  label.append(input);
+
+  const actions = create('div', 'modal-actions');
+  const load = create('button', 'load-more', `Load ${view}`);
+  load.type = 'submit';
+  actions.append(load);
+  form.append(label, actions);
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    selectedUserLookup = buildUserLookup(input.value);
+    if (!selectedUserLookup) {
+      input.reportValidity();
+      return;
+    }
+
+    if (view === 'history') {
+      void loadHistory(0);
+      return;
+    }
+
+    void loadProfile();
+  });
+
+  main.replaceChildren(renderToolbar(titleCase(view), 'User lookup'), form);
+};
+
+const loadHistory = async (offset: number) => {
   const params = new URLSearchParams({
-    contextToken: bootstrap.contextToken,
     offset: String(offset),
   });
+  if (!appendUserContextParams(params)) {
+    renderUserLookup('history');
+    return;
+  }
+
   const response = await fetchJson<HistoryResponse>(`/api/history?${params}`);
 
   if (offset === 0) {
@@ -363,6 +506,7 @@ const loadHistory = async (offset: number) => {
   }
 
   historyContext = response.context;
+  selectedUserLookup = { userKey: response.context.userKey };
   historyActiveTotal = response.activeTotal;
   historyEntries = [...historyEntries, ...response.entries];
   historyNextOffset = response.nextOffset;
@@ -384,7 +528,11 @@ const showReverseDialog = (
     form.method = 'dialog';
 
     const title = create('h2', 'title', 'Reverse strike');
-    const subtitle = create('p', 'subtitle', `${entry.actionLabel} · ${entry.ruleLabel}`);
+    const subtitle = create(
+      'p',
+      'subtitle',
+      `${entry.actionLabel} · ${entry.ruleLabel}`
+    );
     const reasonLabel = create('label', 'field-label', 'Reason');
     const reason = create('textarea', 'field-control') as HTMLTextAreaElement;
     reason.required = true;
@@ -397,7 +545,10 @@ const showReverseDialog = (
     const checkbox = create('input') as HTMLInputElement;
     checkbox.type = 'checkbox';
     checkbox.checked = true;
-    checkboxLabel.append(checkbox, document.createTextNode('Add native mod note'));
+    checkboxLabel.append(
+      checkbox,
+      document.createTextNode('Add native mod note')
+    );
 
     reasonLabel.append(reason);
     noteLabel.append(note);
@@ -409,7 +560,14 @@ const showReverseDialog = (
     submit.type = 'submit';
     actions.append(cancel, submit);
 
-    form.append(title, subtitle, reasonLabel, noteLabel, checkboxLabel, actions);
+    form.append(
+      title,
+      subtitle,
+      reasonLabel,
+      noteLabel,
+      checkboxLabel,
+      actions
+    );
     dialog.append(form);
     document.body.append(dialog);
 
@@ -494,6 +652,10 @@ const renderProfile = (response: ProfileResponse) => {
       ['Lifetime points', response.summary.lifetimeOriginalPoints],
       ['Decayed points', response.summary.decayedPoints],
       ['Reversed entries', response.summary.reversedEntries],
+      [
+        `Avg post score, last ${response.summary.postScoreWindowDays} days`,
+        formatAverageScore(response.summary.averagePostScore),
+      ],
     ]),
     create('p', 'subtitle', removals || 'No removals recorded.'),
     response.recentEntries.length > 0
@@ -503,13 +665,752 @@ const renderProfile = (response: ProfileResponse) => {
 };
 
 const loadProfile = async () => {
-  if (!bootstrap?.contextToken) {
-    showError('Missing view context.');
+  const params = new URLSearchParams();
+  if (!appendUserContextParams(params)) {
+    renderUserLookup('profile');
     return;
   }
 
-  const params = new URLSearchParams({ contextToken: bootstrap.contextToken });
-  renderProfile(await fetchJson<ProfileResponse>(`/api/profile?${params}`));
+  const response = await fetchJson<ProfileResponse>(`/api/profile?${params}`);
+  selectedUserLookup = { userKey: response.context.userKey };
+  renderProfile(response);
+};
+
+const renderRulesTable = (config: StrikeLedgerConfig): HTMLElement => {
+  const panel = create('div', 'panel');
+  const table = create('table');
+  const thead = create('thead');
+  const headerRow = create('tr');
+  for (const label of ['Rule ID', 'Label', 'Points', 'Enabled']) {
+    headerRow.append(create('th', undefined, label));
+  }
+  thead.append(headerRow);
+
+  const tbody = create('tbody');
+  for (const rule of config.rules) {
+    const points = STRIKE_ACTIONS.map(
+      (action) =>
+        `${ACTION_LABELS[action]}: ${
+          rule.pointOverrides?.[action] ?? config.actionPoints[action]
+        }`
+    ).join(', ');
+    const row = create('tr');
+    row.append(
+      create('td', undefined, rule.id),
+      create('td', undefined, rule.label),
+      create('td', undefined, points),
+      create('td', undefined, rule.enabled ? 'Yes' : 'No')
+    );
+    tbody.append(row);
+  }
+  table.append(thead, tbody);
+  panel.append(table);
+  return panel;
+};
+
+const renderImportedRulesTable = (rules: ImportedRedditRule[]): HTMLElement => {
+  const panel = create('div', 'panel');
+  const table = create('table');
+  const thead = create('thead');
+  const headerRow = create('tr');
+  for (const label of ['Imported ID', 'StrikeLedger label', 'Reddit rule']) {
+    headerRow.append(create('th', undefined, label));
+  }
+  thead.append(headerRow);
+
+  const tbody = create('tbody');
+  for (const rule of rules) {
+    const row = create('tr');
+    row.append(
+      create('td', undefined, rule.id),
+      create('td', undefined, rule.label),
+      create('td', undefined, rule.redditShortName)
+    );
+    tbody.append(row);
+  }
+
+  table.append(thead, tbody);
+  panel.append(table);
+  return panel;
+};
+
+const settingsSection = (
+  title: string,
+  subtitle: string | null,
+  ...children: HTMLElement[]
+): HTMLElement => {
+  const section = create('section', 'settings-section');
+  section.append(create('h3', 'section-title', title));
+  if (subtitle) {
+    section.append(create('p', 'subtitle', subtitle));
+  }
+  section.append(...children);
+  return section;
+};
+
+const numberField = (
+  labelText: string,
+  name: string,
+  value: number | undefined,
+  options: {
+    min: number;
+    max: number;
+    required?: boolean;
+    placeholder?: string;
+  }
+): HTMLElement => {
+  const label = create('label', 'field-label', labelText);
+  const input = create('input', 'field-control') as HTMLInputElement;
+  input.type = 'number';
+  input.name = name;
+  input.min = String(options.min);
+  input.max = String(options.max);
+  input.step = '1';
+  input.required = options.required ?? false;
+  input.value = value === undefined ? '' : String(value);
+  if (options.placeholder) {
+    input.placeholder = options.placeholder;
+  }
+  label.append(input);
+  return label;
+};
+
+const textField = (
+  labelText: string,
+  name: string,
+  value: string | undefined,
+  options: { required?: boolean; pattern?: string; maxLength?: number } = {}
+): HTMLElement => {
+  const label = create('label', 'field-label', labelText);
+  const input = create('input', 'field-control') as HTMLInputElement;
+  input.type = 'text';
+  input.name = name;
+  input.value = value ?? '';
+  input.required = options.required ?? false;
+  if (options.pattern) {
+    input.pattern = options.pattern;
+  }
+  if (options.maxLength) {
+    input.maxLength = options.maxLength;
+  }
+  label.append(input);
+  return label;
+};
+
+const textareaField = (
+  labelText: string,
+  name: string,
+  value: string | undefined,
+  required: boolean
+): HTMLElement => {
+  const label = create('label', 'field-label', labelText);
+  const textarea = create(
+    'textarea',
+    'field-control template-editor'
+  ) as HTMLTextAreaElement;
+  textarea.name = name;
+  textarea.rows = 4;
+  textarea.maxLength = 2000;
+  textarea.required = required;
+  textarea.value = value ?? '';
+  label.append(textarea);
+  return label;
+};
+
+const toggleField = (
+  labelText: string,
+  name: string,
+  checked: boolean
+): HTMLElement => {
+  const label = create('label', 'toggle-row');
+  const input = create('input') as HTMLInputElement;
+  input.type = 'checkbox';
+  input.name = name;
+  input.checked = checked;
+  label.append(input, create('span', undefined, labelText));
+  return label;
+};
+
+const ruleImportModeSelect = (): HTMLSelectElement => {
+  const select = create('select', 'field-control') as HTMLSelectElement;
+  const options: Array<[RuleImportMode, string]> = [
+    ['add-missing', 'Add missing rules'],
+    ['replace', 'Replace current rules'],
+    ['sync-labels-order', 'Sync labels and order'],
+  ];
+
+  for (const [value, label] of options) {
+    const option = create('option', undefined, label) as HTMLOptionElement;
+    option.value = value;
+    select.append(option);
+  }
+
+  return select;
+};
+
+const actionPointSummary = (config: StrikeLedgerConfig): string =>
+  STRIKE_ACTIONS.map(
+    (action) => `${ACTION_LABELS[action]}: ${config.actionPoints[action]}`
+  ).join(', ');
+
+const getRuleInput = (row: HTMLElement, field: string): HTMLInputElement => {
+  const input = row.querySelector<HTMLInputElement>(
+    `[data-rule-field="${field}"]`
+  );
+  if (!input) {
+    throw new Error(`Missing rule field: ${field}.`);
+  }
+
+  return input;
+};
+
+const getRuleTextarea = (
+  row: HTMLElement,
+  field: string
+): HTMLTextAreaElement => {
+  const textarea = row.querySelector<HTMLTextAreaElement>(
+    `[data-rule-field="${field}"]`
+  );
+  if (!textarea) {
+    throw new Error(`Missing rule field: ${field}.`);
+  }
+
+  return textarea;
+};
+
+const updateRuleRemoveButtons = (rulesList: HTMLElement) => {
+  const rows = rulesList.querySelectorAll<HTMLElement>('[data-rule-row]');
+  for (const button of rulesList.querySelectorAll<HTMLButtonElement>(
+    '.rule-remove'
+  )) {
+    button.disabled = rows.length <= 1;
+  }
+};
+
+const createRuleEditor = (
+  rule: RuleConfig,
+  config: StrikeLedgerConfig,
+  rulesList: HTMLElement
+): HTMLElement => {
+  const item = create('article', 'rule-editor');
+  item.dataset.ruleRow = 'true';
+
+  const header = create('div', 'rule-editor-header');
+  header.append(create('h4', 'rule-title', rule.label || 'New rule'));
+  const remove = create('button', 'secondary-button rule-remove', 'Remove');
+  remove.type = 'button';
+  remove.addEventListener('click', () => {
+    item.remove();
+    updateRuleRemoveButtons(rulesList);
+  });
+  header.append(remove);
+
+  const fields = create('div', 'settings-grid');
+  const id = textField('Rule ID', '', rule.id, {
+    required: true,
+    pattern: '[a-z0-9-]+',
+  });
+  const idInput = id.querySelector('input');
+  idInput?.setAttribute('data-rule-field', 'id');
+
+  const label = textField('Label', '', rule.label, {
+    required: true,
+    maxLength: 120,
+  });
+  const labelInput = label.querySelector('input');
+  labelInput?.setAttribute('data-rule-field', 'label');
+
+  const enabled = toggleField('Enabled', '', rule.enabled);
+  const enabledInput = enabled.querySelector('input');
+  enabledInput?.setAttribute('data-rule-field', 'enabled');
+
+  fields.append(id, label, enabled);
+
+  const pointFields = create('div', 'settings-grid');
+  for (const action of STRIKE_ACTIONS) {
+    const field = numberField(
+      `${ACTION_LABELS[action]} override`,
+      '',
+      rule.pointOverrides?.[action],
+      {
+        min: 0,
+        max: 100,
+        placeholder: `Default ${config.actionPoints[action]}`,
+      }
+    );
+    field
+      .querySelector('input')
+      ?.setAttribute('data-rule-field', `point-${action}`);
+    pointFields.append(field);
+  }
+
+  const templateFields = create('div', 'template-grid');
+  const publicTemplate = textareaField(
+    'Public comment template',
+    '',
+    rule.publicTemplate,
+    false
+  );
+  publicTemplate
+    .querySelector('textarea')
+    ?.setAttribute('data-rule-field', 'publicTemplate');
+  const internalTemplate = textareaField(
+    'Native mod note template',
+    '',
+    rule.internalNoteTemplate,
+    false
+  );
+  internalTemplate
+    .querySelector('textarea')
+    ?.setAttribute('data-rule-field', 'internalNoteTemplate');
+  templateFields.append(publicTemplate, internalTemplate);
+
+  item.append(
+    header,
+    fields,
+    create('p', 'settings-subhead', 'Point overrides'),
+    pointFields,
+    create('p', 'settings-subhead', 'Rule templates'),
+    templateFields
+  );
+  return item;
+};
+
+const collectRule = (row: HTMLElement): RuleConfig => {
+  const pointOverrides: Partial<Record<StrikeAction, number>> = {};
+  for (const action of STRIKE_ACTIONS) {
+    const rawValue = getRuleInput(row, `point-${action}`).value.trim();
+    if (rawValue) {
+      pointOverrides[action] = Number(rawValue);
+    }
+  }
+
+  const publicTemplate = getRuleTextarea(row, 'publicTemplate').value;
+  const internalNoteTemplate = getRuleTextarea(
+    row,
+    'internalNoteTemplate'
+  ).value;
+
+  return {
+    id: getRuleInput(row, 'id').value.trim(),
+    label: getRuleInput(row, 'label').value.trim(),
+    enabled: getRuleInput(row, 'enabled').checked,
+    ...(publicTemplate.trim() ? { publicTemplate } : {}),
+    ...(internalNoteTemplate.trim() ? { internalNoteTemplate } : {}),
+    ...(Object.keys(pointOverrides).length > 0 ? { pointOverrides } : {}),
+  };
+};
+
+const normalizeRuleMatchValue = (value: string): string =>
+  value.trim().replace(/\s+/g, ' ').toLowerCase();
+
+const importedRuleToConfig = (rule: ImportedRedditRule): RuleConfig => ({
+  id: rule.id,
+  label: rule.label,
+  enabled: true,
+});
+
+const getCurrentRuleEditors = (rulesList: HTMLElement): RuleConfig[] =>
+  Array.from(
+    rulesList.querySelectorAll<HTMLElement>('[data-rule-row]'),
+    collectRule
+  );
+
+const buildUsedRuleIds = (rules: RuleConfig[]): Set<string> =>
+  new Set(rules.map((rule) => rule.id));
+
+const nextAvailableRuleId = (usedIds: Set<string>): string => {
+  let index = 1;
+  while (usedIds.has(`rule-${index}`)) {
+    index += 1;
+  }
+
+  const id = `rule-${index}`;
+  usedIds.add(id);
+  return id;
+};
+
+const withAvailableRuleId = (
+  rule: RuleConfig,
+  usedIds: Set<string>
+): RuleConfig => {
+  if (!usedIds.has(rule.id)) {
+    usedIds.add(rule.id);
+    return rule;
+  }
+
+  return {
+    ...rule,
+    id: nextAvailableRuleId(usedIds),
+  };
+};
+
+const mergeImportedRules = (
+  currentRules: RuleConfig[],
+  importedRules: ImportedRedditRule[],
+  mode: RuleImportMode
+): RuleConfig[] => {
+  const importedConfigs = importedRules.map(importedRuleToConfig);
+
+  if (mode === 'replace') {
+    return importedConfigs;
+  }
+
+  const currentById = new Map(
+    currentRules.map((rule) => [normalizeRuleMatchValue(rule.id), rule])
+  );
+  const currentByLabel = new Map(
+    currentRules.map((rule) => [normalizeRuleMatchValue(rule.label), rule])
+  );
+
+  if (mode === 'sync-labels-order') {
+    const matched = new Set<RuleConfig>();
+    const synced = importedConfigs.flatMap((importedRule) => {
+      const existing =
+        currentById.get(normalizeRuleMatchValue(importedRule.id)) ??
+        currentByLabel.get(normalizeRuleMatchValue(importedRule.label));
+      if (!existing) {
+        return [];
+      }
+
+      matched.add(existing);
+      return [{ ...existing, label: importedRule.label }];
+    });
+
+    return [...synced, ...currentRules.filter((rule) => !matched.has(rule))];
+  }
+
+  const existingLabels = new Set(
+    currentRules.map((rule) => normalizeRuleMatchValue(rule.label))
+  );
+  const usedIds = buildUsedRuleIds(currentRules);
+  const newRules = importedConfigs
+    .filter((rule) => !existingLabels.has(normalizeRuleMatchValue(rule.label)))
+    .map((rule) => withAvailableRuleId(rule, usedIds));
+
+  return [...currentRules, ...newRules];
+};
+
+const replaceRuleEditors = (
+  rulesList: HTMLElement,
+  rules: RuleConfig[],
+  config: StrikeLedgerConfig
+) => {
+  rulesList.replaceChildren(
+    ...rules.map((rule) => createRuleEditor(rule, config, rulesList))
+  );
+  updateRuleRemoveButtons(rulesList);
+};
+
+const buildRuleImportSection = (
+  rulesList: HTMLElement,
+  config: StrikeLedgerConfig
+): HTMLElement => {
+  const preview = create('div', 'rule-import-preview');
+  const importButton = create(
+    'button',
+    'secondary-button',
+    'Import from Reddit rules'
+  );
+  importButton.type = 'button';
+  importButton.addEventListener('click', async () => {
+    importButton.disabled = true;
+    preview.replaceChildren(create('div', 'notice', 'Loading Reddit rules.'));
+
+    try {
+      const response = await fetchJson<RedditRulesResponse>(
+        '/api/settings/reddit-rules'
+      );
+      if (response.rules.length === 0) {
+        preview.replaceChildren(
+          create('div', 'empty', 'No Reddit rules found.')
+        );
+        return;
+      }
+
+      const modeLabel = create('label', 'field-label', 'Import mode');
+      const modeSelect = ruleImportModeSelect();
+      modeLabel.append(modeSelect);
+
+      const apply = create('button', 'load-more', 'Apply import preview');
+      apply.type = 'button';
+      apply.addEventListener('click', () => {
+        const currentRules = getCurrentRuleEditors(rulesList);
+        const nextRules = mergeImportedRules(
+          currentRules,
+          response.rules,
+          modeSelect.value as RuleImportMode
+        );
+        replaceRuleEditors(rulesList, nextRules, config);
+        preview.replaceChildren(
+          create(
+            'div',
+            'notice',
+            `${response.rules.length} Reddit rule(s) applied to the form.`
+          )
+        );
+      });
+
+      const actions = create('div', 'modal-actions');
+      actions.append(apply);
+      preview.replaceChildren(
+        renderImportedRulesTable(response.rules),
+        modeLabel,
+        actions
+      );
+    } catch (error) {
+      preview.replaceChildren(
+        create(
+          'div',
+          'error',
+          error instanceof Error ? error.message : 'Unable to import rules.'
+        )
+      );
+    } finally {
+      importButton.disabled = false;
+    }
+  });
+
+  return settingsSection(
+    'Reddit rules import',
+    'Imported rules are flattened to Rule 1, Rule 2, Rule 3 order.',
+    importButton,
+    preview
+  );
+};
+
+const collectSettingsConfig = (
+  form: HTMLFormElement,
+  currentConfig: StrikeLedgerConfig
+): StrikeLedgerConfig => {
+  const actionPoints = Object.fromEntries(
+    STRIKE_ACTIONS.map((action) => [
+      action,
+      numberValue(form, `actionPoints.${action}`),
+    ])
+  ) as Record<StrikeAction, number>;
+  const stickyAppComments = Object.fromEntries(
+    STRIKE_ACTIONS.map((action) => [
+      action,
+      checkboxValue(form, `stickyAppComments.${action}`),
+    ])
+  ) as Record<StrikeAction, boolean>;
+  const ruleRows = form.querySelectorAll<HTMLElement>('[data-rule-row]');
+
+  return {
+    ...currentConfig,
+    actionPoints,
+    decayAmount: numberValue(form, 'decayAmount'),
+    decayIntervalDays: numberValue(form, 'decayIntervalDays'),
+    postScoreWindowDays: numberValue(form, 'postScoreWindowDays'),
+    defaultPublicCommentTemplate: textareaValue(
+      form,
+      'defaultPublicCommentTemplate'
+    ),
+    defaultPrivateUserNoticeTemplate: textareaValue(
+      form,
+      'defaultPrivateUserNoticeTemplate'
+    ),
+    defaultZeroPointPrivateUserNoticeTemplate: textareaValue(
+      form,
+      'defaultZeroPointPrivateUserNoticeTemplate'
+    ),
+    defaultNativeModNoteTemplate: textareaValue(
+      form,
+      'defaultNativeModNoteTemplate'
+    ),
+    defaultZeroPointNativeModNoteTemplate: textareaValue(
+      form,
+      'defaultZeroPointNativeModNoteTemplate'
+    ),
+    userNoticesEnabled: checkboxValue(form, 'userNoticesEnabled'),
+    distinguishAppComments: checkboxValue(form, 'distinguishAppComments'),
+    stickyAppComments,
+    lockAppComments: checkboxValue(form, 'lockAppComments'),
+    nativeModNotesEnabled: checkboxValue(form, 'nativeModNotesEnabled'),
+    reversalNativeModNotesEnabled: checkboxValue(
+      form,
+      'reversalNativeModNotesEnabled'
+    ),
+    rules: Array.from(ruleRows, collectRule),
+  };
+};
+
+const buildSettingsForm = (response: SettingsResponse): HTMLFormElement => {
+  const form = create(
+    'form',
+    'settings-form settings-editor'
+  ) as HTMLFormElement;
+  const { config } = response;
+
+  const actionPoints = create('div', 'settings-grid');
+  for (const action of STRIKE_ACTIONS) {
+    actionPoints.append(
+      numberField(
+        ACTION_LABELS[action],
+        `actionPoints.${action}`,
+        config.actionPoints[action],
+        {
+          min: 0,
+          max: 100,
+          required: true,
+        }
+      )
+    );
+  }
+
+  const decay = create('div', 'settings-grid');
+  decay.append(
+    numberField('Decay amount', 'decayAmount', config.decayAmount, {
+      min: 0,
+      max: 100,
+      required: true,
+    }),
+    numberField(
+      'Decay interval days',
+      'decayIntervalDays',
+      config.decayIntervalDays,
+      {
+        min: 1,
+        max: 3650,
+        required: true,
+      }
+    )
+  );
+
+  const profileMetrics = create('div', 'settings-grid');
+  profileMetrics.append(
+    numberField(
+      'Post score window days',
+      'postScoreWindowDays',
+      config.postScoreWindowDays,
+      {
+        min: 1,
+        max: 3650,
+        required: true,
+      }
+    )
+  );
+
+  const toggles = create('div', 'toggle-grid');
+  toggles.append(
+    toggleField(
+      'Send private user notices',
+      'userNoticesEnabled',
+      config.userNoticesEnabled
+    ),
+    toggleField(
+      'Write native mod notes',
+      'nativeModNotesEnabled',
+      config.nativeModNotesEnabled
+    ),
+    toggleField(
+      'Write reversal mod notes',
+      'reversalNativeModNotesEnabled',
+      config.reversalNativeModNotesEnabled
+    ),
+    toggleField(
+      'Distinguish app comments',
+      'distinguishAppComments',
+      config.distinguishAppComments
+    ),
+    toggleField('Lock app comments', 'lockAppComments', config.lockAppComments)
+  );
+
+  const sticky = create('div', 'toggle-grid');
+  for (const action of STRIKE_ACTIONS) {
+    sticky.append(
+      toggleField(
+        `Sticky comments for ${ACTION_LABELS[action]}`,
+        `stickyAppComments.${action}`,
+        config.stickyAppComments[action]
+      )
+    );
+  }
+
+  const templates = create('div', 'template-grid');
+  templates.append(
+    textareaField(
+      'Default public comment',
+      'defaultPublicCommentTemplate',
+      config.defaultPublicCommentTemplate,
+      true
+    ),
+    textareaField(
+      'Default private user notice',
+      'defaultPrivateUserNoticeTemplate',
+      config.defaultPrivateUserNoticeTemplate,
+      true
+    ),
+    textareaField(
+      'Zero-point private user notice',
+      'defaultZeroPointPrivateUserNoticeTemplate',
+      config.defaultZeroPointPrivateUserNoticeTemplate,
+      true
+    ),
+    textareaField(
+      'Default native mod note',
+      'defaultNativeModNoteTemplate',
+      config.defaultNativeModNoteTemplate,
+      true
+    ),
+    textareaField(
+      'Zero-point native mod note',
+      'defaultZeroPointNativeModNoteTemplate',
+      config.defaultZeroPointNativeModNoteTemplate,
+      true
+    )
+  );
+
+  const rulesList = create('div', 'rule-editor-list');
+  for (const rule of config.rules) {
+    rulesList.append(createRuleEditor(rule, config, rulesList));
+  }
+  updateRuleRemoveButtons(rulesList);
+
+  const addRule = create('button', 'secondary-button', 'Add rule');
+  addRule.type = 'button';
+  addRule.addEventListener('click', () => {
+    const nextIndex =
+      rulesList.querySelectorAll<HTMLElement>('[data-rule-row]').length + 1;
+    rulesList.append(
+      createRuleEditor(
+        { id: `rule-${nextIndex}`, label: '', enabled: true },
+        config,
+        rulesList
+      )
+    );
+    updateRuleRemoveButtons(rulesList);
+  });
+
+  const actions = create('div', 'modal-actions');
+  const save = create('button', 'load-more', 'Save settings');
+  save.type = 'submit';
+  actions.append(save);
+
+  form.append(
+    settingsSection('Action points', null, actionPoints),
+    settingsSection('Decay', null, decay),
+    settingsSection('Profile metrics', null, profileMetrics),
+    settingsSection('Side effects', null, toggles),
+    settingsSection('Sticky comments', null, sticky),
+    settingsSection('Default templates', null, templates),
+    buildRuleImportSection(rulesList, config),
+    settingsSection(
+      'Rules',
+      'Blank rule templates use the matching default template.',
+      rulesList,
+      addRule
+    ),
+    actions
+  );
+
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    void saveSettings(config.revision, collectSettingsConfig(form, config));
+  });
+
+  return form;
 };
 
 const renderSettings = (response: SettingsResponse) => {
@@ -517,41 +1418,19 @@ const renderSettings = (response: SettingsResponse) => {
     return;
   }
 
-  const actionPoints = Object.entries(response.config.actionPoints)
-    .map(([action, points]) => `${action}: ${points}`)
-    .join(', ');
-  const rulesPanel = create('div', 'panel');
-  const table = create('table');
-  const thead = create('thead');
-  const headerRow = create('tr');
-  for (const label of ['Rule ID', 'Label', 'Enabled']) {
-    headerRow.append(create('th', undefined, label));
-  }
-  thead.append(headerRow);
-
-  const tbody = create('tbody');
-  for (const rule of response.config.rules) {
-    const row = create('tr');
-    row.append(
-      create('td', undefined, rule.id),
-      create('td', undefined, rule.label),
-      create('td', undefined, rule.enabled ? 'Yes' : 'No')
-    );
-    tbody.append(row);
-  }
-  table.append(thead, tbody);
-  rulesPanel.append(table);
-
   const children: HTMLElement[] = [
     renderToolbar('Settings', `r/${response.subredditName}`),
     renderMetrics([
       ['Revision', response.config.revision],
-      ['Decay', `${response.config.decayAmount}/${response.config.decayIntervalDays}d`],
+      [
+        'Decay',
+        `${response.config.decayAmount}/${response.config.decayIntervalDays}d`,
+      ],
+      ['Post score window', `${response.config.postScoreWindowDays}d`],
       ['User notices', response.config.userNoticesEnabled ? 'On' : 'Off'],
       ['Mod notes', response.config.nativeModNotesEnabled ? 'On' : 'Off'],
     ]),
-    create('p', 'subtitle', actionPoints),
-    rulesPanel,
+    create('p', 'subtitle', actionPointSummary(response.config)),
   ];
 
   if (settingsNotice) {
@@ -573,25 +1452,9 @@ const renderSettings = (response: SettingsResponse) => {
       event.preventDefault();
       void recalculateUserTotal(recalcInput.value);
     });
-    children.push(recalcForm);
-
-    const form = create('form', 'settings-form') as HTMLFormElement;
-    const label = create('label', 'field-label', 'Config JSON');
-    const editor = create('textarea', 'field-control json-editor') as HTMLTextAreaElement;
-    editor.spellcheck = false;
-    editor.value = JSON.stringify(response.config, null, 2);
-    label.append(editor);
-
-    const actions = create('div', 'modal-actions');
-    const save = create('button', 'load-more', 'Save');
-    save.type = 'submit';
-    actions.append(save);
-    form.append(label, actions);
-    form.addEventListener('submit', (event) => {
-      event.preventDefault();
-      void saveSettings(response.config.revision, editor.value);
-    });
-    children.push(form);
+    children.push(recalcForm, buildSettingsForm(response));
+  } else {
+    children.push(renderRulesTable(response.config));
   }
 
   main.replaceChildren(...children);
@@ -609,9 +1472,10 @@ const recalculateUserTotal = async (rawValue: string) => {
   }
 
   try {
-    const keyField = value.startsWith('id:') || value.startsWith('name:')
-      ? 'userKey'
-      : 'username';
+    const keyField =
+      value.startsWith('id:') || value.startsWith('name:')
+        ? 'userKey'
+        : 'username';
     const response = await fetch('/api/recalculate-user-total', {
       method: 'POST',
       headers: {
@@ -633,16 +1497,7 @@ const recalculateUserTotal = async (rawValue: string) => {
   }
 };
 
-const saveSettings = async (revision: number, rawConfig: string) => {
-  let config: unknown;
-  try {
-    config = JSON.parse(rawConfig);
-  } catch {
-    settingsNotice = null;
-    showError('Settings JSON is invalid.');
-    return;
-  }
-
+const saveSettings = async (revision: number, config: StrikeLedgerConfig) => {
   try {
     const response = await fetch('/api/settings', {
       method: 'POST',
@@ -656,12 +1511,16 @@ const saveSettings = async (revision: number, rawConfig: string) => {
 
     if (!response.ok) {
       if (result.status === 'conflict') {
-        throw new Error(`Settings changed. Current revision: ${result.currentRevision}.`);
+        throw new Error(
+          `Settings changed. Current revision: ${result.currentRevision}.`
+        );
       }
 
       if (result.status === 'invalid') {
         throw new Error(
-          result.issues.map((issue) => `${issue.path}: ${issue.message}`).join('; ')
+          result.issues
+            .map((issue) => `${issue.path}: ${issue.message}`)
+            .join('; ')
         );
       }
 
@@ -672,7 +1531,10 @@ const saveSettings = async (revision: number, rawConfig: string) => {
     renderSettings({
       subredditName: bootstrap?.subredditName ?? '',
       canManage: true,
-      config: result.status === 'saved' ? result.config : (config as SettingsResponse['config']),
+      config:
+        result.status === 'saved'
+          ? result.config
+          : (config as SettingsResponse['config']),
     });
   } catch (error) {
     showError(error instanceof Error ? error.message : 'Settings save failed.');

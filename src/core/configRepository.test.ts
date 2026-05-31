@@ -18,6 +18,17 @@ describe('ConfigRepository', () => {
     await expect(repo.getConfig()).resolves.toEqual(DEFAULT_CONFIG);
   });
 
+  it('fills new default fields when reading an older stored config', async () => {
+    const { repo, store } = createRepo();
+    const storedConfig: Partial<typeof DEFAULT_CONFIG> = { ...DEFAULT_CONFIG };
+    delete storedConfig.postScoreWindowDays;
+    await store.set('config', JSON.stringify(storedConfig));
+
+    await expect(repo.getConfig()).resolves.toMatchObject({
+      postScoreWindowDays: DEFAULT_CONFIG.postScoreWindowDays,
+    });
+  });
+
   it('saves valid config with a revision bump and audit hashes', async () => {
     const { repo, store } = createRepo();
     const nextConfig = {

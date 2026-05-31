@@ -1,66 +1,198 @@
-# Reddit Strike System
+# StrikeLedger User Manual
 
-StrikeLedger is a Devvit moderation app for tracking subreddit rule violations with a weighted, rule-specific ledger.
+StrikeLedger helps moderators record rule violations in a durable warning ledger. It adds moderator menu actions for warnings, removal warnings, NSFW warnings, history, profile, and settings. The app records what happened, calculates active warning totals with decay, and keeps a reversible audit trail for future moderator review.
 
-The MVP specification is maintained in [MVP.md](./MVP.md). That file is the source of truth for product behavior, data model, permissions, settings, tests, and acceptance criteria.
+StrikeLedger is for moderator use only. Public comments explain the rule violation but do not expose warning points or a user's active total. Private user notices and native moderator notes can include point totals when those options are enabled.
 
-## MVP Summary
+## What StrikeLedger Records
 
-Moderators can access these actions from Reddit menus:
+Each warning action creates one ledger entry for the affected user. A ledger entry includes the subreddit, target post or comment, rule, action, original point value, moderator, time, status, Reddit side-effect results, and reversal details if the entry is later reversed.
 
-- `StrikeLedger: Warn`
-- `StrikeLedger: Warn and remove`
-- `StrikeLedger: Warn and mark NSFW` for posts only
-- `StrikeLedger: History`
-- `StrikeLedger: Profile`
-- `StrikeLedger: Settings` from the subreddit menu
+Active totals are recalculated from the ledger. If a cached total ever needs to be rebuilt, the ledger remains the source of truth.
 
-Each enforcement action records a ledger entry, applies configured points, leaves a public explanation comment, sends a private user notice with points and active total when enabled, and writes a neutral native mod note when enabled. Public comments never expose point totals or strike totals.
+## Menu Actions
 
-The ledger is the source of truth. Cached active totals are rebuildable, decay is calculated from ledger entries, and reversals remove an entry's contribution without deleting the audit trail or undoing Reddit side effects.
+Moderators can use these Reddit menu actions:
 
-## Core Defaults
+| Action | Where it appears | What it does |
+| --- | --- | --- |
+| StrikeLedger: Warn | Posts and comments | Records a warning and leaves the configured public explanation. |
+| StrikeLedger: Warn and remove | Posts and comments | Records a warning, leaves the configured public explanation, and removes the target. |
+| StrikeLedger: Warn and mark NSFW | Posts only | Records a warning, leaves the configured public explanation, and marks the post NSFW. |
+| StrikeLedger: History | Posts and comments | Opens the user's ledger history. |
+| StrikeLedger: Profile | Posts and comments | Opens the user's summary profile. |
+| StrikeLedger: Settings | Subreddit menu | Opens the StrikeLedger dashboard and settings. |
 
-| Action | Default points | Targets |
-| --- | ---: | --- |
-| Warn | 1 | Posts and comments |
-| Warn and remove | 3 | Posts and comments |
-| Warn and mark NSFW | 1 | Posts only |
+## First Setup
 
-Default decay subtracts `1` active point every `30` days, clamped at zero. Decay settings apply retroactively when totals are recalculated.
+Open the subreddit menu and choose `StrikeLedger: Settings`. A moderator with full `all` permissions can create or open the StrikeLedger dashboard surface for the subreddit.
 
-## Architecture
+Before using enforcement actions, review these settings:
 
-- Devvit menu actions and forms handle enforcement.
-- Redis stores config, ledger entries, indexes, active-total cache, settings audit, form nonces, and view context tokens.
-- A small Vite app with plain TypeScript renders history, profile, reversal, and settings UI.
-- Hono JSON endpoints back the web UI.
-- `vitest` covers unit, repository, and route tests.
+1. Configure rules.
+2. Confirm point values for each action.
+3. Set decay behavior.
+4. Configure profile metrics.
+5. Choose side effects such as private user notices, native mod notes, comment distinguish, sticky, and lock behavior.
+6. Review public, private, and native mod note templates.
+7. Save settings.
 
-## Development
+Settings changes affect future calculations. Decay settings apply retroactively when active totals are recalculated.
 
-Useful commands:
+## Rules
 
-```sh
-npm run type-check
-npm test
-npm run lint
-npm run build
-```
+Rules determine what moderators can select in the enforcement form. Each rule has:
 
-Use the MVP implementation plan in [MVP.md](./MVP.md) before adding code.
+- Rule ID.
+- Moderator-facing label.
+- Enabled or disabled state.
+- Optional point overrides for each action.
+- Optional public comment template.
+- Optional native mod note template.
 
-## Data Retention Warning
+Disabled rules stay in settings but are hidden from new enforcement forms.
 
-StrikeLedger stores ledger history in Devvit Redis scoped to the app installation. Uninstalling or reinstalling the app may remove or orphan ledger history unless Reddit provides a retention path for that installation.
+### Importing Reddit Rules
 
-## Manual Playtest
+In Settings, use `Import from Reddit rules` to copy the current subreddit rules into StrikeLedger. Imported rules are flattened into a simple numbered list: `Rule 1`, `Rule 2`, `Rule 3`, and so on.
 
-Use [PLAYTEST.md](./PLAYTEST.md) before uploading or publishing a build.
+Import modes:
 
-## Accepted Future Extensions
+| Mode | Use when |
+| --- | --- |
+| Add missing rules | You want to keep existing StrikeLedger rules and add subreddit rules that are not already present. |
+| Replace current rules | You want the StrikeLedger rule list to match the imported subreddit rules. |
+| Sync labels and order | You want matching existing rules to use the imported labels and order while preserving their existing custom settings. |
 
-- Moderator daily review digest.
-- Severe violation fast-ban flow.
-- NSFW review helper.
-- Post-rate ledger.
+After applying an import preview, click `Save settings` to make the changes active.
+
+## Points And Decay
+
+Default action points:
+
+| Action | Default points |
+| --- | ---: |
+| Warn | 1 |
+| Warn and remove | 3 |
+| Warn and mark NSFW | 1 |
+
+Rules can override these values per action. A zero-point warning is allowed; it still records a ledger entry and can still run configured notices and mod notes.
+
+Default decay subtracts `1` active point every `30` days from each non-reversed entry, clamped at zero. For example, a 3-point warning is worth 3 active points for days 0-29, 2 active points for days 30-59, 1 active point for days 60-89, and 0 active points after 90 days.
+
+## Profile Metrics
+
+The Profile view shows ledger totals and subreddit-specific post activity for the selected user.
+
+`Avg post score, last 30 days` is calculated from retrievable Reddit posts by that user in the current subreddit. The timeframe is configurable in Settings with `Post score window days`; the default is 30 days. If no matching retrievable posts are found, the metric shows `n/a`.
+
+Reddit exposes post score, not exact upvote count, so this metric uses average post score as the available approximation.
+
+## Templates
+
+Templates let moderators control the text StrikeLedger posts or records.
+
+Template types:
+
+| Template | Audience |
+| --- | --- |
+| Default public comment | Public thread comment. Do not include private point totals. |
+| Default private user notice | Private message sent to the user when notices are enabled. |
+| Zero-point private user notice | Private message for zero-point actions. |
+| Default native mod note | Native Reddit mod note when mod notes are enabled. |
+| Zero-point native mod note | Native mod note for zero-point actions. |
+| Rule public comment template | Optional public template for a specific rule. |
+| Rule native mod note template | Optional native mod note template for a specific rule. |
+
+Public templates may use `{ruleLabel}`, `{action}`, and `{targetPermalink}`. Private notices and native mod notes may use `{subredditName}`, `{ruleLabel}`, `{action}`, `{pointsAdded}`, `{activeTotal}`, and `{targetPermalink}`.
+
+## Recording A Warning
+
+To record a warning:
+
+1. Open the moderator menu on a post or comment.
+2. Choose the appropriate StrikeLedger action.
+3. Select the violated rule.
+4. Add an optional moderator note.
+5. Add an optional public comment override if the default rule or global template is not appropriate.
+6. Submit the form.
+
+StrikeLedger checks the target before creating a ledger entry. It blocks actions when the author cannot be identified, the target is locked, the action is not valid for the target type, or the target has already reached a state that makes the selected action invalid.
+
+After a successful submission, the ledger entry counts toward the user's active total even if a configured side effect, such as a private notice or mod note, fails. History and Profile show side-effect status so moderators can see what happened.
+
+## History
+
+Use `StrikeLedger: History` from a post or comment to open that author's ledger history. The History tab shows:
+
+- Active total.
+- Ledger entries in reverse chronological order.
+- Rule and action.
+- Active points compared with original points.
+- Status.
+- Target link.
+- Moderator.
+- Side-effect summary.
+- Reversal controls for entries that can still be reversed.
+
+You can also open History from the dashboard and look up a user by username or user key.
+
+## Profile
+
+Use `StrikeLedger: Profile` from a post or comment to open the author's profile summary. The Profile tab shows:
+
+- Active total.
+- Lifetime original points.
+- Decayed points.
+- Reversed entry count.
+- Average post score for the configured recent window.
+- Removals grouped by rule.
+- Recent ledger entries.
+
+You can also open Profile from the dashboard and look up a user by username or user key.
+
+## Reversing A Ledger Entry
+
+A reversal removes a ledger entry's contribution from active totals without deleting the audit trail. Reversal does not undo Reddit side effects such as a removed post, public comment, private notice, or native mod note.
+
+To reverse an entry:
+
+1. Open History for the user.
+2. Find the ledger entry.
+3. Click `Reverse`.
+4. Enter a reversal reason.
+5. Optionally enter a reversal note.
+6. Submit the reversal.
+
+If reversal mod notes are enabled, StrikeLedger records a native mod note for the reversal.
+
+## Manual Recalculation
+
+Moderators with full settings access can recalculate a user's active total from Settings. Enter a username or user key, then click `Recalculate`. This rebuilds the cached active total from the ledger and current decay settings.
+
+## Permissions
+
+Moderator access is required to open dashboard data. The `posts` or `all` permission is required for enforcement actions. Full `all` permission is required for settings changes, Reddit rule import, dashboard creation, and manual recalculation.
+
+If a moderator can open the dashboard but cannot edit settings, the Settings view shows read-only rule information.
+
+## Status Meanings
+
+| Status | Meaning |
+| --- | --- |
+| Succeeded | The ledger entry and all required/enabled side effects completed. |
+| Partial | The ledger entry was recorded, but one or more side effects failed. |
+| Pending | The ledger entry was created but final side-effect status was not completed. |
+| Reversed | A moderator reversed the entry; it no longer contributes active points. |
+
+## Data Retention
+
+StrikeLedger stores ledger history in Devvit Redis for the app installation. Uninstalling or reinstalling the app may remove or orphan ledger history. Treat uninstall and reinstall actions as data-retention events.
+
+## Practical Moderation Notes
+
+- Public comments should explain the rule issue without exposing point totals.
+- Use private notices or native mod notes when moderators need point and active-total details.
+- Keep rule labels clear and stable so history remains easy to read.
+- Use reversals for mistakes instead of deleting or editing history.
+- Recalculate totals after major decay setting changes if you need a fresh cached value immediately.

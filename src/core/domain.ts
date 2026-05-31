@@ -32,7 +32,6 @@ export type RulePointOverrides = Partial<Record<StrikeAction, number>>;
 export type RuleConfig = {
   id: string;
   label: string;
-  parentId?: string;
   publicTemplate?: string;
   internalNoteTemplate?: string;
   pointOverrides?: RulePointOverrides;
@@ -50,6 +49,7 @@ export type StrikeLedgerConfig = {
   actionPoints: ActionPointDefaults;
   decayAmount: number;
   decayIntervalDays: number;
+  postScoreWindowDays: number;
   defaultPublicCommentTemplate: string;
   defaultPrivateUserNoticeTemplate: string;
   defaultZeroPointPrivateUserNoticeTemplate: string;

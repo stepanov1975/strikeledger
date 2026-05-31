@@ -48,6 +48,14 @@ const SETTINGS_AUDIT_SNAPSHOT_LIMIT = 20;
 const parseJson = <T>(raw: string | null): T | null =>
   raw === null ? null : (JSON.parse(raw) as T);
 
+const applyConfigDefaults = (config: StrikeLedgerConfig): StrikeLedgerConfig => ({
+  ...config,
+  postScoreWindowDays:
+    typeof config.postScoreWindowDays === 'number'
+      ? config.postScoreWindowDays
+      : DEFAULT_CONFIG.postScoreWindowDays,
+});
+
 const canonicalize = (value: unknown): unknown => {
   if (Array.isArray(value)) {
     return value.map(canonicalize);
@@ -94,7 +102,7 @@ export class ConfigRepository {
     );
 
     if (storedConfig) {
-      return storedConfig;
+      return applyConfigDefaults(storedConfig);
     }
 
     await this.store.set(configKey, JSON.stringify(DEFAULT_CONFIG));
@@ -105,9 +113,10 @@ export class ConfigRepository {
     const result = await this.store.runTransaction(
       [configKey],
       async (): Promise<SaveConfigResult> => {
-      const currentConfig =
+      const currentConfig = applyConfigDefaults(
         parseJson<StrikeLedgerConfig>(await this.store.get(configKey)) ??
-        DEFAULT_CONFIG;
+          DEFAULT_CONFIG
+      );
       if (currentConfig.revision !== request.expectedRevision) {
         return {
           status: 'conflict',

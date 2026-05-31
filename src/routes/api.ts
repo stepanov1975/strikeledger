@@ -18,6 +18,9 @@ import { getModeratorAccess, type ModeratorAccess } from './permissions';
 export const api = new Hono();
 
 const HISTORY_PAGE_SIZE = 25;
+const POST_SCORE_LOOKUP_LIMIT = 1000;
+const POST_SCORE_PAGE_SIZE = 100;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 const getRepositories = () => {
   const store = new DevvitRedisStore(redis);
@@ -31,6 +34,31 @@ const getRepositories = () => {
 type ApiAccess = {
   subredditName: string;
   access: ModeratorAccess;
+};
+
+type UserViewContext = {
+  subredditName: string;
+  userKey: string;
+  targetId?: string;
+  targetKind?: ViewContextRecord['targetKind'];
+  authorName?: string;
+};
+
+type RedditRuleImport = {
+  id: string;
+  label: string;
+  redditShortName: string;
+  description: string;
+  kind: string;
+  violationReason: string;
+  priority: number;
+  enabled: true;
+};
+
+type PostScoreSummary = {
+  averagePostScore: number | null;
+  postScorePostCount: number;
+  postScoreWindowDays: number;
 };
 
 const getApiAccess = async (route: string): Promise<ApiAccess | null> => {
@@ -77,6 +105,129 @@ const parseUserKeyInput = (
   return username ? getUserKey({ username }) : null;
 };
 
+const trimUsernamePrefix = (username: string): string =>
+  username.trim().replace(/^u\//i, '');
+
+const trimRulePrefix = (label: string): string =>
+  label
+    .trim()
+    .replace(/^(?:rule\s*)?\d+(?:\.\d+)*\s*[-:.)]?\s*/i, '')
+    .trim();
+
+const buildImportedRuleLabel = (shortName: string, index: number): string => {
+  const name = trimRulePrefix(shortName);
+  const ruleNumber = index + 1;
+
+  return name ? `Rule ${ruleNumber} - ${name}` : `Rule ${ruleNumber}`;
+};
+
+const serializeRedditRuleImport = (
+  rule: {
+    shortName: string;
+    description: string;
+    kind: string;
+    violationReason: string;
+    priority: number;
+  },
+  index: number
+): RedditRuleImport => ({
+  id: `rule-${index + 1}`,
+  label: buildImportedRuleLabel(rule.shortName, index),
+  redditShortName: rule.shortName,
+  description: rule.description,
+  kind: rule.kind,
+  violationReason: rule.violationReason,
+  priority: rule.priority,
+  enabled: true,
+});
+
+const resolveProfileUsername = (
+  context: UserViewContext,
+  entries: LedgerEntry[]
+): string | null => {
+  const username =
+    context.authorName ?? entries.find((entry) => entry.username.trim())
+      ?.username;
+
+  return username ? trimUsernamePrefix(username) : null;
+};
+
+const summarizeUserPostScores = async (
+  subredditName: string,
+  username: string | null,
+  windowDays: number,
+  nowMs: number
+): Promise<PostScoreSummary> => {
+  const emptySummary: PostScoreSummary = {
+    averagePostScore: null,
+    postScorePostCount: 0,
+    postScoreWindowDays: windowDays,
+  };
+  if (!username) {
+    return emptySummary;
+  }
+
+  const cutoffMs = nowMs - windowDays * MS_PER_DAY;
+  let totalScore = 0;
+  let postCount = 0;
+
+  try {
+    const posts = reddit.getPostsByUser({
+      username,
+      sort: 'new',
+      limit: POST_SCORE_LOOKUP_LIMIT,
+      pageSize: POST_SCORE_PAGE_SIZE,
+    });
+
+    for await (const post of posts) {
+      if (post.createdAt.getTime() < cutoffMs) {
+        break;
+      }
+
+      if (post.subredditName.toLowerCase() !== subredditName.toLowerCase()) {
+        continue;
+      }
+
+      totalScore += post.score;
+      postCount += 1;
+    }
+  } catch (error) {
+    logWarn('api.profile.post_score_lookup_failed', {
+      subredditName,
+      username,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return emptySummary;
+  }
+
+  return {
+    averagePostScore: postCount > 0 ? totalScore / postCount : null,
+    postScorePostCount: postCount,
+    postScoreWindowDays: windowDays,
+  };
+};
+
+const getUserLookupContext = (
+  subredditName: string,
+  rawUserKey: string | null,
+  username: string | null
+): UserViewContext | null => {
+  const userKey = parseUserKeyInput(rawUserKey, username);
+  if (!userKey) {
+    return null;
+  }
+
+  const rawAuthorName =
+    username ?? (rawUserKey?.startsWith('name:') ? rawUserKey.slice(5) : null);
+  const authorName = rawAuthorName ? trimUsernamePrefix(rawAuthorName) : null;
+
+  return {
+    subredditName,
+    userKey,
+    ...(authorName ? { authorName } : {}),
+  };
+};
+
 const getAuthorizedViewContext = async (
   token: string | undefined,
   subredditName: string,
@@ -94,6 +245,20 @@ const getAuthorizedViewContext = async (
   return record.subredditName.toLowerCase() === subredditName.toLowerCase()
     ? record
     : null;
+};
+
+const getAuthorizedUserViewContext = async (
+  token: string | undefined,
+  subredditName: string,
+  dashboardRepository: DashboardRepository,
+  rawUserKey: string | null,
+  username: string | null
+): Promise<UserViewContext | null> => {
+  if (token) {
+    return getAuthorizedViewContext(token, subredditName, dashboardRepository);
+  }
+
+  return getUserLookupContext(subredditName, rawUserKey, username);
 };
 
 const serializeEntry = (
@@ -181,16 +346,21 @@ api.get('/history', async (c) => {
   const { configRepository, dashboardRepository, ledgerRepository } =
     getRepositories();
   const config = await configRepository.getConfig();
-  const context = await getAuthorizedViewContext(
+  const context = await getAuthorizedUserViewContext(
     c.req.query('contextToken'),
     apiAccess.subredditName,
-    dashboardRepository
+    dashboardRepository,
+    trimString(c.req.query('userKey')),
+    trimString(c.req.query('username'))
   );
   if (!context) {
     logWarn('api.history.invalid_context', {
       subredditName: apiAccess.subredditName,
       moderatorUsername: apiAccess.access.username,
       hasContextToken: c.req.query('contextToken') !== undefined,
+      hasUserLookup:
+        c.req.query('userKey') !== undefined ||
+        c.req.query('username') !== undefined,
     });
     return c.json({ error: 'invalid_context' }, 404);
   }
@@ -236,16 +406,21 @@ api.get('/profile', async (c) => {
   const { configRepository, dashboardRepository, ledgerRepository } =
     getRepositories();
   const config = await configRepository.getConfig();
-  const context = await getAuthorizedViewContext(
+  const context = await getAuthorizedUserViewContext(
     c.req.query('contextToken'),
     apiAccess.subredditName,
-    dashboardRepository
+    dashboardRepository,
+    trimString(c.req.query('userKey')),
+    trimString(c.req.query('username'))
   );
   if (!context) {
     logWarn('api.profile.invalid_context', {
       subredditName: apiAccess.subredditName,
       moderatorUsername: apiAccess.access.username,
       hasContextToken: c.req.query('contextToken') !== undefined,
+      hasUserLookup:
+        c.req.query('userKey') !== undefined ||
+        c.req.query('username') !== undefined,
     });
     return c.json({ error: 'invalid_context' }, 404);
   }
@@ -253,6 +428,12 @@ api.get('/profile', async (c) => {
   const nowMs = Date.now();
   const entries = await ledgerRepository.getUserLedger(context.userKey);
   const activeTotal = recalculateActiveTotal(entries, config, nowMs);
+  const postScoreSummary = await summarizeUserPostScores(
+    apiAccess.subredditName,
+    resolveProfileUsername(context, entries),
+    config.postScoreWindowDays,
+    nowMs
+  );
   const activeOriginalPoints = entries
     .filter((entry) => entry.status !== 'reversed')
     .reduce((total, entry) => total + entry.originalPoints, 0);
@@ -274,6 +455,8 @@ api.get('/profile', async (c) => {
     targetKind: context.targetKind,
     entryCount: entries.length,
     activeTotal,
+    postScorePostCount: postScoreSummary.postScorePostCount,
+    postScoreWindowDays: postScoreSummary.postScoreWindowDays,
     reversedEntries: entries.filter((entry) => entry.status === 'reversed')
       .length,
   });
@@ -287,6 +470,7 @@ api.get('/profile', async (c) => {
       reversedEntries: entries.filter((entry) => entry.status === 'reversed')
         .length,
       removalsByRule,
+      ...postScoreSummary,
     },
     recentEntries: entries
       .slice(0, HISTORY_PAGE_SIZE)
@@ -313,6 +497,43 @@ api.get('/settings', async (c) => {
     subredditName: apiAccess.subredditName,
     canManage: apiAccess.access.canManage,
     config,
+  });
+});
+
+api.get('/settings/reddit-rules', async (c) => {
+  const apiAccess = await getApiAccess('settings.reddit_rules');
+  if (!apiAccess) {
+    return c.json({ error: 'moderator_required' }, 403);
+  }
+
+  if (!apiAccess.access.canManage) {
+    logWarn('api.settings.reddit_rules.denied', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+    });
+    return c.json({ error: 'all_permission_required' }, 403);
+  }
+
+  const rules = await reddit.getRules(apiAccess.subredditName);
+  const importedRules = [...rules]
+    .sort((left, right) => {
+      if (left.priority !== right.priority) {
+        return left.priority - right.priority;
+      }
+
+      return left.shortName.localeCompare(right.shortName);
+    })
+    .map(serializeRedditRuleImport);
+
+  logInfo('api.settings.reddit_rules.ok', {
+    subredditName: apiAccess.subredditName,
+    moderatorUsername: apiAccess.access.username,
+    ruleCount: importedRules.length,
+  });
+
+  return c.json({
+    subredditName: apiAccess.subredditName,
+    rules: importedRules,
   });
 });
 

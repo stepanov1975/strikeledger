@@ -7,7 +7,10 @@ import {
 } from './idempotency';
 import { getUserKey, normalizeUsername } from './identity';
 import { logError } from './logging';
-import type { RedisStore } from './redisStore';
+import {
+  isRedisTransactionConflictError,
+  type RedisStore,
+} from './redisStore';
 import { recalculateActiveTotal as calculateActiveTotalFromEntries } from './scoring';
 
 export type FormNonceRecord = {
@@ -50,7 +53,8 @@ export type CreateLedgerEntryResult =
         | 'nonce_missing'
         | 'nonce_expired'
         | 'nonce_context_mismatch'
-        | 'nonce_consumed_without_entry';
+        | 'nonce_consumed_without_entry'
+        | 'transaction_conflict';
     };
 
 type CreateLedgerEntryTransactionResult =
@@ -242,47 +246,56 @@ export class LedgerRepository {
   async createLedgerEntry(
     request: CreateLedgerEntryRequest
   ): Promise<CreateLedgerEntryResult> {
-    const result = await this.store.runTransaction(
-      this.getCreateWatchedKeys(request),
-      async (): Promise<CreateLedgerEntryTransactionResult> => {
-        const nonce = await this.getValidNonce(request);
-        if (nonce.status === 'blocked') {
-          return nonce;
-        }
+    let result: CreateLedgerEntryTransactionResult;
+    try {
+      result = await this.store.runTransaction(
+        this.getCreateWatchedKeys(request),
+        async (): Promise<CreateLedgerEntryTransactionResult> => {
+          const nonce = await this.getValidNonce(request);
+          if (nonce.status === 'blocked') {
+            return nonce;
+          }
 
-        if (nonce.status === 'consumed') {
-          const entry = await this.getLedgerEntry(nonce.entryId);
-          if (!entry) {
+          if (nonce.status === 'consumed') {
+            const entry = await this.getLedgerEntry(nonce.entryId);
+            if (!entry) {
+              return {
+                status: 'blocked',
+                reason: 'nonce_consumed_without_entry',
+              };
+            }
+
             return {
-              status: 'blocked',
-              reason: 'nonce_consumed_without_entry',
+              status: 'idempotent',
+              entry,
             };
           }
 
-          return {
-            status: 'idempotent',
-            entry,
-          };
+          const retryEntry = await this.getRetryEntry(request);
+          if (retryEntry && retryEntry.status !== 'reversed') {
+            return {
+              status: 'idempotent',
+              entry: retryEntry,
+            };
+          }
+
+          const duplicateEntry = await this.getDuplicateEntry(request.entry);
+          if (duplicateEntry && duplicateEntry.status !== 'reversed') {
+            return { status: 'duplicate', existingEntry: duplicateEntry };
+          }
+
+          await this.writePendingEntry(request, nonce.record);
+
+          return { status: 'created', entry: request.entry };
         }
-
-        const retryEntry = await this.getRetryEntry(request);
-        if (retryEntry && retryEntry.status !== 'reversed') {
-          return {
-            status: 'idempotent',
-            entry: retryEntry,
-          };
-        }
-
-        const duplicateEntry = await this.getDuplicateEntry(request.entry);
-        if (duplicateEntry && duplicateEntry.status !== 'reversed') {
-          return { status: 'duplicate', existingEntry: duplicateEntry };
-        }
-
-        await this.writePendingEntry(request, nonce.record);
-
-        return { status: 'created', entry: request.entry };
+      );
+    } catch (error) {
+      if (isRedisTransactionConflictError(error)) {
+        return { status: 'blocked', reason: 'transaction_conflict' };
       }
-    );
+
+      throw error;
+    }
 
     if (result.status === 'created' || result.status === 'idempotent') {
       return {

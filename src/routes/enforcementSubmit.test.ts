@@ -249,4 +249,27 @@ describe('handleEnforcementSubmit', () => {
     expect(harness.post.addComment).not.toHaveBeenCalled();
     await expect(harness.repository.getLedgerEntry('entry-1')).resolves.toBeNull();
   });
+
+  it('returns a moderator-facing message if the ledger transaction stays conflicted', async () => {
+    const harness = createHarness();
+    const repository = {
+      getFormNonce: vi.fn(async () => buildNonce()),
+      createLedgerEntry: vi.fn(async () => ({
+        status: 'blocked' as const,
+        reason: 'transaction_conflict' as const,
+      })),
+      updateLedgerEntry: vi.fn(async () => undefined),
+    };
+
+    const response = await handleEnforcementSubmit(
+      { formNonce: 'nonce-1', ruleId: 'rule-general' },
+      {
+        ...harness.dependencies,
+        repository,
+      }
+    );
+
+    expect(response.showToast).toContain('busy saving this action');
+    expect(harness.post.addComment).not.toHaveBeenCalled();
+  });
 });

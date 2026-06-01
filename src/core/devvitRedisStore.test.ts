@@ -4,14 +4,15 @@ import { DevvitRedisStore } from './devvitRedisStore';
 
 const buildClients = () => {
   const calls: string[] = [];
-  const execResults: unknown[] = ['OK', 1];
+  const defaultExecResults: unknown[] = ['OK', 1];
+  const execResultsQueue: unknown[][] = [];
   const transaction = {
     multi: vi.fn(async () => {
       calls.push('tx.multi');
     }),
     exec: vi.fn(async () => {
       calls.push('tx.exec');
-      return execResults;
+      return execResultsQueue.shift() ?? defaultExecResults;
     }),
     unwatch: vi.fn(async () => {
       calls.push('tx.unwatch');
@@ -50,7 +51,7 @@ const buildClients = () => {
 
   return {
     calls,
-    execResults,
+    execResultsQueue,
     redis: redis as unknown as RedisClient,
     transaction,
   };
@@ -95,9 +96,9 @@ describe('DevvitRedisStore', () => {
     expect(calls).toEqual(['redis.watch', 'tx.unwatch']);
   });
 
-  it('fails closed when exec does not commit queued commands', async () => {
-    const { calls, execResults, redis, transaction } = buildClients();
-    execResults.length = 0;
+  it('retries when exec does not commit queued commands', async () => {
+    const { calls, execResultsQueue, redis, transaction } = buildClients();
+    execResultsQueue.push([], ['OK']);
     const store = new DevvitRedisStore(redis);
 
     await expect(
@@ -105,16 +106,37 @@ describe('DevvitRedisStore', () => {
         await store.set('write-key', 'value');
         return 'done';
       })
-    ).rejects.toThrow('StrikeLedger Redis transaction did not commit.');
+    ).resolves.toBe('done');
 
-    expect(transaction.exec).toHaveBeenCalledTimes(1);
-    expect(transaction.discard).toHaveBeenCalledTimes(1);
+    expect(transaction.exec).toHaveBeenCalledTimes(2);
+    expect(transaction.discard).not.toHaveBeenCalled();
     expect(calls).toEqual([
       'redis.watch',
       'tx.multi',
       'tx.set',
       'tx.exec',
-      'tx.discard',
+      'redis.watch',
+      'tx.multi',
+      'tx.set',
+      'tx.exec',
     ]);
+  });
+
+  it('fails closed after repeated transaction conflicts', async () => {
+    const { execResultsQueue, redis, transaction } = buildClients();
+    execResultsQueue.push([], [], []);
+    const store = new DevvitRedisStore(redis);
+
+    await expect(
+      store.runTransaction(['watched-key'], async () => {
+        await store.set('write-key', 'value');
+        return 'done';
+      })
+    ).rejects.toThrow(
+      'StrikeLedger Redis transaction did not commit after retries.'
+    );
+
+    expect(transaction.exec).toHaveBeenCalledTimes(3);
+    expect(transaction.discard).not.toHaveBeenCalled();
   });
 });

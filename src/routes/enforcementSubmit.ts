@@ -447,7 +447,15 @@ export const handleEnforcementSubmit = async (
         targetKind: entry.targetKind,
         action: entry.action,
         ruleId: entry.ruleId,
+        reason: result.reason,
       });
+      if (result.reason === 'transaction_conflict') {
+        return {
+          showToast:
+            'StrikeLedger was busy saving this action. Reopen the action and try again.',
+        };
+      }
+
       return { showToast: 'StrikeLedger form expired. Reopen the action.' };
   }
 };

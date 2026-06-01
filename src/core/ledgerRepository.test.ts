@@ -15,7 +15,10 @@ import {
   LedgerRepository,
   type FormNonceRecord,
 } from './ledgerRepository';
-import { FakeRedisStore } from './redisStore';
+import {
+  FakeRedisStore,
+  RedisTransactionConflictError,
+} from './redisStore';
 import { MS_PER_DAY } from './scoring';
 
 const nowMs = Date.UTC(2026, 0, 1);
@@ -25,6 +28,15 @@ const createRepo = () => {
   store.nowMs = nowMs;
   return { store, repo: new LedgerRepository(store) };
 };
+
+class ConflictRedisStore extends FakeRedisStore {
+  override async runTransaction<T>(
+    _watchedKeys: readonly string[],
+    _operation: () => Promise<T>
+  ): Promise<T> {
+    throw new RedisTransactionConflictError();
+  }
+}
 
 const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => {
   const submittedAtMs = overrides.createdAtMs ?? nowMs;
@@ -141,6 +153,24 @@ describe('LedgerRepository', () => {
     await expect(repo.getLedgerEntry(entry.entryId)).resolves.toEqual(entry);
     await expect(repo.getUserLedger(entry.userKey)).resolves.toEqual([entry]);
     await expect(repo.getCachedActiveTotal(entry.userKey)).resolves.toBe(1);
+  });
+
+  it('blocks creation cleanly after repeated transaction conflicts', async () => {
+    const repo = new LedgerRepository(new ConflictRedisStore());
+    const entry = buildEntry();
+
+    await expect(
+      repo.createLedgerEntry({
+        entry,
+        formNonce: entry.formNonce,
+        submittedAtMs: nowMs,
+        nowMs,
+        config: DEFAULT_CONFIG,
+      })
+    ).resolves.toEqual({
+      status: 'blocked',
+      reason: 'transaction_conflict',
+    });
   });
 
   it('scopes create and reversal active totals to the entry subreddit', async () => {

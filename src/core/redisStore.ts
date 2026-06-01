@@ -29,6 +29,18 @@ export interface RedisStore {
   ): Promise<T>;
 }
 
+export class RedisTransactionConflictError extends Error {
+  constructor() {
+    super('StrikeLedger Redis transaction did not commit after retries.');
+    this.name = 'RedisTransactionConflictError';
+  }
+}
+
+export const isRedisTransactionConflictError = (
+  error: unknown
+): error is RedisTransactionConflictError =>
+  error instanceof RedisTransactionConflictError;
+
 export class FakeRedisStore implements RedisStore {
   nowMs = 0;
 

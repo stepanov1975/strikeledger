@@ -139,7 +139,7 @@ Use `StrikeLedger: History` from a post or comment to open that author's ledger 
 - Side-effect summary.
 - Reversal controls for entries that can still be reversed.
 
-You can also open History from the dashboard and look up a user by username or user key.
+History is loaded from a short-lived server-issued context token. Open History from a post or comment menu item when you need a selected user's ledger.
 
 ## Profile
 
@@ -153,7 +153,7 @@ Use `StrikeLedger: Profile` from a post or comment to open the author's profile 
 - Removals grouped by rule.
 - Recent ledger entries.
 
-You can also open Profile from the dashboard and look up a user by username or user key.
+Profile is loaded from a short-lived server-issued context token. Open Profile from a post or comment menu item when you need a selected user's summary.
 
 ## Reversing A Ledger Entry
 

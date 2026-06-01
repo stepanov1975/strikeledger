@@ -1,5 +1,13 @@
 import type { RedisClient, SetOptions, TxClientLike } from '@devvit/redis';
-import type { RedisSetOptions, RedisStore, ZMember, ZRangeOptions } from './redisStore';
+import {
+  RedisTransactionConflictError,
+  type RedisSetOptions,
+  type RedisStore,
+  type ZMember,
+  type ZRangeOptions,
+} from './redisStore';
+
+const MAX_TRANSACTION_ATTEMPTS = 3;
 
 export class DevvitRedisStore implements RedisStore {
   private transactionClient: TxClientLike | null = null;
@@ -90,41 +98,38 @@ export class DevvitRedisStore implements RedisStore {
       return operation();
     }
 
-    const transaction = await this.redis.watch(...watchedKeys);
-    this.transactionClient = transaction;
-    this.transactionStarted = false;
-    this.transactionQueuedCommands = 0;
-
-    try {
-      const result = await operation();
-      if (this.transactionStarted) {
-        const execResults = await transaction.exec();
-        if (
-          !Array.isArray(execResults) ||
-          execResults.length !== this.transactionQueuedCommands
-        ) {
-          throw new Error('StrikeLedger Redis transaction did not commit.');
-        }
-      } else {
-        await transaction.unwatch();
-      }
-      return result;
-    } catch (error) {
-      if (this.transactionStarted) {
-        await transaction.discard().catch((discardError: unknown) => {
-          console.error('StrikeLedger Redis transaction discard failed', discardError);
-        });
-      } else {
-        await transaction.unwatch().catch((unwatchError: unknown) => {
-          console.error('StrikeLedger Redis transaction unwatch failed', unwatchError);
-        });
-      }
-      throw error;
-    } finally {
-      this.transactionClient = null;
+    for (let attempt = 1; attempt <= MAX_TRANSACTION_ATTEMPTS; attempt += 1) {
+      const transaction = await this.redis.watch(...watchedKeys);
+      this.transactionClient = transaction;
       this.transactionStarted = false;
       this.transactionQueuedCommands = 0;
+      let execCompleted = false;
+
+      try {
+        const result = await operation();
+        if (this.transactionStarted) {
+          const execResults = await transaction.exec();
+          execCompleted = true;
+          if (!this.transactionCommitted(execResults)) {
+            if (attempt < MAX_TRANSACTION_ATTEMPTS) {
+              continue;
+            }
+
+            throw new RedisTransactionConflictError();
+          }
+        } else {
+          await transaction.unwatch();
+        }
+        return result;
+      } catch (error) {
+        await this.cleanupTransaction(transaction, execCompleted);
+        throw error;
+      } finally {
+        this.clearTransactionState();
+      }
     }
+
+    throw new RedisTransactionConflictError();
   }
 
   private async ensureTransactionStarted(): Promise<void> {
@@ -134,5 +139,44 @@ export class DevvitRedisStore implements RedisStore {
 
     await this.transactionClient.multi();
     this.transactionStarted = true;
+  }
+
+  private transactionCommitted(execResults: unknown): boolean {
+    return (
+      Array.isArray(execResults) &&
+      execResults.length === this.transactionQueuedCommands
+    );
+  }
+
+  private async cleanupTransaction(
+    transaction: TxClientLike,
+    execCompleted: boolean
+  ): Promise<void> {
+    if (execCompleted) {
+      return;
+    }
+
+    if (this.transactionStarted) {
+      await transaction.discard().catch((discardError: unknown) => {
+        console.error(
+          'StrikeLedger Redis transaction discard failed',
+          discardError
+        );
+      });
+      return;
+    }
+
+    await transaction.unwatch().catch((unwatchError: unknown) => {
+      console.error(
+        'StrikeLedger Redis transaction unwatch failed',
+        unwatchError
+      );
+    });
+  }
+
+  private clearTransactionState(): void {
+    this.transactionClient = null;
+    this.transactionStarted = false;
+    this.transactionQueuedCommands = 0;
   }
 }

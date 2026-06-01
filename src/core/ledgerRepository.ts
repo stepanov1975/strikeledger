@@ -5,7 +5,6 @@ import {
   getDuplicateClaimKey,
   getRetryClaimKey,
 } from './idempotency';
-import { getUserKey, normalizeUsername } from './identity';
 import { logError } from './logging';
 import {
   isRedisTransactionConflictError,
@@ -85,12 +84,6 @@ export type ReverseLedgerEntryResult =
       activeTotal: number;
     }
   | { status: 'not_found' };
-
-export type IdentityMigrationResult = {
-  fromUserKey: string;
-  toUserKey: string;
-  migratedCount: number;
-};
 
 type ReverseLedgerEntryTransactionResult =
   | {
@@ -398,57 +391,6 @@ export class LedgerRepository {
   ): Promise<number> {
     const entries = await this.getUserLedgerForKeys(userKeys, subredditName);
     return this.cacheActiveTotal(cacheUserKey, entries, config, nowMs);
-  }
-
-  async migrateUsernameLedgerToUserId(input: {
-    username: string;
-    userId: string;
-  }): Promise<IdentityMigrationResult> {
-    const fromUserKey = getUserKey({ username: input.username });
-    const toUserKey = getUserKey({ userId: input.userId });
-    if (!fromUserKey || !toUserKey || fromUserKey === toUserKey) {
-      return {
-        fromUserKey: fromUserKey ?? '',
-        toUserKey: toUserKey ?? '',
-        migratedCount: 0,
-      };
-    }
-
-    const normalizedUsername = normalizeUsername(input.username);
-    return this.store.runTransaction(
-      [
-        userLedgerKey(fromUserKey),
-        userLedgerKey(toUserKey),
-        activeTotalKey(fromUserKey),
-      ],
-      async (): Promise<IdentityMigrationResult> => {
-        const entries = await this.getUserLedger(fromUserKey);
-        for (const entry of entries) {
-          const migratedEntry: LedgerEntry = {
-            ...entry,
-            userKey: toUserKey,
-            userId: input.userId.trim(),
-            migratedFromUsername:
-              entry.migratedFromUsername ?? normalizedUsername,
-          };
-          await this.store.set(
-            ledgerEntryKey(migratedEntry.entryId),
-            JSON.stringify(migratedEntry)
-          );
-          await this.store.zAdd(userLedgerKey(toUserKey), {
-            member: migratedEntry.entryId,
-            score: migratedEntry.createdAtMs,
-          });
-        }
-
-        await this.store.del(userLedgerKey(fromUserKey), activeTotalKey(fromUserKey));
-        return {
-          fromUserKey,
-          toUserKey,
-          migratedCount: entries.length,
-        };
-      }
-    );
   }
 
   private async cacheActiveTotal(

@@ -73,8 +73,13 @@ type SettingsResponse = {
   config: StrikeLedgerConfig;
 };
 
+type AdminConfig = Pick<
+  StrikeLedgerConfig,
+  'schemaVersion' | 'revision' | 'rules'
+>;
+
 type SettingsSaveResponse =
-  | { status: 'saved'; config: SettingsResponse['config'] }
+  | { status: 'saved'; config: StrikeLedgerConfig }
   | { status: 'conflict'; currentRevision: number }
   | {
       status: 'invalid';
@@ -187,7 +192,7 @@ const renderFrame = () => {
     'profile',
     'settings',
   ] satisfies DashboardView[]) {
-    const button = create('button', 'tab', titleCase(view));
+    const button = create('button', 'tab', dashboardViewLabel(view));
     button.type = 'button';
     button.setAttribute('role', 'tab');
     button.setAttribute('aria-selected', String(view === activeView));
@@ -205,6 +210,9 @@ const renderFrame = () => {
 
 const titleCase = (value: string): string =>
   value.slice(0, 1).toUpperCase() + value.slice(1);
+
+const dashboardViewLabel = (view: DashboardView): string =>
+  view === 'settings' ? 'Admin' : titleCase(view);
 
 const setActiveView = async (view: DashboardView) => {
   activeView = view;
@@ -260,39 +268,6 @@ const formatAverageScore = (score: number | null): string => {
 
   return Number.isInteger(score) ? String(score) : score.toFixed(1);
 };
-
-const getRequiredInput = (
-  form: HTMLFormElement,
-  name: string
-): HTMLInputElement => {
-  const element = form.elements.namedItem(name);
-  if (!(element instanceof HTMLInputElement)) {
-    throw new Error(`Missing settings field: ${name}.`);
-  }
-
-  return element;
-};
-
-const getRequiredTextarea = (
-  form: HTMLFormElement,
-  name: string
-): HTMLTextAreaElement => {
-  const element = form.elements.namedItem(name);
-  if (!(element instanceof HTMLTextAreaElement)) {
-    throw new Error(`Missing settings field: ${name}.`);
-  }
-
-  return element;
-};
-
-const numberValue = (form: HTMLFormElement, name: string): number =>
-  Number(getRequiredInput(form, name).value);
-
-const checkboxValue = (form: HTMLFormElement, name: string): boolean =>
-  getRequiredInput(form, name).checked;
-
-const textareaValue = (form: HTMLFormElement, name: string): string =>
-  getRequiredTextarea(form, name).value;
 
 const sideEffectSummary = (sideEffects: SideEffects): string => {
   const notable: string[] = [];
@@ -831,18 +806,15 @@ const updateRuleControls = (rulesList: HTMLElement) => {
     rulesList.querySelectorAll<HTMLElement>('[data-rule-row]')
   );
   rows.forEach((row, index) => {
-    row.querySelector<HTMLButtonElement>('.rule-move-up')?.toggleAttribute(
-      'disabled',
-      index === 0
-    );
-    row.querySelector<HTMLButtonElement>('.rule-move-down')?.toggleAttribute(
-      'disabled',
-      index === rows.length - 1
-    );
-    row.querySelector<HTMLButtonElement>('.rule-remove')?.toggleAttribute(
-      'disabled',
-      rows.length <= 1
-    );
+    row
+      .querySelector<HTMLButtonElement>('.rule-move-up')
+      ?.toggleAttribute('disabled', index === 0);
+    row
+      .querySelector<HTMLButtonElement>('.rule-move-down')
+      ?.toggleAttribute('disabled', index === rows.length - 1);
+    row
+      .querySelector<HTMLButtonElement>('.rule-remove')
+      ?.toggleAttribute('disabled', rows.length <= 1);
   });
 };
 
@@ -1185,13 +1157,19 @@ const buildRuleImportSection = (
   );
 };
 
-const buildConfigJsonSection = (
+const toAdminConfig = (config: StrikeLedgerConfig): AdminConfig => ({
+  schemaVersion: config.schemaVersion,
+  revision: config.revision,
+  rules: config.rules,
+});
+
+const buildRulesJsonSection = (
   revision: number,
-  config: StrikeLedgerConfig,
-  getCurrentConfig: () => StrikeLedgerConfig
+  config: AdminConfig,
+  getCurrentConfig: () => AdminConfig
 ): HTMLElement => {
   const status = create('div', 'rule-import-preview');
-  const label = create('label', 'field-label', 'Config JSON');
+  const label = create('label', 'field-label', 'Rules JSON');
   const textarea = create(
     'textarea',
     'field-control config-json-editor'
@@ -1205,25 +1183,29 @@ const buildConfigJsonSection = (
   refresh.type = 'button';
   refresh.addEventListener('click', () => {
     textarea.value = JSON.stringify(getCurrentConfig(), null, 2);
-    status.replaceChildren(create('div', 'notice', 'Config JSON refreshed.'));
+    status.replaceChildren(create('div', 'notice', 'Rules JSON refreshed.'));
   });
 
-  const importButton = create('button', 'secondary-button', 'Save imported JSON');
+  const importButton = create(
+    'button',
+    'secondary-button',
+    'Save imported JSON'
+  );
   importButton.type = 'button';
   importButton.addEventListener('click', () => {
     try {
       const parsed = JSON.parse(textarea.value) as unknown;
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        throw new Error('Config JSON must be an object.');
+        throw new Error('Rules JSON must be an object.');
       }
 
-      void saveSettings(revision, parsed as StrikeLedgerConfig);
+      void saveSettings(revision, parsed as AdminConfig);
     } catch (error) {
       status.replaceChildren(
         create(
           'div',
           'error',
-          error instanceof Error ? error.message : 'Invalid config JSON.'
+          error instanceof Error ? error.message : 'Invalid rules JSON.'
         )
       );
     }
@@ -1231,62 +1213,18 @@ const buildConfigJsonSection = (
 
   const actions = create('div', 'modal-actions');
   actions.append(refresh, importButton);
-  return settingsSection('Config JSON', null, label, actions, status);
+  return settingsSection('Rules JSON', null, label, actions, status);
 };
 
-const collectSettingsConfig = (
+const collectAdminConfig = (
   form: HTMLFormElement,
   currentConfig: StrikeLedgerConfig
-): StrikeLedgerConfig => {
-  const actionPoints = Object.fromEntries(
-    STRIKE_ACTIONS.map((action) => [
-      action,
-      numberValue(form, `actionPoints.${action}`),
-    ])
-  ) as Record<StrikeAction, number>;
-  const stickyAppComments = Object.fromEntries(
-    STRIKE_ACTIONS.map((action) => [
-      action,
-      checkboxValue(form, `stickyAppComments.${action}`),
-    ])
-  ) as Record<StrikeAction, boolean>;
+): AdminConfig => {
   const ruleRows = form.querySelectorAll<HTMLElement>('[data-rule-row]');
 
   return {
-    ...currentConfig,
-    actionPoints,
-    decayAmount: numberValue(form, 'decayAmount'),
-    decayIntervalDays: numberValue(form, 'decayIntervalDays'),
-    postScoreWindowDays: numberValue(form, 'postScoreWindowDays'),
-    defaultPublicCommentTemplate: textareaValue(
-      form,
-      'defaultPublicCommentTemplate'
-    ),
-    defaultPrivateUserNoticeTemplate: textareaValue(
-      form,
-      'defaultPrivateUserNoticeTemplate'
-    ),
-    defaultZeroPointPrivateUserNoticeTemplate: textareaValue(
-      form,
-      'defaultZeroPointPrivateUserNoticeTemplate'
-    ),
-    defaultNativeModNoteTemplate: textareaValue(
-      form,
-      'defaultNativeModNoteTemplate'
-    ),
-    defaultZeroPointNativeModNoteTemplate: textareaValue(
-      form,
-      'defaultZeroPointNativeModNoteTemplate'
-    ),
-    userNoticesEnabled: checkboxValue(form, 'userNoticesEnabled'),
-    distinguishAppComments: checkboxValue(form, 'distinguishAppComments'),
-    stickyAppComments,
-    lockAppComments: checkboxValue(form, 'lockAppComments'),
-    nativeModNotesEnabled: checkboxValue(form, 'nativeModNotesEnabled'),
-    reversalNativeModNotesEnabled: checkboxValue(
-      form,
-      'reversalNativeModNotesEnabled'
-    ),
+    schemaVersion: currentConfig.schemaVersion,
+    revision: currentConfig.revision,
     rules: Array.from(ruleRows, collectRule),
   };
 };
@@ -1297,125 +1235,6 @@ const buildSettingsForm = (response: SettingsResponse): HTMLFormElement => {
     'settings-form settings-editor'
   ) as HTMLFormElement;
   const { config } = response;
-
-  const actionPoints = create('div', 'settings-grid');
-  for (const action of STRIKE_ACTIONS) {
-    actionPoints.append(
-      numberField(
-        ACTION_LABELS[action],
-        `actionPoints.${action}`,
-        config.actionPoints[action],
-        {
-          min: 0,
-          max: 100,
-          required: true,
-        }
-      )
-    );
-  }
-
-  const decay = create('div', 'settings-grid');
-  decay.append(
-    numberField('Decay amount', 'decayAmount', config.decayAmount, {
-      min: 0,
-      max: 100,
-      required: true,
-    }),
-    numberField(
-      'Decay interval days',
-      'decayIntervalDays',
-      config.decayIntervalDays,
-      {
-        min: 1,
-        max: 3650,
-        required: true,
-      }
-    )
-  );
-
-  const profileMetrics = create('div', 'settings-grid');
-  profileMetrics.append(
-    numberField(
-      'Post score window days',
-      'postScoreWindowDays',
-      config.postScoreWindowDays,
-      {
-        min: 1,
-        max: 3650,
-        required: true,
-      }
-    )
-  );
-
-  const toggles = create('div', 'toggle-grid');
-  toggles.append(
-    toggleField(
-      'Send private user notices',
-      'userNoticesEnabled',
-      config.userNoticesEnabled
-    ),
-    toggleField(
-      'Write native mod notes',
-      'nativeModNotesEnabled',
-      config.nativeModNotesEnabled
-    ),
-    toggleField(
-      'Write reversal mod notes',
-      'reversalNativeModNotesEnabled',
-      config.reversalNativeModNotesEnabled
-    ),
-    toggleField(
-      'Distinguish app comments',
-      'distinguishAppComments',
-      config.distinguishAppComments
-    ),
-    toggleField('Lock app comments', 'lockAppComments', config.lockAppComments)
-  );
-
-  const sticky = create('div', 'toggle-grid');
-  for (const action of STRIKE_ACTIONS) {
-    sticky.append(
-      toggleField(
-        `Sticky comments for ${ACTION_LABELS[action]}`,
-        `stickyAppComments.${action}`,
-        config.stickyAppComments[action]
-      )
-    );
-  }
-
-  const templates = create('div', 'template-grid');
-  templates.append(
-    textareaField(
-      'Default public comment',
-      'defaultPublicCommentTemplate',
-      config.defaultPublicCommentTemplate,
-      true
-    ),
-    textareaField(
-      'Default private user notice',
-      'defaultPrivateUserNoticeTemplate',
-      config.defaultPrivateUserNoticeTemplate,
-      true
-    ),
-    textareaField(
-      'Zero-point private user notice',
-      'defaultZeroPointPrivateUserNoticeTemplate',
-      config.defaultZeroPointPrivateUserNoticeTemplate,
-      true
-    ),
-    textareaField(
-      'Default native mod note',
-      'defaultNativeModNoteTemplate',
-      config.defaultNativeModNoteTemplate,
-      true
-    ),
-    textareaField(
-      'Zero-point native mod note',
-      'defaultZeroPointNativeModNoteTemplate',
-      config.defaultZeroPointNativeModNoteTemplate,
-      true
-    )
-  );
 
   const rulesList = create('div', 'rule-editor-list');
   for (const rule of config.rules) {
@@ -1439,24 +1258,18 @@ const buildSettingsForm = (response: SettingsResponse): HTMLFormElement => {
     );
     updateRuleControls(rulesList);
   });
-  const configJsonSection = buildConfigJsonSection(
+  const rulesJsonSection = buildRulesJsonSection(
     config.revision,
-    config,
-    () => collectSettingsConfig(form, config)
+    toAdminConfig(config),
+    () => collectAdminConfig(form, config)
   );
 
   const actions = create('div', 'modal-actions');
-  const save = create('button', 'load-more', 'Save settings');
+  const save = create('button', 'load-more', 'Save admin changes');
   save.type = 'submit';
   actions.append(save);
 
   form.append(
-    settingsSection('Action points', null, actionPoints),
-    settingsSection('Decay', null, decay),
-    settingsSection('Profile metrics', null, profileMetrics),
-    settingsSection('Side effects', null, toggles),
-    settingsSection('Sticky comments', null, sticky),
-    settingsSection('Default templates', null, templates),
     buildRuleImportSection(rulesList, config),
     settingsSection(
       'Rules',
@@ -1464,13 +1277,13 @@ const buildSettingsForm = (response: SettingsResponse): HTMLFormElement => {
       rulesList,
       addRule
     ),
-    configJsonSection,
+    rulesJsonSection,
     actions
   );
 
   form.addEventListener('submit', (event) => {
     event.preventDefault();
-    void saveSettings(config.revision, collectSettingsConfig(form, config));
+    void saveSettings(config.revision, collectAdminConfig(form, config));
   });
 
   return form;
@@ -1482,7 +1295,7 @@ const renderSettings = (response: SettingsResponse) => {
   }
 
   const children: HTMLElement[] = [
-    renderToolbar('Settings', `r/${response.subredditName}`),
+    renderToolbar('Admin', `r/${response.subredditName}`),
     renderMetrics([
       ['Revision', response.config.revision],
       [
@@ -1560,7 +1373,7 @@ const recalculateUserTotal = async (rawValue: string) => {
   }
 };
 
-const saveSettings = async (revision: number, config: StrikeLedgerConfig) => {
+const saveSettings = async (revision: number, config: AdminConfig) => {
   try {
     const response = await fetch('/api/settings', {
       method: 'POST',
@@ -1590,14 +1403,15 @@ const saveSettings = async (revision: number, config: StrikeLedgerConfig) => {
       throw new Error(`Settings save failed with ${response.status}.`);
     }
 
-    settingsNotice = 'Settings saved.';
+    if (result.status !== 'saved') {
+      throw new Error('Unexpected settings response.');
+    }
+
+    settingsNotice = 'Admin changes saved.';
     renderSettings({
       subredditName: bootstrap?.subredditName ?? '',
       canManage: true,
-      config:
-        result.status === 'saved'
-          ? result.config
-          : (config as SettingsResponse['config']),
+      config: result.config,
     });
   } catch (error) {
     showError(error instanceof Error ? error.message : 'Settings save failed.');

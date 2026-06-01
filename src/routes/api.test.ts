@@ -94,7 +94,6 @@ const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => ({
   moderatorUsername: 'mod-a',
   createdAtMs: Date.now(),
   status: 'succeeded',
-  idempotencyKey: 'retry',
   duplicateKey: 'duplicate',
   moderatorRetryKey: 'retry',
   idempotencyInputs: {},
@@ -114,6 +113,7 @@ const loadApi = async (
       violationReason: string;
       priority: number;
     }>;
+    nativeSettings?: Record<string, unknown>;
     postsByUser?: PostScoreMock[];
   } = {}
 ) => {
@@ -137,10 +137,13 @@ const loadApi = async (
     getRules: vi.fn(async () => options.redditRules ?? []),
     getPostsByUser: vi.fn(() => buildAsyncListing(options.postsByUser ?? [])),
   };
+  const settings = {
+    getAll: vi.fn(async () => options.nativeSettings ?? {}),
+  };
 
-  vi.doMock('@devvit/web/server', () => ({ reddit, redis }));
+  vi.doMock('@devvit/web/server', () => ({ reddit, redis, settings }));
   const { api } = await import('./api');
-  return { api, reddit, redis };
+  return { api, reddit, redis, settings };
 };
 
 const seedViewContext = async (
@@ -210,6 +213,27 @@ describe('api routes', () => {
     });
   });
 
+  it('reads scalar runtime config from native install settings', async () => {
+    const { api, settings } = await loadApi(['posts'], {
+      nativeSettings: {
+        warnPoints: 2,
+        decayIntervalDays: 14,
+        userNoticesEnabled: false,
+      },
+    });
+
+    const response = await api.request('/settings');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(settings.getAll).toHaveBeenCalled();
+    expect(body.config).toMatchObject({
+      actionPoints: expect.objectContaining({ warn: 2 }),
+      decayIntervalDays: 14,
+      userNoticesEnabled: false,
+    });
+  });
+
   it('allows read APIs for listed moderators with no explicit permissions', async () => {
     const { api } = await loadApi([], { listedModerator: true });
 
@@ -232,7 +256,7 @@ describe('api routes', () => {
           priority: 2,
         },
         {
-          shortName: 'Rule 1.1 - Personal attacks',
+          shortName: 'Rule 1: Personal attacks',
           description: 'No attacks.',
           kind: 'comment',
           violationReason: 'Personal attacks',
@@ -252,7 +276,7 @@ describe('api routes', () => {
         {
           id: 'rule-1',
           label: 'Rule 1 - Personal attacks',
-          redditShortName: 'Rule 1.1 - Personal attacks',
+          redditShortName: 'Rule 1: Personal attacks',
           description: 'No attacks.',
           kind: 'comment',
           violationReason: 'Personal attacks',

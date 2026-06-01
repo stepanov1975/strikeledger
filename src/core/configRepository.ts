@@ -5,6 +5,13 @@ import {
   type ConfigValidationIssue,
 } from './config';
 import type { StrikeLedgerConfig } from './domain';
+import {
+  applyNativeSettings,
+  toRedisOwnedConfig,
+  type NativeSettingsProvider,
+  type NativeSettingsValues,
+} from './nativeSettings';
+import { logError } from './logging';
 import type { RedisStore } from './redisStore';
 
 export type SettingsAuditRecord = {
@@ -47,14 +54,6 @@ const SETTINGS_AUDIT_SNAPSHOT_LIMIT = 20;
 
 const parseJson = <T>(raw: string | null): T | null =>
   raw === null ? null : (JSON.parse(raw) as T);
-
-const applyConfigDefaults = (config: StrikeLedgerConfig): StrikeLedgerConfig => ({
-  ...config,
-  postScoreWindowDays:
-    typeof config.postScoreWindowDays === 'number'
-      ? config.postScoreWindowDays
-      : DEFAULT_CONFIG.postScoreWindowDays,
-});
 
 const canonicalize = (value: unknown): unknown => {
   if (Array.isArray(value)) {
@@ -116,82 +115,111 @@ const validateExistingRuleIds = (
 };
 
 export class ConfigRepository {
-  constructor(private readonly store: RedisStore) {}
+  constructor(
+    private readonly store: RedisStore,
+    private readonly nativeSettings?: NativeSettingsProvider
+  ) {}
 
-  async getConfig(): Promise<StrikeLedgerConfig> {
+  private async getNativeSettingsValues(): Promise<NativeSettingsValues> {
+    if (!this.nativeSettings) {
+      return {};
+    }
+
+    try {
+      return await this.nativeSettings.getAll<NativeSettingsValues>();
+    } catch (error) {
+      logError('config.native_settings_read_failed', {}, error);
+      throw error;
+    }
+  }
+
+  private async getStoredConfig(): Promise<StrikeLedgerConfig> {
     const storedConfig = parseJson<StrikeLedgerConfig>(
       await this.store.get(configKey)
     );
 
     if (storedConfig) {
-      return applyConfigDefaults(storedConfig);
+      return storedConfig;
     }
 
-    await this.store.set(configKey, JSON.stringify(DEFAULT_CONFIG));
-    return DEFAULT_CONFIG;
+    const defaultStoredConfig = toRedisOwnedConfig(DEFAULT_CONFIG);
+    await this.store.set(configKey, JSON.stringify(defaultStoredConfig));
+    return defaultStoredConfig;
+  }
+
+  async getConfig(): Promise<StrikeLedgerConfig> {
+    return applyNativeSettings(
+      await this.getStoredConfig(),
+      await this.getNativeSettingsValues()
+    );
   }
 
   async saveConfig(request: SaveConfigRequest): Promise<SaveConfigResult> {
+    const nativeSettings = await this.getNativeSettingsValues();
     const result = await this.store.runTransaction(
       [configKey],
       async (): Promise<SaveConfigResult> => {
-      const currentConfig = applyConfigDefaults(
-        parseJson<StrikeLedgerConfig>(await this.store.get(configKey)) ??
-          DEFAULT_CONFIG
-      );
-      if (currentConfig.revision !== request.expectedRevision) {
-        return {
-          status: 'conflict',
-          currentRevision: currentConfig.revision,
+        const currentConfig = toRedisOwnedConfig(
+          parseJson<StrikeLedgerConfig>(await this.store.get(configKey)) ??
+            DEFAULT_CONFIG
+        );
+        if (currentConfig.revision !== request.expectedRevision) {
+          return {
+            status: 'conflict',
+            currentRevision: currentConfig.revision,
+          };
+        }
+
+        const nextConfig = toRedisOwnedConfig({
+          ...request.nextConfig,
+          revision: currentConfig.revision + 1,
+        });
+        const effectiveNextConfig = applyNativeSettings(
+          nextConfig,
+          nativeSettings
+        );
+        const issues = [
+          ...validateConfig(effectiveNextConfig),
+          ...validateExistingRuleIds(currentConfig, nextConfig),
+        ];
+        if (issues.length > 0) {
+          return { status: 'invalid', issues };
+        }
+
+        const beforeConfig = canonicalJson(currentConfig);
+        const afterConfig = canonicalJson(nextConfig);
+        const auditKey = settingsAuditKey(
+          request.timestampMs,
+          request.moderatorUsername
+        );
+        const snapshotKey = settingsAuditSnapshotKey(
+          request.timestampMs,
+          request.moderatorUsername
+        );
+        const audit: SettingsAuditRecord = {
+          moderatorUsername: request.moderatorUsername,
+          timestampMs: request.timestampMs,
+          changedFields: changedTopLevelFields(currentConfig, nextConfig),
+          beforeHash: sha256Hex(beforeConfig),
+          afterHash: sha256Hex(afterConfig),
         };
-      }
 
-      const nextConfig: StrikeLedgerConfig = {
-        ...request.nextConfig,
-        revision: currentConfig.revision + 1,
-      };
-      const issues = [
-        ...validateConfig(nextConfig),
-        ...validateExistingRuleIds(currentConfig, nextConfig),
-      ];
-      if (issues.length > 0) {
-        return { status: 'invalid', issues };
-      }
+        await this.store.set(configKey, JSON.stringify(nextConfig));
+        await this.store.set(auditKey, JSON.stringify(audit));
+        await this.store.set(
+          snapshotKey,
+          JSON.stringify({
+            auditKey,
+            beforeConfig,
+            afterConfig,
+          } satisfies SettingsAuditSnapshotRecord)
+        );
+        await this.store.zAdd(settingsAuditSnapshotIndexKey, {
+          member: snapshotKey,
+          score: request.timestampMs,
+        });
 
-      const beforeConfig = canonicalJson(currentConfig);
-      const afterConfig = canonicalJson(nextConfig);
-      const auditKey = settingsAuditKey(
-        request.timestampMs,
-        request.moderatorUsername
-      );
-      const snapshotKey = settingsAuditSnapshotKey(
-        request.timestampMs,
-        request.moderatorUsername
-      );
-      const audit: SettingsAuditRecord = {
-        moderatorUsername: request.moderatorUsername,
-        timestampMs: request.timestampMs,
-        changedFields: changedTopLevelFields(currentConfig, nextConfig),
-        beforeHash: sha256Hex(beforeConfig),
-        afterHash: sha256Hex(afterConfig),
-      };
-
-      await this.store.set(configKey, JSON.stringify(nextConfig));
-      await this.store.set(auditKey, JSON.stringify(audit));
-      await this.store.set(
-        snapshotKey,
-        JSON.stringify({
-          auditKey,
-          beforeConfig,
-          afterConfig,
-        } satisfies SettingsAuditSnapshotRecord)
-      );
-      await this.store.zAdd(settingsAuditSnapshotIndexKey, {
-        member: snapshotKey,
-        score: request.timestampMs,
-      });
-
-      return { status: 'saved', config: nextConfig, audit };
+        return { status: 'saved', config: effectiveNextConfig, audit };
       }
     );
 

@@ -12,9 +12,10 @@ npm run build
 ## Setup
 
 - Install or playtest the app on a development subreddit.
-- Use a moderator account with `all` permission for settings and dashboard creation.
+- Use a moderator account with `all` permission for Admin tools and dashboard creation.
 - Use a separate test account or known test author for enforcement.
-- Open `StrikeLedger: Settings` from the subreddit menu first and confirm the dashboard post opens.
+- Review the standard Devvit app settings page and confirm the native setting defaults are present.
+- Open `StrikeLedger: Admin` from the subreddit menu first and confirm the dashboard post opens.
 
 ## Logs
 
@@ -32,7 +33,7 @@ npx devvit logs strikeledger_dev strikeledger --since 30m --show-timestamps --lo
 npx devvit logs strikeledger_dev strikeledger --connect --show-timestamps --log-runtime
 ```
 
-- Trigger Settings, Warn, History, Profile, and Reverse while the stream is open. Expected operational log prefixes look like `StrikeLedger menu.enforcement.form_opened`, `StrikeLedger enforcement.submit.created`, `StrikeLedger api.history.ok`, and `StrikeLedger api.profile.ok`.
+- Trigger Admin, Warn, History, Profile, and Reverse while the stream is open. Expected operational log prefixes look like `StrikeLedger menu.enforcement.form_opened`, `StrikeLedger enforcement.submit.created`, `StrikeLedger api.history.ok`, and `StrikeLedger api.profile.ok`.
 
 ## Enforcement
 
@@ -56,20 +57,21 @@ npx devvit logs strikeledger_dev strikeledger --connect --show-timestamps --log-
 - Confirm public comments do not show point totals or active totals.
 - Confirm private notices include point details and active total when enabled.
 - Confirm native mod notes are neutral and unlabeled when enabled.
-- Temporarily disable user notices in settings; confirm new actions skip private notices.
+- Temporarily disable user notices in native app settings; confirm new actions skip private notices.
 
 ## Dashboard
 
 - Open `StrikeLedger: History` from a post and a comment; confirm the selected author's entries load.
 - Open `StrikeLedger: Profile`; confirm active total, lifetime points, reversals, and removal counts are coherent.
 - Reverse an active entry with a required reason; confirm the active total updates and the entry remains visible as reversed.
-- Use settings to recalculate a selected user's active total; confirm the displayed result matches history/profile.
+- Use Admin to recalculate a selected user's active total; confirm the displayed result matches history/profile.
 
-## Settings
+## Settings And Admin
 
-- Change a point value in settings JSON; confirm the revision increments and the new value applies to a new enforcement action.
-- Open settings in two windows, save one, then try saving the stale revision; confirm the stale save conflicts.
-- Save invalid config JSON or invalid config values; confirm the save is rejected.
+- Change a point value in native app settings; confirm the new value applies to a new enforcement action.
+- Change a rule label in Admin; confirm the revision increments and the new label appears in new enforcement forms.
+- Open Admin in two windows, save one, then try saving the stale revision; confirm the stale save conflicts.
+- Save invalid rules JSON or invalid rule values; confirm the save is rejected.
 
 ## Known Build Warnings
 

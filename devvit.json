@@ -84,8 +84,8 @@
         "endpoint": "/internal/menu/profile"
       },
       {
-        "label": "StrikeLedger: Settings",
-        "description": "Open StrikeLedger settings.",
+        "label": "StrikeLedger: Admin",
+        "description": "Open StrikeLedger admin tools.",
         "location": "subreddit",
         "forUserType": "moderator",
         "endpoint": "/internal/menu/settings"
@@ -94,6 +94,127 @@
   },
   "forms": {
     "strikeledgerEnforcement": "/internal/form/enforcement-submit"
+  },
+  "settings": {
+    "subreddit": {
+      "warnPoints": {
+        "type": "number",
+        "label": "Warn point value",
+        "helpText": "Points added by StrikeLedger: Warn.",
+        "defaultValue": 1,
+        "validationEndpoint": "/internal/settings/validate-points"
+      },
+      "warnRemovePoints": {
+        "type": "number",
+        "label": "Warn and remove point value",
+        "helpText": "Points added by StrikeLedger: Warn and remove.",
+        "defaultValue": 3,
+        "validationEndpoint": "/internal/settings/validate-points"
+      },
+      "warnNsfwPoints": {
+        "type": "number",
+        "label": "Warn and mark NSFW point value",
+        "helpText": "Points added by StrikeLedger: Warn and mark NSFW.",
+        "defaultValue": 1,
+        "validationEndpoint": "/internal/settings/validate-points"
+      },
+      "decayAmount": {
+        "type": "number",
+        "label": "Decay amount",
+        "helpText": "Active warning points removed each decay interval.",
+        "defaultValue": 1,
+        "validationEndpoint": "/internal/settings/validate-decay-amount"
+      },
+      "decayIntervalDays": {
+        "type": "number",
+        "label": "Decay interval days",
+        "helpText": "Number of days per decay interval.",
+        "defaultValue": 30,
+        "validationEndpoint": "/internal/settings/validate-days"
+      },
+      "postScoreWindowDays": {
+        "type": "number",
+        "label": "Post score window days",
+        "helpText": "Recent post window used by the profile summary.",
+        "defaultValue": 30,
+        "validationEndpoint": "/internal/settings/validate-days"
+      },
+      "defaultPublicCommentTemplate": {
+        "type": "paragraph",
+        "label": "Default public comment template",
+        "helpText": "Allowed placeholders: {ruleLabel}, {action}, {targetPermalink}.",
+        "defaultValue": "Moderator notice: this content violates {ruleLabel}. This action has been recorded in your subreddit warning history.",
+        "validationEndpoint": "/internal/settings/validate-public-template"
+      },
+      "defaultPrivateUserNoticeTemplate": {
+        "type": "paragraph",
+        "label": "Default private user notice template",
+        "helpText": "Allowed placeholders: {subredditName}, {ruleLabel}, {action}, {pointsAdded}, {activeTotal}, {targetPermalink}.",
+        "defaultValue": "Your content in r/{subredditName} violated {ruleLabel}. This action added {pointsAdded} warning point(s). Your current active warning total is {activeTotal}. Please review the community rules before participating again.",
+        "validationEndpoint": "/internal/settings/validate-private-template"
+      },
+      "defaultZeroPointPrivateUserNoticeTemplate": {
+        "type": "paragraph",
+        "label": "Zero-point private user notice template",
+        "helpText": "Allowed placeholders: {subredditName}, {ruleLabel}, {action}, {pointsAdded}, {activeTotal}, {targetPermalink}.",
+        "defaultValue": "Your content in r/{subredditName} violated {ruleLabel}. This action was recorded as a warning without adding warning points. Your current active warning total is {activeTotal}. Please review the community rules before participating again.",
+        "validationEndpoint": "/internal/settings/validate-private-template"
+      },
+      "defaultNativeModNoteTemplate": {
+        "type": "paragraph",
+        "label": "Default native mod note template",
+        "helpText": "Allowed placeholders: {subredditName}, {ruleLabel}, {action}, {pointsAdded}, {activeTotal}, {targetPermalink}.",
+        "defaultValue": "StrikeLedger: {action} for {ruleLabel}. Points: {pointsAdded}. Active total: {activeTotal}. Target: {targetPermalink}",
+        "validationEndpoint": "/internal/settings/validate-private-template"
+      },
+      "defaultZeroPointNativeModNoteTemplate": {
+        "type": "paragraph",
+        "label": "Zero-point native mod note template",
+        "helpText": "Allowed placeholders: {subredditName}, {ruleLabel}, {action}, {pointsAdded}, {activeTotal}, {targetPermalink}.",
+        "defaultValue": "StrikeLedger: {action} for {ruleLabel}. No points added. Active total: {activeTotal}. Target: {targetPermalink}",
+        "validationEndpoint": "/internal/settings/validate-private-template"
+      },
+      "userNoticesEnabled": {
+        "type": "boolean",
+        "label": "Send private user notices",
+        "defaultValue": true
+      },
+      "nativeModNotesEnabled": {
+        "type": "boolean",
+        "label": "Write native mod notes",
+        "defaultValue": true
+      },
+      "reversalNativeModNotesEnabled": {
+        "type": "boolean",
+        "label": "Write reversal mod notes",
+        "defaultValue": true
+      },
+      "distinguishAppComments": {
+        "type": "boolean",
+        "label": "Distinguish app comments",
+        "defaultValue": true
+      },
+      "lockAppComments": {
+        "type": "boolean",
+        "label": "Lock app comments",
+        "defaultValue": true
+      },
+      "stickyCommentsWarn": {
+        "type": "boolean",
+        "label": "Sticky comments for Warn",
+        "defaultValue": false
+      },
+      "stickyCommentsWarnRemove": {
+        "type": "boolean",
+        "label": "Sticky comments for Warn and remove",
+        "defaultValue": false
+      },
+      "stickyCommentsWarnNsfw": {
+        "type": "boolean",
+        "label": "Sticky comments for Warn and mark NSFW",
+        "defaultValue": false
+      }
+    }
   },
   "triggers": {
     "onAppInstall": "/internal/triggers/on-app-install",

@@ -115,8 +115,9 @@ const loadTriggers = async () => {
       ])
     ),
   };
+  const settings = { getAll: vi.fn(async () => ({})) };
 
-  vi.doMock('@devvit/web/server', () => ({ reddit, redis }));
+  vi.doMock('@devvit/web/server', () => ({ reddit, redis, settings }));
   const { triggers } = await import('./triggers');
   return { reddit, redis, triggers };
 };
@@ -154,9 +155,7 @@ describe('trigger routes', () => {
       redis.sortedSets.get('user:id:t2_user:post_rate')?.get('t3_new')
     ).toBe(nowMs);
 
-    const rawSummary = redis.values.get(
-      'user:id:t2_user:post_score_summary'
-    );
+    const rawSummary = redis.values.get('user:id:t2_user:post_score_summary');
     expect(rawSummary).toBeDefined();
     expect(JSON.parse(rawSummary as string)).toMatchObject({
       subredditName: 'testsub',

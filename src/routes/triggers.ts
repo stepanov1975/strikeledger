@@ -4,7 +4,7 @@ import type {
   OnPostSubmitRequest,
   TriggerResponse,
 } from '@devvit/web/shared';
-import { reddit, redis } from '@devvit/web/server';
+import { reddit, redis, settings } from '@devvit/web/server';
 import { ConfigRepository } from '../core/configRepository';
 import { DevvitRedisStore } from '../core/devvitRedisStore';
 import { getUserKey } from '../core/identity';
@@ -76,7 +76,7 @@ triggers.post('/on-post-submit', async (c) => {
       return c.json<TriggerResponse>({ status: 'success' }, 200);
     }
 
-    const config = await new ConfigRepository(store).getConfig();
+    const config = await new ConfigRepository(store, settings).getConfig();
     const summary = await refreshPostScoreSummary({
       store,
       client: reddit,

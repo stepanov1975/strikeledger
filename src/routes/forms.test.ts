@@ -22,7 +22,6 @@ const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => ({
   moderatorUsername: 'mod-a',
   createdAtMs: Date.UTC(2026, 0, 1),
   status: 'succeeded',
-  idempotencyKey: 'retry',
   duplicateKey: 'duplicate',
   moderatorRetryKey: 'retry',
   idempotencyInputs: {},
@@ -34,7 +33,11 @@ const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => ({
 describe('forms helpers', () => {
   it('identifies failed side effects in partial success toasts', async () => {
     vi.resetModules();
-    vi.doMock('@devvit/web/server', () => ({ reddit: {}, redis: {} }));
+    vi.doMock('@devvit/web/server', () => ({
+      reddit: {},
+      redis: {},
+      settings: { getAll: vi.fn(async () => ({})) },
+    }));
     const { formatCreatedToast } = await import('./forms');
 
     const toast = formatCreatedToast(

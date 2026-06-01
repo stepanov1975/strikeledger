@@ -24,7 +24,6 @@ const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => ({
   moderatorUsername: 'mod-a',
   createdAtMs: 1000,
   status: 'pending',
-  idempotencyKey: 'retry',
   duplicateKey: 'duplicate',
   moderatorRetryKey: 'retry',
   idempotencyInputs: {},

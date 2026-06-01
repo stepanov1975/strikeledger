@@ -81,7 +81,6 @@ export type LedgerEntry = {
   moderatorUsername: string;
   createdAtMs: number;
   status: LedgerStatus;
-  idempotencyKey: string;
   duplicateKey: string;
   moderatorRetryKey: string;
   idempotencyInputs: Record<string, string | number | boolean>;
@@ -98,7 +97,6 @@ export type LedgerEntry = {
   reversedBy?: string;
   reversalReason?: string;
   reversalNote?: string;
-  migratedFromUsername?: string;
 };
 
 export const ACTION_LABELS: Record<StrikeAction, string> = {

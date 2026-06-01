@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { reddit, redis } from '@devvit/web/server';
+import { reddit, redis, settings } from '@devvit/web/server';
 import { ConfigRepository } from '../core/configRepository';
 import { DashboardRepository, type ViewContextRecord } from '../core/dashboard';
 import { DevvitRedisStore } from '../core/devvitRedisStore';
@@ -24,7 +24,7 @@ const getRepositories = () => {
   const store = new DevvitRedisStore(redis);
   return {
     store,
-    configRepository: new ConfigRepository(store),
+    configRepository: new ConfigRepository(store, settings),
     dashboardRepository: new DashboardRepository(store),
     ledgerRepository: new LedgerRepository(store),
   };
@@ -104,7 +104,7 @@ const trimUsernamePrefix = (username: string): string =>
 const trimRulePrefix = (label: string): string =>
   label
     .trim()
-    .replace(/^(?:rule\s*)?\d+(?:\.\d+)*\s*[-:.)]?\s*/i, '')
+    .replace(/^(?:rule\s*)?\d+(?!\.\d)\s*[-:.)]?\s*/i, '')
     .trim();
 
 const buildImportedRuleLabel = (shortName: string, index: number): string => {
@@ -139,8 +139,8 @@ const resolveProfileUsername = (
   entries: LedgerEntry[]
 ): string | null => {
   const username =
-    context.authorName ?? entries.find((entry) => entry.username.trim())
-      ?.username;
+    context.authorName ??
+    entries.find((entry) => entry.username.trim())?.username;
 
   return username ? trimUsernamePrefix(username) : null;
 };

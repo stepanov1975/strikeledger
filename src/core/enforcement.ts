@@ -132,7 +132,6 @@ export const buildLedgerEntry = (input: BuildLedgerEntryInput): LedgerEntry => {
     moderatorUsername: input.moderatorUsername,
     createdAtMs: input.createdAtMs,
     status: 'pending',
-    idempotencyKey: moderatorRetryKey,
     duplicateKey,
     moderatorRetryKey,
     idempotencyInputs: {

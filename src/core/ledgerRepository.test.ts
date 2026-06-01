@@ -62,15 +62,6 @@ const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => {
     moderatorUsername,
     createdAtMs: submittedAtMs,
     status: overrides.status ?? 'pending',
-    idempotencyKey:
-      overrides.idempotencyKey ??
-      createModeratorRetryKey({
-        targetId,
-        action,
-        ruleId,
-        moderatorUsername,
-        submittedAtMs,
-      }),
     duplicateKey:
       overrides.duplicateKey ?? createDuplicateKey({ targetId, action, ruleId }),
     moderatorRetryKey:
@@ -562,37 +553,6 @@ describe('LedgerRepository', () => {
       )
     ).resolves.toBe(4);
     await expect(repo.getCachedActiveTotal('id:t2_user')).resolves.toBe(4);
-  });
-
-  it('migrates username fallback entries into the user ID ledger', async () => {
-    const { repo, store } = createRepo();
-    const fallbackEntry = buildEntry({
-      entryId: 'entry-fallback',
-      userKey: 'name:someuser',
-      username: 'SomeUser',
-    });
-    await seedEntry(store, fallbackEntry);
-
-    await expect(
-      repo.migrateUsernameLedgerToUserId({
-        username: 'u/SomeUser',
-        userId: 't2_user',
-      })
-    ).resolves.toEqual({
-      fromUserKey: 'name:someuser',
-      toUserKey: 'id:t2_user',
-      migratedCount: 1,
-    });
-    await expect(repo.getUserLedger('name:someuser')).resolves.toEqual([]);
-    await expect(repo.getUserLedger('id:t2_user')).resolves.toEqual([
-      expect.objectContaining({
-        entryId: 'entry-fallback',
-        username: 'SomeUser',
-        userKey: 'id:t2_user',
-        userId: 't2_user',
-        migratedFromUsername: 'someuser',
-      }),
-    ]);
   });
 
   it('rejects ledger entries from future schema versions', async () => {

@@ -4,7 +4,7 @@ This file is the authoritative MVP specification for StrikeLedger, a Devvit mode
 
 ## Goal
 
-Moderators can apply a rule-specific warning action to a post or comment. The app records a durable ledger entry, updates the user's active warning total with configurable step decay, performs configured Reddit side effects, and exposes history, profile, reversal, and settings workflows in an in-app web UI.
+Moderators can apply a rule-specific warning action to a post or comment. The app records a durable ledger entry, updates the user's active warning total with configurable step decay, performs configured Reddit side effects, and exposes history, profile, reversal, and Admin workflows in an in-app web UI.
 
 ## Scope
 
@@ -17,7 +17,7 @@ Add moderator-only Devvit menu actions:
 - `StrikeLedger: Warn and mark NSFW` on posts only
 - `StrikeLedger: History`
 - `StrikeLedger: Profile`
-- `StrikeLedger: Settings` at subreddit level
+- `StrikeLedger: Admin` at subreddit level
 
 The product name shown to moderators is `StrikeLedger`. The internal package and app name may remain `strikeledger`.
 
@@ -28,16 +28,16 @@ The MVP includes these in-app web UI views:
 - History for the selected author or target.
 - Profile for the selected author.
 - Reversal launched from an individual history entry.
-- Settings for rules, templates, points, decay, notices, side-effect options, config import/export, and manual user-total recalculation.
+- Admin tools for rules, Reddit rule import, rules JSON import/export, and manual user-total recalculation.
 
 History and profile menu handlers create short-lived Redis view context records and open the configured StrikeLedger web UI with the requested view and context token. The MVP must not assume that a bare relative URL such as `/app?view=history&context={token}` is directly navigable from a Reddit menu response.
 
-The MVP UI launch path is a StrikeLedger dashboard custom post/webview entrypoint that renders the plain TypeScript client and reads the selected view/context from the URL or an app-provided bootstrap endpoint. Settings open the same web UI without a target context token. The app must provide a clear first-run way for moderators with `all` permission to create or locate the dashboard surface.
+The MVP UI launch path is a StrikeLedger dashboard custom post/webview entrypoint that renders the plain TypeScript client and reads the selected view/context from the URL or an app-provided bootstrap endpoint. Admin opens the same web UI without a target context token. The app must provide a clear first-run way for moderators with `all` permission to create or locate the dashboard surface.
 
 Implementation decision:
 
 - `devvit.json` must define a `post.dir` and a `dashboard` entrypoint.
-- The subreddit-level `StrikeLedger: Settings` menu handler checks for a stored dashboard post ID. If one exists and is readable, it navigates to that post. If none exists, a moderator with `all` permission can create it with `reddit.submitCustomPost({ subredditName, title, entry: 'dashboard' })`; the returned post ID is stored in Redis.
+- The subreddit-level `StrikeLedger: Admin` menu handler checks for a stored dashboard post ID. If one exists and is readable, it navigates to that post. If none exists, a moderator with `all` permission can create it with `reddit.submitCustomPost({ subredditName, title, entry: 'dashboard' })`; the returned post ID is stored in Redis.
 - History and profile menu handlers store a pending view request in Redis keyed by subreddit and moderator username, then navigate to the dashboard post. The dashboard client calls `/api/bootstrap` to resolve the current moderator's pending view request. Query parameters are optional hints only.
 - The dashboard post is a launch surface, not an authorization boundary. Do not store ledger data, user identities, or target context in custom-post `postData`. Non-moderators who open the dashboard see no moderation data because every API route re-checks access server-side.
 
@@ -53,7 +53,7 @@ Implementation decision:
 - Automatic severe-violation detection.
 - Automatic retry worker for failed side effects.
 - Public correction comments on reversal.
-- Form-only history, profile, reversal, or settings workflows as the primary MVP UI.
+- Form-only history, profile, reversal, or Admin workflows as the primary MVP UI.
 - Rollback UI for settings changes.
 - Bulk background active-total recalculation.
 - React or another frontend framework.
@@ -71,7 +71,7 @@ Each enforcement action opens a form with:
 - Confirmation text showing the point value.
 - Server-generated `formNonce`.
 
-The rule dropdown shows enabled rules only, sorted by configured order. Sub-rules are supported through clear labels, for example `Rule 1 - Harassment` and `Rule 1.1 - Personal attacks`.
+The rule dropdown shows enabled rules only, sorted by configured order.
 
 A blank public override uses the selected rule public template, then the global default public template. A submitted override is validated with the same public-template placeholder allowlist as configured public templates. It must reject private placeholders such as `{pointsAdded}` and `{activeTotal}`. The ledger stores whether an override was used.
 
@@ -85,11 +85,11 @@ At form and menu time, snapshot target author identity from the target object in
 
 ### Actions
 
-| Action | Enum | Default points | Targets | Side effects |
-| --- | --- | ---: | --- | --- |
-| Warn | `warn` | 1 | Posts and comments | Public explanation comment, ledger entry, native mod note if enabled, private user notice if enabled |
-| Warn and remove | `warn_remove` | 3 | Posts and comments | Public explanation comment, remove target, ledger entry, native mod note if enabled, private user notice if enabled |
-| Warn and mark NSFW | `warn_nsfw` | 1 | Posts only | Mark post NSFW, public explanation comment, ledger entry, native mod note if enabled, private user notice if enabled |
+| Action             | Enum          | Default points | Targets            | Side effects                                                                                                         |
+| ------------------ | ------------- | -------------: | ------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| Warn               | `warn`        |              1 | Posts and comments | Public explanation comment, ledger entry, native mod note if enabled, private user notice if enabled                 |
+| Warn and remove    | `warn_remove` |              3 | Posts and comments | Public explanation comment, remove target, ledger entry, native mod note if enabled, private user notice if enabled  |
+| Warn and mark NSFW | `warn_nsfw`   |              1 | Posts only         | Mark post NSFW, public explanation comment, ledger entry, native mod note if enabled, private user notice if enabled |
 
 Moderator-facing action labels are:
 
@@ -164,7 +164,6 @@ Required fields:
 - `moderatorUsername`
 - `createdAtMs`
 - `status`: `pending`, `succeeded`, `partial`, or `reversed`
-- `idempotencyKey`
 - `duplicateKey`
 - `moderatorRetryKey`
 - `idempotencyInputs`
@@ -184,7 +183,6 @@ Recommended MVP fields:
 - `reversedBy`
 - `reversalReason`
 - `reversalNote`
-- `migratedFromUsername`
 
 Repository read functions reject unknown future `schemaVersion` values with a clear error. MVP writes only schema version `1`.
 
@@ -211,11 +209,11 @@ Final entry status is:
 
 Precondition failures and failed ledger writes create no ledger entry. If the app cannot safely create the ledger entry and indexes atomically, it returns a moderator-facing failure message and performs no Reddit side effects. Do not persist a `failed` ledger status in MVP; failures before durable ledger creation should be observable through logs, not through user history.
 
-### Identity Keys And Migration
+### Identity Keys
 
 Primary `userKey` is `id:{userId}` when `userId` is available. If `userId` is unavailable, use username fallback key `name:{normalizedUsername}`.
 
-Normalize fallback usernames to lowercase and remove a leading `u/`. On any later action or profile lookup where both username and `userId` are available, merge `name:{normalizedUsername}` ledger entries into `id:{userId}`, preserve original entry fields, set `migratedFromUsername`, and delete or tombstone the fallback key. History and profile reads check both keys before migration has happened.
+Normalize fallback usernames to lowercase and remove a leading `u/`. History and profile reads check both `id:{userId}` and `name:{normalizedUsername}` when both identities are available, so entries created while Reddit did not expose a user ID remain visible.
 
 ### Points And Decay
 
@@ -234,14 +232,14 @@ Normalize fallback usernames to lowercase and remove a leading `u/`. On any late
 
 Default step decay examples:
 
-| Original points | Age | Active points |
-| ---: | ---: | ---: |
-| 1 | 0-29 days | 1 |
-| 1 | 30+ days | 0 |
-| 3 | 0-29 days | 3 |
-| 3 | 30-59 days | 2 |
-| 3 | 60-89 days | 1 |
-| 3 | 90+ days | 0 |
+| Original points |        Age | Active points |
+| --------------: | ---------: | ------------: |
+|               1 |  0-29 days |             1 |
+|               1 |   30+ days |             0 |
+|               3 |  0-29 days |             3 |
+|               3 | 30-59 days |             2 |
+|               3 | 60-89 days |             1 |
+|               3 |   90+ days |             0 |
 
 ### Idempotency And Duplicates
 
@@ -250,7 +248,6 @@ Default step decay examples:
 - Use a deterministic moderator retry key hash from `targetId`, `action`, `ruleId`, `moderatorUsername`, and `floor(submittedAtMs / 10 minutes)`.
 - Do not include `formNonce` in the duplicate key or moderator retry key; nonce replay is handled separately.
 - Store raw duplicate/retry inputs in the ledger entry for debugging.
-- For backward-readable ledger shape, `idempotencyKey` is the same value as `moderatorRetryKey` in MVP.
 - Allow multiple strikes on the same target only when rule or action differs.
 - If the same moderator submits the same target, action, and rule again within 10 minutes, treat it as the same idempotent submission and return the existing entry.
 - If another moderator submits the same target, action, and rule while an active or partial non-reversed entry already exists, block and show the existing entry regardless of age.
@@ -310,7 +307,7 @@ Proposed routes:
 - `/api/bootstrap` resolves the dashboard view for the current moderator, using pending view request records or explicit settings mode.
 - `/api/history` reads paginated ledger history.
 - `/api/profile` reads the selected user's moderation profile.
-- `/api/settings` reads and writes runtime configuration.
+- `/api/settings` reads effective runtime configuration and writes audited admin rule configuration.
 - `/api/reverse` reverses a ledger entry.
 - `/api/recalculate-user-total` recalculates a selected user's cached active total.
 
@@ -369,15 +366,14 @@ Post-rate counts and severe violation summaries can be added when those accepted
 
 ### Source Of Truth
 
-Runtime configuration uses Redis as the source of truth. Bundled defaults and Devvit install or subreddit settings bootstrap Redis on install or first run, and act as fallback if Redis config is missing. After bootstrap, MVP configuration is edited through the in-app settings UI.
+Runtime configuration is split by ownership. Native Devvit subreddit install settings are the source of truth for stable scalar settings: action point defaults, decay, profile metric window, default templates, and side-effect toggles. Redis remains the source of truth for admin-owned rule configuration, the numeric config `revision`, and settings audit records. Runtime reads combine Redis rule configuration with native Devvit settings.
 
-Config contains a numeric `schemaVersion` and `revision`. The default `schemaVersion` is `1`, and the starting `revision` is `1`. The settings UI sends the revision it loaded. Save fails with a conflict if the current Redis revision differs, and the moderator must reload and reapply changes. Each successful save increments revision by `1`.
+Config contains a numeric `schemaVersion` and Redis-owned `revision`. The default `schemaVersion` is `1`, and the starting `revision` is `1`. The Admin UI sends the revision it loaded. Save fails with a conflict if the current Redis revision differs, and the moderator must reload and reapply changes. Each successful Admin save increments revision by `1`.
 
-### Settings UI
+### Native Settings And Admin UI
 
-The settings UI supports editing:
+The standard Devvit subreddit app settings page supports editing:
 
-- Rules and sub-rules.
 - Default point values.
 - Strike decay amount and interval.
 - Public comment template.
@@ -387,13 +383,17 @@ The settings UI supports editing:
 - Native mod note templates.
 - User notices on/off.
 - App comment distinguish/sticky/lock options.
+
+The in-app Admin UI supports editing:
+
+- Rules.
 - Recalculate user totals for a selected username or profile.
-- Export current config as JSON.
-- Import config JSON.
+- Export current rules as JSON.
+- Import rules JSON.
 
-Settings reads require moderator access. Settings writes, config import, and user-total recalculation require `all`.
+Settings reads require moderator access. Admin rule writes, rule import, rules JSON import, and user-total recalculation require `all`. Native-owned fields must not be editable in the Admin UI.
 
-The settings page includes a manual repair action to recalculate cached active totals for a selected username or profile. It rebuilds from that user's ledger and overwrites the active-total cache. Bulk background recalculation is not in MVP.
+The Admin page includes a manual repair action to recalculate cached active totals for a selected username or profile. It rebuilds from that user's ledger and overwrites the active-total cache. Bulk background recalculation is not in MVP.
 
 ### Required Settings
 
@@ -429,7 +429,6 @@ Rules are edited as structured rows, not raw JSON. Rule rows support add, edit, 
 {
   id: string;
   label: string;
-  parentId?: string;
   publicTemplate?: string;
   internalNoteTemplate?: string;
   pointOverrides?: {
@@ -447,7 +446,7 @@ Default first-install rule set:
 
 - Bootstrap with one enabled generic rule: `rule-general` / `Community rule violation`.
 - Include the default public and private templates.
-- Settings UI makes the first-run task obvious by showing the editable rule table immediately.
+- Admin UI makes the first-run rule task obvious by showing the editable rule table immediately.
 - Enforcement is allowed with the generic rule, so the app is usable before moderators finish customization.
 
 ### Validation
@@ -460,11 +459,11 @@ Default first-install rule set:
 - Decay interval: integer from 1 to 3650 days.
 - At least one enabled rule is required.
 - Public templates and public comment overrides reject private-only placeholders such as `{pointsAdded}` and `{activeTotal}`.
-- Imported config JSON must validate fully, use a supported `schemaVersion`, follow the same revision conflict behavior as manual edits, and preserve audit history.
+- Imported rules JSON must validate fully, use a supported `schemaVersion`, follow the same revision conflict behavior as manual rule edits, and preserve audit history.
 
 ### Settings Audit
 
-Every settings save writes an audit record to Redis at `settings_audit:{timestamp}:{moderatorUsername}`. The audit record includes moderator username, timestamp, changed top-level fields, and before/after config hashes.
+Every Admin save writes an audit record to Redis at `settings_audit:{timestamp}:{moderatorUsername}`. The audit record includes moderator username, timestamp, changed top-level fields, and before/after admin config hashes.
 
 Hashes are SHA-256 of canonical JSON, where canonical JSON means object keys sorted recursively. Snapshot records store full canonical before/after JSON only for the latest 20 saves. No rollback UI is required in MVP.
 
@@ -546,7 +545,7 @@ StrikeLedger: {action} for {ruleLabel}. No points added. Active total: {activeTo
 
 Use Devvit Redis for:
 
-- Runtime configuration.
+- Redis-owned rule configuration.
 - Full ledger entries by ID.
 - Ledger indexes by user and target.
 - User active-total cache.
@@ -578,7 +577,7 @@ duplicate:{targetId}:{action}:{ruleId}
 retry:{targetId}:{action}:{ruleId}:{moderatorUsername}:{bucket}
 ```
 
-`ledger_entry:{entryId}` stores the full JSON ledger entry. `user:{userKey}:ledger` is a sorted set where the score is `createdAtMs` and the member is `entryId`. `target:{targetId}:entries` is a sorted set for target lookups. `config` stores runtime configuration JSON. `user:{userKey}:active_total` and `user:{userKey}:post_score_summary` are rebuildable caches.
+`ledger_entry:{entryId}` stores the full JSON ledger entry. `user:{userKey}:ledger` is a sorted set where the score is `createdAtMs` and the member is `entryId`. `target:{targetId}:entries` is a sorted set for target lookups. `config` stores Redis-owned rule configuration JSON. `user:{userKey}:active_total` and `user:{userKey}:post_score_summary` are rebuildable caches.
 
 Ledger creation must be atomic across the durable entry, nonce, duplicate claim, retry claim, and indexes. Use Redis `watch`/transaction semantics around:
 
@@ -603,8 +602,8 @@ All actions are enforced server-side even though menu items are moderator-only.
 
 - Enforcement actions require `posts` or `all`, including `Warn`.
 - History and profile require moderator access with any permission.
-- Settings reads require moderator access with any permission.
-- Settings writes, config import, and user-total recalculation require `all`.
+- Admin reads require moderator access with any permission.
+- Admin rule writes, rules JSON import, and user-total recalculation require `all`.
 - Reversal requires `posts` or `all`, regardless of whether native mod notes are enabled.
 
 If permissions are insufficient, the app shows a moderator-facing failure message and creates no ledger entry.
@@ -724,15 +723,15 @@ Use these as product references for the accepted Post Rate Ledger extension:
 5. Menu/forms for enforcement preconditions and idempotent ledger creation.
 6. Reddit side effects with per-side-effect status updates.
 7. Web UI/API for history/profile/reversal.
-8. Settings UI/API with audit records.
+8. Native settings integration plus Admin UI/API with audit records.
 9. Manual recalc tool.
 10. Devvit config update and playtest checklist.
 
 ## Test Scope
 
-- Unit tests for decay math, template rendering, placeholder validation, config validation, identity keying/migration, duplicate handling, and idempotency logic.
+- Unit tests for decay math, template rendering, placeholder validation, config validation, identity keying/fallback, duplicate handling, and idempotency logic.
 - Repository tests with a fake Redis adapter for ledger writes, reversal, active-total recalculation, and settings audit.
-- Route tests for API authorization failures and happy-path history/profile/settings reads.
+- Route tests for API authorization failures and happy-path history/profile/Admin reads.
 - Manual Devvit playtest checklist for actual Reddit side effects.
 
 Use `vitest` for unit, repository, and route tests.
@@ -761,13 +760,14 @@ Use `vitest` for unit, repository, and route tests.
 - Already NSFW posts block `Warn and mark NSFW` before ledger creation.
 - Moderators can view recent strike history for the selected author.
 - Moderators can view the selected author's moderation profile.
-- Moderators can edit MVP settings in the in-app settings UI.
-- Settings saves write audit records.
+- Moderators can edit stable MVP settings in native Devvit app settings.
+- Moderators can edit rules in the in-app Admin UI.
+- Admin saves write audit records.
 - Moderators can recalculate cached active totals for a selected user.
-- No non-moderator can use enforcement, history, profile, reversal, or settings actions.
+- No non-moderator can use enforcement, history, profile, reversal, or Admin actions.
 
 ## Product Decisions
 
-The MVP UI launch path is the StrikeLedger dashboard custom post/webview entrypoint. Form-only history, profile, reversal, and settings workflows are not part of the primary MVP UI.
+The MVP UI launch path is the StrikeLedger dashboard custom post/webview entrypoint. Form-only history, profile, reversal, and Admin workflows are not part of the primary MVP UI.
 
 The reviewed references and incorporated findings above are part of the MVP contract for implementation.

@@ -8,6 +8,8 @@ import {
 import { logError } from './logging';
 import { renderTemplate, type TemplateValues } from './templates';
 
+const MAX_NATIVE_MOD_NOTE_LENGTH = 250;
+
 export type PublicComment = {
   id: string;
   distinguish(makeSticky?: boolean): Promise<void>;
@@ -118,6 +120,20 @@ const choosePublicTemplate = (
   publicCommentOverride ??
   config.rules.find((rule) => rule.id === entry.ruleId)?.publicTemplate ??
   config.defaultPublicCommentTemplate;
+
+const hasUsableUsername = (username: string): boolean => {
+  const normalized = username.trim().replace(/^u\//i, '').toLowerCase();
+  return (
+    Boolean(normalized) &&
+    normalized !== '[deleted]' &&
+    normalized !== '[unknown]'
+  );
+};
+
+const truncateNativeModNote = (note: string): string =>
+  note.length <= MAX_NATIVE_MOD_NOTE_LENGTH
+    ? note
+    : `${note.slice(0, MAX_NATIVE_MOD_NOTE_LENGTH - 3).trimEnd()}...`;
 
 const getFinalStatus = (sideEffects: SideEffects): LedgerEntry['status'] => {
   const statuses: SideEffectStatus[] = [
@@ -244,15 +260,20 @@ export const executeSideEffects = async (
     });
   }
 
-  if (input.config.nativeModNotesEnabled) {
+  if (
+    input.config.nativeModNotesEnabled &&
+    hasUsableUsername(input.entry.username)
+  ) {
     try {
       const modNote = await input.reddit.addModNote({
         subreddit: input.entry.subredditName,
         user: input.entry.username,
         redditId: input.entry.targetId,
-        note: renderTemplate(
-          chooseNativeModNoteTemplate(input.entry, input.config),
-          values
+        note: truncateNativeModNote(
+          renderTemplate(
+            chooseNativeModNoteTemplate(input.entry, input.config),
+            values
+          )
         ),
       });
       modNoteId = modNote.id;
@@ -272,9 +293,14 @@ export const executeSideEffects = async (
       );
       sideEffects.modNote = 'failed';
     }
+  } else {
+    sideEffects.modNote = 'skipped';
   }
 
-  if (input.config.userNoticesEnabled) {
+  if (
+    input.config.userNoticesEnabled &&
+    hasUsableUsername(input.entry.username)
+  ) {
     try {
       const response = await input.reddit.modMail.createConversation({
         isAuthorHidden: true,
@@ -306,6 +332,8 @@ export const executeSideEffects = async (
       );
       sideEffects.userNotice = 'failed';
     }
+  } else {
+    sideEffects.userNotice = 'skipped';
   }
 
   return {
@@ -337,13 +365,19 @@ export const executeReversalSideEffects = async (
   let reversalModNoteId = input.entry.reversalModNoteId;
   let reversalUserNoticeId = input.entry.reversalUserNoticeId;
 
-  if (input.config.reversalNativeModNotesEnabled && input.addNativeModNote) {
+  if (
+    input.config.reversalNativeModNotesEnabled &&
+    input.addNativeModNote &&
+    hasUsableUsername(input.entry.username)
+  ) {
     try {
       const modNote = await input.reddit.addModNote({
         subreddit: input.entry.subredditName,
         user: input.entry.username,
         redditId: input.entry.targetId,
-        note: buildReversalModNote(input.entry, input.activeTotal),
+        note: truncateNativeModNote(
+          buildReversalModNote(input.entry, input.activeTotal)
+        ),
       });
       reversalModNoteId = modNote.id;
       sideEffects.reversalModNote = 'succeeded';
@@ -366,7 +400,10 @@ export const executeReversalSideEffects = async (
     sideEffects.reversalModNote = 'skipped';
   }
 
-  if (input.config.userNoticesEnabled) {
+  if (
+    input.config.userNoticesEnabled &&
+    hasUsableUsername(input.entry.username)
+  ) {
     try {
       const response = await input.reddit.modMail.createConversation({
         isAuthorHidden: true,

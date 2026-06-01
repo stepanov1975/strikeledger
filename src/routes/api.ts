@@ -313,13 +313,15 @@ api.get('/history', async (c) => {
   const entries = await ledgerRepository.getUserLedgerPageForKeys(
     userKeys,
     offset,
-    HISTORY_PAGE_SIZE
+    HISTORY_PAGE_SIZE,
+    apiAccess.subredditName
   );
   const activeTotal = await ledgerRepository.recalculateActiveTotalForKeys(
     userKeys,
     context.userKey,
     config,
-    nowMs
+    nowMs,
+    apiAccess.subredditName
   );
   logInfo('api.history.ok', {
     subredditName: apiAccess.subredditName,
@@ -370,12 +372,16 @@ api.get('/profile', async (c) => {
 
   const nowMs = Date.now();
   const userKeys = getContextUserKeys(context);
-  const entries = await ledgerRepository.getUserLedgerForKeys(userKeys);
+  const entries = await ledgerRepository.getUserLedgerForKeys(
+    userKeys,
+    apiAccess.subredditName
+  );
   const activeTotal = await ledgerRepository.recalculateActiveTotalForKeys(
     userKeys,
     context.userKey,
     config,
-    nowMs
+    nowMs,
+    apiAccess.subredditName
   );
   const postScoreSummary = await getCachedOrLivePostScoreSummary({
     store,
@@ -628,7 +634,8 @@ api.post('/recalculate-user-total', async (c) => {
     userKeys,
     userKey,
     await configRepository.getConfig(),
-    Date.now()
+    Date.now(),
+    apiAccess.subredditName
   );
   logInfo('api.recalculate.ok', {
     subredditName: apiAccess.subredditName,

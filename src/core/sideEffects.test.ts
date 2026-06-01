@@ -193,6 +193,67 @@ describe('executeSideEffects', () => {
     );
   });
 
+  it('truncates native mod notes to the platform limit', async () => {
+    const publicComment = {
+      id: 'comment-1',
+      distinguish: vi.fn(async () => undefined),
+      lock: vi.fn(async () => undefined),
+    };
+    const target = {
+      addComment: vi.fn(async () => publicComment),
+      remove: vi.fn(async () => undefined),
+    };
+    const reddit = buildReddit();
+
+    await executeSideEffects({
+      entry: buildEntry(),
+      activeTotal: 3,
+      target,
+      reddit,
+      config: {
+        ...DEFAULT_CONFIG,
+        defaultNativeModNoteTemplate: 'x'.repeat(300),
+      },
+    });
+
+    const [[modNoteOptions]] = reddit.addModNote.mock.calls as unknown as [
+      [Parameters<SideEffectRedditClient['addModNote']>[0]],
+    ];
+    expect(modNoteOptions.note).toHaveLength(250);
+    expect(modNoteOptions.note.endsWith('...')).toBe(true);
+  });
+
+  it('skips username-required side effects when the username is unavailable', async () => {
+    const publicComment = {
+      id: 'comment-1',
+      distinguish: vi.fn(async () => undefined),
+      lock: vi.fn(async () => undefined),
+    };
+    const target = {
+      addComment: vi.fn(async () => publicComment),
+      remove: vi.fn(async () => undefined),
+    };
+    const reddit = buildReddit();
+
+    const updated = await executeSideEffects({
+      entry: buildEntry({
+        username: '[unknown]',
+      }),
+      activeTotal: 3,
+      target,
+      reddit,
+      config: DEFAULT_CONFIG,
+    });
+
+    expect(updated.status).toBe('succeeded');
+    expect(updated.sideEffects.modNote).toBe('skipped');
+    expect(updated.sideEffects.userNotice).toBe('skipped');
+    expect(target.addComment).toHaveBeenCalledTimes(1);
+    expect(target.remove).toHaveBeenCalledWith(false);
+    expect(reddit.addModNote).not.toHaveBeenCalled();
+    expect(reddit.modMail.createConversation).not.toHaveBeenCalled();
+  });
+
   it('marks NSFW failures partial', async () => {
     const publicComment = {
       id: 'comment-1',
@@ -256,6 +317,30 @@ describe('executeSideEffects', () => {
         body: expect.stringContaining('was reversed'),
       })
     );
+  });
+
+  it('skips username-required reversal side effects when username is deleted', async () => {
+    const reddit = buildReddit();
+
+    const updated = await executeReversalSideEffects({
+      entry: buildEntry({
+        username: '[deleted]',
+        status: 'reversed',
+        reversedAtMs: 2000,
+        reversedBy: 'mod-b',
+        reversalReason: 'issued in error',
+      }),
+      activeTotal: 0,
+      reddit,
+      config: DEFAULT_CONFIG,
+      addNativeModNote: true,
+    });
+
+    expect(updated.status).toBe('reversed');
+    expect(updated.sideEffects.reversalModNote).toBe('skipped');
+    expect(updated.sideEffects.reversalUserNotice).toBe('skipped');
+    expect(reddit.addModNote).not.toHaveBeenCalled();
+    expect(reddit.modMail.createConversation).not.toHaveBeenCalled();
   });
 
   it('keeps reversal valid when private reversal notice fails', async () => {

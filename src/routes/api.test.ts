@@ -332,6 +332,38 @@ describe('api routes', () => {
     expect(redis.values.get('user:id:t2_user:active_total')).toBe('3');
   });
 
+  it('filters history entries and totals to the current subreddit', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await seedViewContext(redis);
+    await seedLedger(
+      redis,
+      buildEntry({
+        entryId: 'entry-current',
+        originalPoints: 3,
+      })
+    );
+    await seedLedger(
+      redis,
+      buildEntry({
+        entryId: 'entry-other',
+        subredditName: 'othersub',
+        targetId: 't3_other',
+        targetPermalink: '/r/othersub/comments/other',
+        originalPoints: 99,
+      })
+    );
+
+    const response = await api.request('/history?contextToken=token-1');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.activeTotal).toBe(3);
+    expect(body.entries).toEqual([
+      expect.objectContaining({ entryId: 'entry-current' }),
+    ]);
+    expect(redis.values.get('user:id:t2_user:active_total')).toBe('3');
+  });
+
   it('rejects raw username lookups for history', async () => {
     const { api, redis } = await loadApi(['posts']);
     const entry = buildEntry({
@@ -400,6 +432,43 @@ describe('api routes', () => {
         },
       ],
     });
+  });
+
+  it('filters profile summaries to the current subreddit', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await seedViewContext(redis);
+    await seedLedger(
+      redis,
+      buildEntry({
+        entryId: 'entry-current',
+        originalPoints: 3,
+      })
+    );
+    await seedLedger(
+      redis,
+      buildEntry({
+        entryId: 'entry-other',
+        subredditName: 'othersub',
+        targetId: 't3_other',
+        targetPermalink: '/r/othersub/comments/other',
+        originalPoints: 99,
+      })
+    );
+
+    const response = await api.request('/profile?contextToken=token-1');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.summary).toMatchObject({
+      activeTotal: 3,
+      lifetimeOriginalPoints: 3,
+      removalsByRule: {
+        'Community rule violation': 1,
+      },
+    });
+    expect(body.recentEntries).toEqual([
+      expect.objectContaining({ entryId: 'entry-current' }),
+    ]);
   });
 
   it('calculates average post score for current subreddit posts in the profile window', async () => {
@@ -503,6 +572,45 @@ describe('api routes', () => {
       userKey: 'name:someuser',
       activeTotal: 3,
     });
+  });
+
+  it('filters manual recalculation totals to the current subreddit', async () => {
+    const { api, redis } = await loadApi(['all']);
+    await seedLedger(
+      redis,
+      buildEntry({
+        entryId: 'entry-current',
+        userKey: 'name:someuser',
+        username: 'SomeUser',
+        originalPoints: 3,
+      })
+    );
+    await seedLedger(
+      redis,
+      buildEntry({
+        entryId: 'entry-other',
+        subredditName: 'othersub',
+        targetId: 't3_other',
+        targetPermalink: '/r/othersub/comments/other',
+        userKey: 'name:someuser',
+        username: 'SomeUser',
+        originalPoints: 99,
+      })
+    );
+
+    const response = await api.request('/recalculate-user-total', {
+      method: 'POST',
+      body: JSON.stringify({ username: 'u/SomeUser' }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      userKey: 'name:someuser',
+      activeTotal: 3,
+    });
+    expect(redis.values.get('user:name:someuser:active_total')).toBe('3');
   });
 
   it('requires posts or all permission for reversal', async () => {

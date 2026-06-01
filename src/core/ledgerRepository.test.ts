@@ -143,6 +143,48 @@ describe('LedgerRepository', () => {
     await expect(repo.getCachedActiveTotal(entry.userKey)).resolves.toBe(1);
   });
 
+  it('scopes create and reversal active totals to the entry subreddit', async () => {
+    const { repo, store } = createRepo();
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'entry-other-sub',
+        subredditName: 'othersub',
+        targetId: 't3_other',
+        originalPoints: 99,
+      })
+    );
+
+    const entry = buildEntry({
+      entryId: 'entry-current-sub',
+      originalPoints: 3,
+    });
+    await repo.saveFormNonce(buildNonce());
+
+    await expect(
+      repo.createLedgerEntry({
+        entry,
+        formNonce: entry.formNonce,
+        submittedAtMs: nowMs,
+        nowMs,
+        config: DEFAULT_CONFIG,
+      })
+    ).resolves.toMatchObject({ status: 'created', activeTotal: 3 });
+    await expect(repo.getCachedActiveTotal(entry.userKey)).resolves.toBe(3);
+
+    await expect(
+      repo.reverseLedgerEntry({
+        entryId: entry.entryId,
+        reversedAtMs: nowMs + 1000,
+        reversedBy: 'mod-b',
+        reversalReason: 'issued in error',
+        config: DEFAULT_CONFIG,
+        nowMs,
+      })
+    ).resolves.toMatchObject({ status: 'reversed', activeTotal: 0 });
+    await expect(repo.getCachedActiveTotal(entry.userKey)).resolves.toBe(0);
+  });
+
   it('returns the existing entry when a consumed nonce is replayed', async () => {
     const { repo } = createRepo();
     const entry = buildEntry();

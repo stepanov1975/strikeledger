@@ -4,6 +4,7 @@ import type { RedisSetOptions, RedisStore, ZMember, ZRangeOptions } from './redi
 export class DevvitRedisStore implements RedisStore {
   private transactionClient: TxClientLike | null = null;
   private transactionStarted = false;
+  private transactionQueuedCommands = 0;
 
   constructor(private readonly redis: RedisClient) {}
 
@@ -20,6 +21,7 @@ export class DevvitRedisStore implements RedisStore {
     if (this.transactionClient) {
       await this.ensureTransactionStarted();
       await this.transactionClient.set(key, value, setOptions);
+      this.transactionQueuedCommands += 1;
       return;
     }
 
@@ -38,6 +40,7 @@ export class DevvitRedisStore implements RedisStore {
     if (this.transactionClient) {
       await this.ensureTransactionStarted();
       await this.transactionClient.del(...keys);
+      this.transactionQueuedCommands += 1;
       return;
     }
 
@@ -48,6 +51,7 @@ export class DevvitRedisStore implements RedisStore {
     if (this.transactionClient) {
       await this.ensureTransactionStarted();
       await this.transactionClient.zAdd(key, member);
+      this.transactionQueuedCommands += 1;
       return;
     }
 
@@ -58,6 +62,7 @@ export class DevvitRedisStore implements RedisStore {
     if (this.transactionClient) {
       await this.ensureTransactionStarted();
       await this.transactionClient.zRem(key, members);
+      this.transactionQueuedCommands += 1;
       return;
     }
 
@@ -88,11 +93,18 @@ export class DevvitRedisStore implements RedisStore {
     const transaction = await this.redis.watch(...watchedKeys);
     this.transactionClient = transaction;
     this.transactionStarted = false;
+    this.transactionQueuedCommands = 0;
 
     try {
       const result = await operation();
       if (this.transactionStarted) {
-        await transaction.exec();
+        const execResults = await transaction.exec();
+        if (
+          !Array.isArray(execResults) ||
+          execResults.length !== this.transactionQueuedCommands
+        ) {
+          throw new Error('StrikeLedger Redis transaction did not commit.');
+        }
       } else {
         await transaction.unwatch();
       }
@@ -111,6 +123,7 @@ export class DevvitRedisStore implements RedisStore {
     } finally {
       this.transactionClient = null;
       this.transactionStarted = false;
+      this.transactionQueuedCommands = 0;
     }
   }
 

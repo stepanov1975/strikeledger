@@ -128,6 +128,12 @@ const activeTotalKey = (userKey: string): string =>
 const uniqueUserKeys = (userKeys: string[]): string[] =>
   Array.from(new Set(userKeys.map((userKey) => userKey.trim()).filter(Boolean)));
 
+const isEntryForSubreddit = (
+  entry: LedgerEntry,
+  subredditName: string
+): boolean =>
+  entry.subredditName.toLowerCase() === subredditName.trim().toLowerCase();
+
 const compareEntriesNewestFirst = (
   left: LedgerEntry,
   right: LedgerEntry
@@ -166,8 +172,11 @@ export class LedgerRepository {
     return this.getUserLedgerPage(userKey, 0, -1);
   }
 
-  async getUserLedgerForKeys(userKeys: string[]): Promise<LedgerEntry[]> {
-    return this.getUserLedgerPageForKeys(userKeys, 0, -1);
+  async getUserLedgerForKeys(
+    userKeys: string[],
+    subredditName?: string
+  ): Promise<LedgerEntry[]> {
+    return this.getUserLedgerPageForKeys(userKeys, 0, -1, subredditName);
   }
 
   async getUserLedgerPage(
@@ -198,7 +207,8 @@ export class LedgerRepository {
   async getUserLedgerPageForKeys(
     userKeys: string[],
     offset: number,
-    limit: number
+    limit: number,
+    subredditName?: string
   ): Promise<LedgerEntry[]> {
     if (limit === 0) {
       return [];
@@ -215,7 +225,13 @@ export class LedgerRepository {
     const entries = Array.from(entriesById.values()).sort(
       compareEntriesNewestFirst
     );
-    return limit < 0 ? entries.slice(offset) : entries.slice(offset, offset + limit);
+    const scopedEntries =
+      subredditName === undefined
+        ? entries
+        : entries.filter((entry) => isEntryForSubreddit(entry, subredditName));
+    return limit < 0
+      ? scopedEntries.slice(offset)
+      : scopedEntries.slice(offset, offset + limit);
   }
 
   async getCachedActiveTotal(userKey: string): Promise<number | null> {
@@ -274,7 +290,8 @@ export class LedgerRepository {
         activeTotal: await this.recalculateActiveTotal(
           result.entry.userKey,
           request.config,
-          request.nowMs
+          request.nowMs,
+          result.entry.subredditName
         ),
       };
     }
@@ -336,7 +353,8 @@ export class LedgerRepository {
         activeTotal: await this.recalculateActiveTotal(
           result.entry.userKey,
           request.config,
-          request.nowMs
+          request.nowMs,
+          result.entry.subredditName
         ),
       };
     }
@@ -347,19 +365,25 @@ export class LedgerRepository {
   async recalculateActiveTotal(
     userKey: string,
     config: StrikeLedgerConfig,
-    nowMs: number
+    nowMs: number,
+    subredditName?: string
   ): Promise<number> {
     const entries = await this.getUserLedger(userKey);
-    return this.cacheActiveTotal(userKey, entries, config, nowMs);
+    const scopedEntries =
+      subredditName === undefined
+        ? entries
+        : entries.filter((entry) => isEntryForSubreddit(entry, subredditName));
+    return this.cacheActiveTotal(userKey, scopedEntries, config, nowMs);
   }
 
   async recalculateActiveTotalForKeys(
     userKeys: string[],
     cacheUserKey: string,
     config: StrikeLedgerConfig,
-    nowMs: number
+    nowMs: number,
+    subredditName?: string
   ): Promise<number> {
-    const entries = await this.getUserLedgerForKeys(userKeys);
+    const entries = await this.getUserLedgerForKeys(userKeys, subredditName);
     return this.cacheActiveTotal(cacheUserKey, entries, config, nowMs);
   }
 

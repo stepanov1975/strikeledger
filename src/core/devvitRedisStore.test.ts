@@ -4,13 +4,14 @@ import { DevvitRedisStore } from './devvitRedisStore';
 
 const buildClients = () => {
   const calls: string[] = [];
+  const execResults: unknown[] = ['OK', 1];
   const transaction = {
     multi: vi.fn(async () => {
       calls.push('tx.multi');
     }),
     exec: vi.fn(async () => {
       calls.push('tx.exec');
-      return [];
+      return execResults;
     }),
     unwatch: vi.fn(async () => {
       calls.push('tx.unwatch');
@@ -49,6 +50,7 @@ const buildClients = () => {
 
   return {
     calls,
+    execResults,
     redis: redis as unknown as RedisClient,
     transaction,
   };
@@ -91,5 +93,28 @@ describe('DevvitRedisStore', () => {
     expect(transaction.exec).not.toHaveBeenCalled();
     expect(transaction.unwatch).toHaveBeenCalledTimes(1);
     expect(calls).toEqual(['redis.watch', 'tx.unwatch']);
+  });
+
+  it('fails closed when exec does not commit queued commands', async () => {
+    const { calls, execResults, redis, transaction } = buildClients();
+    execResults.length = 0;
+    const store = new DevvitRedisStore(redis);
+
+    await expect(
+      store.runTransaction(['watched-key'], async () => {
+        await store.set('write-key', 'value');
+        return 'done';
+      })
+    ).rejects.toThrow('StrikeLedger Redis transaction did not commit.');
+
+    expect(transaction.exec).toHaveBeenCalledTimes(1);
+    expect(transaction.discard).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual([
+      'redis.watch',
+      'tx.multi',
+      'tx.set',
+      'tx.exec',
+      'tx.discard',
+    ]);
   });
 });

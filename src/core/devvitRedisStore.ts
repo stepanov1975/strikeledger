@@ -1,4 +1,5 @@
 import type { RedisClient, SetOptions, TxClientLike } from '@devvit/redis';
+import { logError } from './logging';
 import {
   RedisTransactionConflictError,
   type RedisSetOptions,
@@ -158,19 +159,13 @@ export class DevvitRedisStore implements RedisStore {
 
     if (this.transactionStarted) {
       await transaction.discard().catch((discardError: unknown) => {
-        console.error(
-          'StrikeLedger Redis transaction discard failed',
-          discardError
-        );
+        logError('redis.transaction_discard_failed', {}, discardError);
       });
       return;
     }
 
     await transaction.unwatch().catch((unwatchError: unknown) => {
-      console.error(
-        'StrikeLedger Redis transaction unwatch failed',
-        unwatchError
-      );
+      logError('redis.transaction_unwatch_failed', {}, unwatchError);
     });
   }
 

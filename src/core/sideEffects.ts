@@ -200,6 +200,9 @@ const cloneSideEffects = (sideEffects: SideEffects): SideEffects => ({
     : {}),
 });
 
+const shouldAttemptSideEffect = (status: SideEffectStatus): boolean =>
+  status === 'pending' || status === 'failed';
+
 const submitPublicComment = async (
   target: SideEffectTarget,
   text: string
@@ -273,48 +276,53 @@ export const executeSideEffects = async (
     }
   };
 
-  try {
-    const publicComment = await submitPublicComment(
-      input.target,
-      renderTemplate(
-        choosePublicTemplate(
-          input.entry,
-          input.config,
-          input.publicCommentOverride
-        ),
-        values
-      )
-    );
-    publicCommentId = publicComment.id;
-    sideEffects.publicComment = 'succeeded';
-    await persistCheckpoint();
-    const publicCommentOptions = await executePublicCommentOptions(
-      publicComment,
-      input.entry,
-      input.config
-    );
-    if (publicCommentOptions) {
-      sideEffects.publicCommentOptions = publicCommentOptions;
+  if (shouldAttemptSideEffect(sideEffects.publicComment)) {
+    try {
+      const publicComment = await submitPublicComment(
+        input.target,
+        renderTemplate(
+          choosePublicTemplate(
+            input.entry,
+            input.config,
+            input.publicCommentOverride
+          ),
+          values
+        )
+      );
+      publicCommentId = publicComment.id;
+      sideEffects.publicComment = 'succeeded';
+      await persistCheckpoint();
+      const publicCommentOptions = await executePublicCommentOptions(
+        publicComment,
+        input.entry,
+        input.config
+      );
+      if (publicCommentOptions) {
+        sideEffects.publicCommentOptions = publicCommentOptions;
+        await persistCheckpoint();
+      }
+    } catch (error) {
+      logError(
+        'side_effect.public_comment_failed',
+        {
+          entryId: input.entry.entryId,
+          subredditName: input.entry.subredditName,
+          targetId: input.entry.targetId,
+          targetKind: input.entry.targetKind,
+          action: input.entry.action,
+          ruleId: input.entry.ruleId,
+        },
+        error
+      );
+      sideEffects.publicComment = 'failed';
       await persistCheckpoint();
     }
-  } catch (error) {
-    logError(
-      'side_effect.public_comment_failed',
-      {
-        entryId: input.entry.entryId,
-        subredditName: input.entry.subredditName,
-        targetId: input.entry.targetId,
-        targetKind: input.entry.targetKind,
-        action: input.entry.action,
-        ruleId: input.entry.ruleId,
-      },
-      error
-    );
-    sideEffects.publicComment = 'failed';
-    await persistCheckpoint();
   }
 
-  if (input.entry.action === 'warn_remove') {
+  if (
+    input.entry.action === 'warn_remove' &&
+    shouldAttemptSideEffect(sideEffects.remove)
+  ) {
     try {
       await input.target.remove(false);
       sideEffects.remove = 'succeeded';
@@ -336,7 +344,10 @@ export const executeSideEffects = async (
     await persistCheckpoint();
   }
 
-  if (input.entry.action === 'warn_nsfw') {
+  if (
+    input.entry.action === 'warn_nsfw' &&
+    shouldAttemptSideEffect(sideEffects.markNsfw)
+  ) {
     try {
       if (!input.target.markAsNsfw) {
         throw new Error('Target cannot be marked NSFW.');
@@ -364,7 +375,8 @@ export const executeSideEffects = async (
 
   if (
     input.config.nativeModNotesEnabled &&
-    hasUsableUsername(input.entry.username)
+    hasUsableUsername(input.entry.username) &&
+    shouldAttemptSideEffect(sideEffects.modNote)
   ) {
     try {
       const modNote = await input.reddit.addModNote({
@@ -398,12 +410,14 @@ export const executeSideEffects = async (
       await persistCheckpoint();
     }
   } else {
-    sideEffects.modNote = 'skipped';
+    sideEffects.modNote =
+      sideEffects.modNote === 'succeeded' ? 'succeeded' : 'skipped';
   }
 
   if (
     input.config.userNoticesEnabled &&
-    hasUsableUsername(input.entry.username)
+    hasUsableUsername(input.entry.username) &&
+    shouldAttemptSideEffect(sideEffects.userNotice)
   ) {
     try {
       const response = await input.reddit.modMail.createConversation({
@@ -439,7 +453,8 @@ export const executeSideEffects = async (
       await persistCheckpoint();
     }
   } else {
-    sideEffects.userNotice = 'skipped';
+    sideEffects.userNotice =
+      sideEffects.userNotice === 'succeeded' ? 'succeeded' : 'skipped';
   }
 
   return buildUpdatedEntry(getFinalStatus(sideEffects));

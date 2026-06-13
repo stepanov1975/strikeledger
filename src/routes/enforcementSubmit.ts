@@ -30,6 +30,7 @@ import {
   PUBLIC_PLACEHOLDERS,
   validateTemplatePlaceholders,
 } from '../core/templates';
+import { canEnforceWithPermissions } from './permissions';
 
 export type EnforcementFormValues = {
   formNonce?: string | string[];
@@ -60,7 +61,7 @@ export type EnforcementSubmitRedditClient = SideEffectRedditClient & {
 export type EnforcementSubmitDependencies = {
   repository: Pick<
     LedgerRepository,
-    'getFormNonce' | 'createLedgerEntry' | 'updateLedgerEntry'
+    'getFormNonce' | 'createLedgerEntry' | 'updateLedgerEntrySideEffects'
   >;
   configRepository: Pick<ConfigRepository, 'getConfig'>;
   reddit: EnforcementSubmitRedditClient;
@@ -101,10 +102,8 @@ const getCurrentModeratorUsername = async (
   }
 
   const permissions = await user.getModPermissionsForSubreddit(subredditName);
-  const canEnforce =
-    permissions.includes('all') || permissions.includes('posts');
 
-  return canEnforce ? user.username : null;
+  return canEnforceWithPermissions(permissions) ? user.username : null;
 };
 
 const validateTargetPreconditions = (
@@ -491,10 +490,13 @@ export const handleEnforcementSubmit = async (
         ...(publicCommentOverride !== undefined
           ? { publicCommentOverride }
           : {}),
-        persistEntry: (checkpointEntry) =>
-          dependencies.repository.updateLedgerEntry(checkpointEntry),
+        persistEntry: async (checkpointEntry) => {
+          await dependencies.repository.updateLedgerEntrySideEffects(
+            checkpointEntry
+          );
+        },
       });
-      await dependencies.repository.updateLedgerEntry(updatedEntry);
+      await dependencies.repository.updateLedgerEntrySideEffects(updatedEntry);
       logInfo(
         'enforcement.submit.created',
         buildEntryLogDetails(updatedEntry, result.activeTotal)

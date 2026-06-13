@@ -10,6 +10,7 @@ import {
   createDuplicateKey,
   createModeratorRetryKey,
   getDuplicateClaimKey,
+  getRetryClaimKey,
 } from './idempotency';
 import {
   LedgerRepository,
@@ -18,6 +19,7 @@ import {
 import {
   FakeRedisStore,
   RedisTransactionConflictError,
+  type ZRangeOptions,
 } from './redisStore';
 import { MS_PER_DAY } from './scoring';
 
@@ -35,6 +37,30 @@ class ConflictRedisStore extends FakeRedisStore {
     _operation: () => Promise<T>
   ): Promise<T> {
     throw new RedisTransactionConflictError();
+  }
+}
+
+class RecordingRedisStore extends FakeRedisStore {
+  readonly zRangeCalls: Array<{
+    key: string;
+    start: number;
+    stop: number;
+    options?: ZRangeOptions;
+  }> = [];
+
+  override async zRange(
+    key: string,
+    start: number,
+    stop: number,
+    options?: ZRangeOptions
+  ): Promise<string[]> {
+    this.zRangeCalls.push({
+      key,
+      start,
+      stop,
+      ...(options !== undefined ? { options } : {}),
+    });
+    return super.zRange(key, start, stop, options);
   }
 }
 
@@ -83,8 +109,20 @@ const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => {
     formNonce: overrides.formNonce ?? 'nonce-1',
     sideEffects: overrides.sideEffects ?? { ...EMPTY_SIDE_EFFECTS },
     ...(overrides.userId !== undefined ? { userId: overrides.userId } : {}),
+    ...(overrides.publicCommentId !== undefined
+      ? { publicCommentId: overrides.publicCommentId }
+      : {}),
     ...(overrides.reversedAtMs !== undefined
       ? { reversedAtMs: overrides.reversedAtMs }
+      : {}),
+    ...(overrides.reversedBy !== undefined
+      ? { reversedBy: overrides.reversedBy }
+      : {}),
+    ...(overrides.reversalReason !== undefined
+      ? { reversalReason: overrides.reversalReason }
+      : {}),
+    ...(overrides.reversalNote !== undefined
+      ? { reversalNote: overrides.reversalNote }
       : {}),
   };
 };
@@ -116,6 +154,14 @@ const seedEntry = async (
     member: entry.entryId,
     score: entry.createdAtMs,
   });
+  await store.zAdd(`target:${entry.targetId}:entries`, {
+    member: entry.entryId,
+    score: entry.createdAtMs,
+  });
+  await store.zAdd(`ledger:${entry.subredditName.toLowerCase()}:entries`, {
+    member: entry.entryId,
+    score: entry.createdAtMs,
+  });
 };
 
 describe('LedgerRepository', () => {
@@ -133,14 +179,22 @@ describe('LedgerRepository', () => {
     });
 
     expect(result).toEqual({ status: 'created', entry, activeTotal: 1 });
-    expect(store.transactionWatchKeys[0]).toEqual(
-      expect.arrayContaining([
-        'form_nonce:nonce-1',
-        'ledger_entry:entry-1',
-        'user:id:t2_user:ledger',
-        'target:t3_target:entries',
-      ])
-    );
+    expect(store.transactionWatchKeys[0]).toEqual([
+      'form_nonce:nonce-1',
+      getDuplicateClaimKey({
+        targetId: entry.targetId,
+        action: entry.action,
+        ruleId: entry.ruleId,
+      }),
+      getRetryClaimKey({
+        targetId: entry.targetId,
+        action: entry.action,
+        ruleId: entry.ruleId,
+        moderatorUsername: entry.moderatorUsername,
+        submittedAtMs: nowMs,
+      }),
+      'ledger_entry:entry-1',
+    ]);
     await expect(repo.getLedgerEntry(entry.entryId)).resolves.toEqual(entry);
     await expect(repo.getUserLedger(entry.userKey)).resolves.toEqual([entry]);
     await expect(repo.getCachedActiveTotal(entry.userKey)).resolves.toBe(1);
@@ -575,6 +629,112 @@ describe('LedgerRepository', () => {
     ]);
   });
 
+  it('pages user ledger entries without reading full ledgers for each identifier', async () => {
+    const store = new RecordingRedisStore();
+    const repo = new LedgerRepository(store);
+    const baseMs = nowMs;
+
+    for (let index = 0; index < 40; index += 1) {
+      await seedEntry(
+        store,
+        buildEntry({
+          entryId: `id-${index}`,
+          userKey: 'id:t2_user',
+          targetId: `t3_id_${index}`,
+          createdAtMs: baseMs + index,
+        })
+      );
+      await seedEntry(
+        store,
+        buildEntry({
+          entryId: `name-${index}`,
+          userKey: 'name:someuser',
+          targetId: `t3_name_${index}`,
+          createdAtMs: baseMs + 1000 + index,
+        })
+      );
+    }
+
+    const result = await repo.getUserLedgerPageForKeys(
+      ['id:t2_user', 'name:someuser'],
+      10,
+      5
+    );
+
+    expect(result).toHaveLength(5);
+    expect(store.zRangeCalls.some((call) => call.stop === -1)).toBe(false);
+  });
+
+  it('preserves reversal metadata when a late side-effect checkpoint updates an entry', async () => {
+    const { repo, store } = createRepo();
+    const reversedEntry = buildEntry({
+      status: 'reversed',
+      sideEffects: { ...EMPTY_SIDE_EFFECTS, publicComment: 'failed' },
+      reversalReason: 'mistake',
+      reversalNote: 'Handled by another moderator.',
+      reversedBy: 'mod-b',
+      reversedAtMs: nowMs + 1000,
+    });
+    await seedEntry(store, reversedEntry);
+
+    await repo.updateLedgerEntrySideEffects(
+      buildEntry({
+        status: 'succeeded',
+        sideEffects: { ...EMPTY_SIDE_EFFECTS, publicComment: 'succeeded' },
+        publicCommentId: 't1_comment',
+      })
+    );
+
+    const stored = await repo.getLedgerEntry('entry-1');
+
+    expect(stored?.status).toBe('reversed');
+    expect(stored?.reversalReason).toBe('mistake');
+    expect(stored?.reversalNote).toBe('Handled by another moderator.');
+    expect(stored?.sideEffects.publicComment).toBe('succeeded');
+    expect(stored?.publicCommentId).toBe('t1_comment');
+  });
+
+  it('cleans up old inactive ledger entries from all indexes', async () => {
+    const { repo, store } = createRepo();
+    const old = nowMs - 400 * MS_PER_DAY;
+    const recent = nowMs - 10 * MS_PER_DAY;
+    const oldInactive = buildEntry({ entryId: 'old-inactive', createdAtMs: old });
+    const oldReversed = buildEntry({
+      entryId: 'old-reversed',
+      status: 'reversed',
+      createdAtMs: old,
+    });
+    const recentActive = buildEntry({
+      entryId: 'recent-active',
+      createdAtMs: recent,
+    });
+    await seedEntry(store, oldInactive);
+    await seedEntry(store, oldReversed);
+    await seedEntry(store, recentActive);
+
+    const result = await repo.cleanupLedger({
+      config: DEFAULT_CONFIG,
+      maxEntries: 10,
+      nowMs,
+      retentionDays: 365,
+      subredditName: 'testsub',
+    });
+
+    expect(result.deleted).toBe(2);
+    expect(await repo.getLedgerEntry('old-inactive')).toBeNull();
+    expect(await repo.getLedgerEntry('old-reversed')).toBeNull();
+    expect(await repo.getLedgerEntry('recent-active')).not.toBeNull();
+    await expect(store.zRange('user:id:t2_user:ledger', 0, -1)).resolves.toEqual([
+      'recent-active',
+    ]);
+    await expect(store.zRange('target:t3_target:entries', 0, -1)).resolves.toEqual([
+      'recent-active',
+    ]);
+    await expect(
+      store.zRange('ledger:testsub:entries', 0, -1)
+    ).resolves.toEqual(['recent-active']);
+  });
+
   it('reads and recalculates across primary and fallback user keys', async () => {
     const { repo, store } = createRepo();
     await seedEntry(
@@ -613,6 +773,43 @@ describe('LedgerRepository', () => {
       )
     ).resolves.toBe(4);
     await expect(repo.getCachedActiveTotal('id:t2_user')).resolves.toBe(4);
+  });
+
+  it('recalculates active totals without full ledger scans when decay bounds old entries', async () => {
+    const store = new RecordingRedisStore();
+    const repo = new LedgerRepository(store);
+    const fastDecayConfig = {
+      ...DEFAULT_CONFIG,
+      decayAmount: 100,
+    };
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'entry-old',
+        originalPoints: 100,
+        createdAtMs: nowMs - 60 * MS_PER_DAY,
+      })
+    );
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'entry-recent',
+        targetId: 't3_recent',
+        originalPoints: 3,
+        createdAtMs: nowMs - 10 * MS_PER_DAY,
+      })
+    );
+
+    await expect(
+      repo.recalculateActiveTotalForKeys(
+        ['id:t2_user'],
+        'id:t2_user',
+        fastDecayConfig,
+        nowMs,
+        'testsub'
+      )
+    ).resolves.toBe(3);
+    expect(store.zRangeCalls.some((call) => call.stop === -1)).toBe(false);
   });
 
   it('rejects ledger entries from future schema versions', async () => {

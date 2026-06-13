@@ -153,7 +153,10 @@ const createHarness = (options: {
 describe('handleEnforcementSubmit', () => {
   it('creates one ledger entry and applies side effects to the nonce target', async () => {
     const harness = createHarness();
-    const updateLedgerEntry = vi.spyOn(harness.repository, 'updateLedgerEntry');
+    const updateLedgerEntrySideEffects = vi.spyOn(
+      harness.repository,
+      'updateLedgerEntrySideEffects'
+    );
     await harness.repository.saveFormNonce(buildNonce());
 
     const response = await handleEnforcementSubmit(
@@ -162,12 +165,12 @@ describe('handleEnforcementSubmit', () => {
     );
 
     expect(response.showToast).toContain('Strike recorded');
-    expect(updateLedgerEntry).toHaveBeenCalledTimes(6);
-    expect(updateLedgerEntry.mock.calls[0]?.[0]).toMatchObject({
+    expect(updateLedgerEntrySideEffects).toHaveBeenCalledTimes(6);
+    expect(updateLedgerEntrySideEffects.mock.calls[0]?.[0]).toMatchObject({
       publicCommentId: 't1_warning',
       sideEffects: { publicComment: 'succeeded' },
     });
-    expect(updateLedgerEntry.mock.calls[1]?.[0]).toMatchObject({
+    expect(updateLedgerEntrySideEffects.mock.calls[1]?.[0]).toMatchObject({
       sideEffects: {
         publicCommentOptions: {
           distinguish: 'succeeded',
@@ -175,10 +178,10 @@ describe('handleEnforcementSubmit', () => {
         },
       },
     });
-    expect(updateLedgerEntry.mock.calls[2]?.[0]).toMatchObject({
+    expect(updateLedgerEntrySideEffects.mock.calls[2]?.[0]).toMatchObject({
       sideEffects: { remove: 'succeeded' },
     });
-    expect(updateLedgerEntry.mock.calls.at(-1)?.[0]).toMatchObject({
+    expect(updateLedgerEntrySideEffects.mock.calls.at(-1)?.[0]).toMatchObject({
       status: 'succeeded',
       userNoticeId: 'modmail-1',
     });
@@ -362,7 +365,7 @@ describe('handleEnforcementSubmit', () => {
         status: 'blocked' as const,
         reason: 'transaction_conflict' as const,
       })),
-      updateLedgerEntry: vi.fn(async () => undefined),
+      updateLedgerEntrySideEffects: vi.fn(async () => null),
     };
 
     const response = await handleEnforcementSubmit(

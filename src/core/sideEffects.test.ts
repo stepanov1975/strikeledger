@@ -152,6 +152,54 @@ describe('executeSideEffects', () => {
     });
   });
 
+  it('retries only pending or failed side effects', async () => {
+    const publicComment = {
+      id: 'comment-2',
+      distinguish: vi.fn(async () => undefined),
+      lock: vi.fn(async () => undefined),
+    };
+    const target = {
+      addComment: vi.fn(async () => publicComment),
+      remove: vi.fn(async () => undefined),
+    };
+    const reddit = buildReddit();
+
+    const updated = await executeSideEffects({
+      entry: buildEntry({
+        status: 'partial',
+        publicCommentId: 'comment-1',
+        modNoteId: 'mod-note-1',
+        sideEffects: {
+          ...EMPTY_SIDE_EFFECTS,
+          publicComment: 'succeeded',
+          remove: 'failed',
+          modNote: 'succeeded',
+          userNotice: 'skipped',
+        },
+      }),
+      activeTotal: 3,
+      target,
+      reddit,
+      config: DEFAULT_CONFIG,
+    });
+
+    expect(target.addComment).not.toHaveBeenCalled();
+    expect(target.remove).toHaveBeenCalledTimes(1);
+    expect(reddit.addModNote).not.toHaveBeenCalled();
+    expect(reddit.modMail.createConversation).not.toHaveBeenCalled();
+    expect(updated).toMatchObject({
+      status: 'succeeded',
+      publicCommentId: 'comment-1',
+      modNoteId: 'mod-note-1',
+      sideEffects: {
+        publicComment: 'succeeded',
+        remove: 'succeeded',
+        modNote: 'succeeded',
+        userNotice: 'skipped',
+      },
+    });
+  });
+
   it('keeps ledger valid and partial when public comment fails', async () => {
     const target = {
       addComment: vi.fn(async () => {

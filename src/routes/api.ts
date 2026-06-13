@@ -13,12 +13,19 @@ import { LedgerRepository } from '../core/ledgerRepository';
 import { logInfo, logWarn, type LogDetails } from '../core/logging';
 import { getCachedOrLivePostScoreSummary } from '../core/postScore';
 import { calculateActivePoints } from '../core/scoring';
-import { executeReversalSideEffects } from '../core/sideEffects';
+import {
+  executeReversalSideEffects,
+  executeSideEffects,
+  type SideEffectTarget,
+} from '../core/sideEffects';
 import { getModeratorAccess, type ModeratorAccess } from './permissions';
 
 export const api = new Hono();
 
 const HISTORY_PAGE_SIZE = 25;
+const DEFAULT_LEDGER_CLEANUP_RETENTION_DAYS = 365;
+const DEFAULT_LEDGER_CLEANUP_BATCH_SIZE = 100;
+const MAX_LEDGER_CLEANUP_BATCH_SIZE = 500;
 
 const getRepositories = () => {
   const store = new DevvitRedisStore(redis);
@@ -178,6 +185,31 @@ const getContextUserKeys = (context: UserViewContext): string[] => {
   return userKeys;
 };
 
+const getEntryUserKeys = (entry: LedgerEntry): string[] =>
+  getContextUserKeys({
+    subredditName: entry.subredditName,
+    userKey: entry.userKey,
+    ...(entry.username !== '[unknown]' ? { authorName: entry.username } : {}),
+  });
+
+const fetchSideEffectTarget = async (
+  entry: LedgerEntry
+): Promise<SideEffectTarget> =>
+  entry.targetKind === 'post'
+    ? ((await reddit.getPostById(entry.targetId as never)) as SideEffectTarget)
+    : ((await reddit.getCommentById(
+        entry.targetId as never
+      )) as SideEffectTarget);
+
+const targetMatchesEntry = (target: SideEffectTarget, entry: LedgerEntry): boolean => {
+  const targetRecord = target as { id?: string; subredditName?: string };
+  return (
+    targetRecord.id === entry.targetId &&
+    targetRecord.subredditName?.toLowerCase() ===
+      entry.subredditName.toLowerCase()
+  );
+};
+
 const getAuthorizedViewContext = async (
   token: string | undefined,
   subredditName: string,
@@ -200,9 +232,14 @@ const getAuthorizedViewContext = async (
 const getAuthorizedUserViewContext = async (
   token: string | undefined,
   subredditName: string,
-  dashboardRepository: DashboardRepository
+  dashboardRepository: DashboardRepository,
+  rawUserKey: string | null = null,
+  username: string | null = null
 ): Promise<UserViewContext | null> => {
-  return getAuthorizedViewContext(token, subredditName, dashboardRepository);
+  return (
+    (await getAuthorizedViewContext(token, subredditName, dashboardRepository)) ??
+    getUserLookupContext(subredditName, rawUserKey, username)
+  );
 };
 
 const serializeEntry = (
@@ -231,6 +268,7 @@ const serializeEntry = (
   reversedAtMs: entry.reversedAtMs,
   reversedBy: entry.reversedBy,
   reversalReason: entry.reversalReason,
+  reversalNote: entry.reversalNote,
 });
 
 const buildReversalLogDetails = (
@@ -294,7 +332,9 @@ api.get('/history', async (c) => {
   const context = await getAuthorizedUserViewContext(
     c.req.query('contextToken'),
     apiAccess.subredditName,
-    dashboardRepository
+    dashboardRepository,
+    trimString(c.req.query('userKey')),
+    trimString(c.req.query('username'))
   );
   if (!context) {
     logWarn('api.history.invalid_context', {
@@ -339,6 +379,8 @@ api.get('/history', async (c) => {
   return c.json({
     context,
     activeTotal,
+    canAddReversalModNote:
+      config.nativeModNotesEnabled && config.reversalNativeModNotesEnabled,
     entries: entries.map((entry) => serializeEntry(entry, nowMs, config)),
     nextOffset:
       entries.length === HISTORY_PAGE_SIZE ? offset + HISTORY_PAGE_SIZE : null,
@@ -357,7 +399,9 @@ api.get('/profile', async (c) => {
   const context = await getAuthorizedUserViewContext(
     c.req.query('contextToken'),
     apiAccess.subredditName,
-    dashboardRepository
+    dashboardRepository,
+    trimString(c.req.query('userKey')),
+    trimString(c.req.query('username'))
   );
   if (!context) {
     logWarn('api.profile.invalid_context', {
@@ -429,6 +473,8 @@ api.get('/profile', async (c) => {
 
   return c.json({
     context,
+    canAddReversalModNote:
+      config.nativeModNotesEnabled && config.reversalNativeModNotesEnabled,
     summary: {
       activeTotal,
       lifetimeOriginalPoints,
@@ -464,6 +510,31 @@ api.get('/settings', async (c) => {
     canManage: apiAccess.access.canManage,
     config,
   });
+});
+
+api.get('/settings/audit', async (c) => {
+  const apiAccess = await getApiAccess('settings.audit');
+  if (!apiAccess) {
+    return c.json({ error: 'moderator_required' }, 403);
+  }
+
+  if (!apiAccess.access.canManage) {
+    logWarn('api.settings.audit.denied', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+    });
+    return c.json({ error: 'all_permission_required' }, 403);
+  }
+
+  const { configRepository } = getRepositories();
+  const records = await configRepository.getSettingsAudit();
+  logInfo('api.settings.audit.ok', {
+    subredditName: apiAccess.subredditName,
+    moderatorUsername: apiAccess.access.username,
+    recordCount: records.length,
+  });
+
+  return c.json({ records });
 });
 
 api.get('/settings/reddit-rules', async (c) => {
@@ -648,6 +719,157 @@ api.post('/recalculate-user-total', async (c) => {
   return c.json({ userKey, activeTotal });
 });
 
+api.post('/cleanup-ledger', async (c) => {
+  const apiAccess = await getApiAccess('cleanup-ledger');
+  if (!apiAccess) {
+    return c.json({ error: 'moderator_required' }, 403);
+  }
+
+  if (!apiAccess.access.canManage) {
+    logWarn('api.cleanup.denied', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+    });
+    return c.json({ error: 'all_permission_required' }, 403);
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = await c.req.json<Record<string, unknown>>();
+  } catch {
+    payload = {};
+  }
+
+  const requestedRetentionDays = Number(payload.retentionDays);
+  const retentionDays =
+    Number.isInteger(requestedRetentionDays) && requestedRetentionDays > 0
+      ? requestedRetentionDays
+      : DEFAULT_LEDGER_CLEANUP_RETENTION_DAYS;
+  const requestedMaxEntries = Number(payload.maxEntries);
+  const maxEntries =
+    Number.isInteger(requestedMaxEntries) && requestedMaxEntries > 0
+      ? Math.min(requestedMaxEntries, MAX_LEDGER_CLEANUP_BATCH_SIZE)
+      : DEFAULT_LEDGER_CLEANUP_BATCH_SIZE;
+
+  const { configRepository, ledgerRepository } = getRepositories();
+  const result = await ledgerRepository.cleanupLedger({
+    subredditName: apiAccess.subredditName,
+    config: await configRepository.getConfig(),
+    nowMs: Date.now(),
+    retentionDays,
+    maxEntries,
+  });
+  logInfo('api.cleanup.ok', {
+    subredditName: apiAccess.subredditName,
+    moderatorUsername: apiAccess.access.username,
+    retentionDays,
+    maxEntries,
+    scanned: result.scanned,
+    deleted: result.deleted,
+  });
+
+  return c.json({ ...result, retentionDays, maxEntries });
+});
+
+api.post('/retry-side-effects', async (c) => {
+  const apiAccess = await getApiAccess('retry-side-effects');
+  if (!apiAccess) {
+    return c.json({ error: 'moderator_required' }, 403);
+  }
+
+  if (!apiAccess.access.canEnforce) {
+    logWarn('api.retry_side_effects.denied', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+    });
+    return c.json({ error: 'posts_permission_required' }, 403);
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = await c.req.json<Record<string, unknown>>();
+  } catch {
+    logWarn('api.retry_side_effects.invalid_json', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+    });
+    return c.json({ error: 'invalid_json' }, 400);
+  }
+
+  const entryId = trimString(payload.entryId);
+  if (!entryId) {
+    return c.json({ error: 'missing_entry_id' }, 400);
+  }
+
+  const { configRepository, ledgerRepository } = getRepositories();
+  const entry = await ledgerRepository.getLedgerEntry(entryId);
+  if (
+    !entry ||
+    entry.subredditName.toLowerCase() !== apiAccess.subredditName.toLowerCase()
+  ) {
+    logWarn('api.retry_side_effects.not_found', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+      entryId,
+    });
+    return c.json({ error: 'not_found' }, 404);
+  }
+
+  if (entry.status === 'reversed' || entry.status === 'succeeded') {
+    return c.json({
+      status: 'not_retryable',
+      entry: serializeEntry(entry, Date.now(), await configRepository.getConfig()),
+    });
+  }
+
+  const target = await fetchSideEffectTarget(entry);
+  if (!targetMatchesEntry(target, entry)) {
+    logWarn('api.retry_side_effects.target_mismatch', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+      entryId,
+      targetId: entry.targetId,
+    });
+    return c.json({ error: 'target_mismatch' }, 409);
+  }
+
+  const config = await configRepository.getConfig();
+  const nowMs = Date.now();
+  const userKeys = getEntryUserKeys(entry);
+  const activeTotal = await ledgerRepository.recalculateActiveTotalForKeys(
+    userKeys,
+    entry.userKey,
+    config,
+    nowMs,
+    apiAccess.subredditName
+  );
+  const updatedEntry = await executeSideEffects({
+    entry,
+    activeTotal,
+    target,
+    reddit,
+    config,
+    persistEntry: async (checkpointEntry) => {
+      await ledgerRepository.updateLedgerEntrySideEffects(checkpointEntry);
+    },
+  });
+  await ledgerRepository.updateLedgerEntrySideEffects(updatedEntry);
+  logInfo('api.retry_side_effects.ok', {
+    subredditName: apiAccess.subredditName,
+    moderatorUsername: apiAccess.access.username,
+    entryId,
+    status: updatedEntry.status,
+    activeTotal,
+  });
+
+  return c.json({
+    status: 'retried',
+    activeTotal,
+    entry: serializeEntry(updatedEntry, nowMs, config),
+    sideEffects: updatedEntry.sideEffects,
+  });
+});
+
 api.post('/reverse', async (c) => {
   const apiAccess = await getApiAccess('reverse');
   if (!apiAccess) {
@@ -745,10 +967,11 @@ api.post('/reverse', async (c) => {
     reddit,
     config,
     addNativeModNote,
-    persistEntry: (checkpointEntry) =>
-      ledgerRepository.updateLedgerEntry(checkpointEntry),
+    persistEntry: async (checkpointEntry) => {
+      await ledgerRepository.updateLedgerEntrySideEffects(checkpointEntry);
+    },
   });
-  await ledgerRepository.updateLedgerEntry(updatedEntry);
+  await ledgerRepository.updateLedgerEntrySideEffects(updatedEntry);
   logInfo(
     'api.reverse.ok',
     buildReversalLogDetails(updatedEntry, result.activeTotal)

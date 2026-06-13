@@ -10,7 +10,11 @@ import {
   isRedisTransactionConflictError,
   type RedisStore,
 } from './redisStore';
-import { recalculateActiveTotal as calculateActiveTotalFromEntries } from './scoring';
+import {
+  calculateActivePoints,
+  getDecayIntervalMs,
+  recalculateActiveTotal as calculateActiveTotalFromEntries,
+} from './scoring';
 import { getUserKey } from './identity';
 
 export type FormNonceRecord = {
@@ -86,6 +90,19 @@ export type ReverseLedgerEntryResult =
     }
   | { status: 'not_found' };
 
+export type CleanupLedgerRequest = {
+  subredditName: string;
+  config: StrikeLedgerConfig;
+  nowMs: number;
+  retentionDays: number;
+  maxEntries: number;
+};
+
+export type CleanupLedgerResult = {
+  scanned: number;
+  deleted: number;
+};
+
 type ReverseLedgerEntryTransactionResult =
   | {
       status: 'reversed';
@@ -122,6 +139,10 @@ const targetEntriesKey = (targetId: string): string =>
   `target:${targetId}:entries`;
 const activeTotalKey = (userKey: string): string =>
   `user:${userKey}:active_total`;
+const ledgerEntriesKey = (subredditName: string): string =>
+  `ledger:${subredditName.trim().toLowerCase()}:entries`;
+const ACTIVE_TOTAL_PAGE_SIZE = 100;
+const MAX_ENTRY_ORIGINAL_POINTS = 100;
 
 const uniqueUserKeys = (userKeys: string[]): string[] =>
   Array.from(new Set(userKeys.map((userKey) => userKey.trim()).filter(Boolean)));
@@ -154,6 +175,20 @@ const compareEntriesNewestFirst = (
   return right.entryId.localeCompare(left.entryId);
 };
 
+const getActiveEntryCutoffMs = (
+  config: StrikeLedgerConfig,
+  nowMs: number
+): number | null => {
+  if (config.decayAmount <= 0) {
+    return null;
+  }
+
+  const maxActiveIntervals = Math.ceil(
+    MAX_ENTRY_ORIGINAL_POINTS / config.decayAmount
+  );
+  return nowMs - maxActiveIntervals * getDecayIntervalMs(config);
+};
+
 export class LedgerRepository {
   constructor(private readonly store: RedisStore) {}
 
@@ -175,6 +210,51 @@ export class LedgerRepository {
 
   async updateLedgerEntry(entry: LedgerEntry): Promise<void> {
     await this.store.set(ledgerEntryKey(entry.entryId), JSON.stringify(entry));
+  }
+
+  async updateLedgerEntrySideEffects(
+    checkpoint: LedgerEntry
+  ): Promise<LedgerEntry | null> {
+    return this.store.runTransaction(
+      [ledgerEntryKey(checkpoint.entryId)],
+      async (): Promise<LedgerEntry | null> => {
+        const current = await this.getLedgerEntry(checkpoint.entryId);
+        if (!current) {
+          return null;
+        }
+
+        const updated: LedgerEntry = {
+          ...current,
+          status:
+            current.status === 'reversed' ? current.status : checkpoint.status,
+          sideEffects: checkpoint.sideEffects,
+          ...(checkpoint.publicCommentId !== undefined
+            ? { publicCommentId: checkpoint.publicCommentId }
+            : {}),
+          ...(checkpoint.publicCorrectionCommentId !== undefined
+            ? { publicCorrectionCommentId: checkpoint.publicCorrectionCommentId }
+            : {}),
+          ...(checkpoint.modNoteId !== undefined
+            ? { modNoteId: checkpoint.modNoteId }
+            : {}),
+          ...(checkpoint.userNoticeId !== undefined
+            ? { userNoticeId: checkpoint.userNoticeId }
+            : {}),
+          ...(checkpoint.reversalModNoteId !== undefined
+            ? { reversalModNoteId: checkpoint.reversalModNoteId }
+            : {}),
+          ...(checkpoint.reversalUserNoticeId !== undefined
+            ? { reversalUserNoticeId: checkpoint.reversalUserNoticeId }
+            : {}),
+        };
+
+        await this.store.set(
+          ledgerEntryKey(updated.entryId),
+          JSON.stringify(updated)
+        );
+        return updated;
+      }
+    );
   }
 
   async getUserLedger(userKey: string): Promise<LedgerEntry[]> {
@@ -225,6 +305,28 @@ export class LedgerRepository {
 
     const uniqueKeys = uniqueUserKeys(userKeys);
     const entriesById = new Map<string, LedgerEntry>();
+    if (limit >= 0) {
+      const perKeyLimit = Math.max(0, offset) + limit;
+      for (const userKey of uniqueKeys) {
+        for (const entry of await this.getUserLedgerPage(
+          userKey,
+          0,
+          perKeyLimit
+        )) {
+          entriesById.set(entry.entryId, entry);
+        }
+      }
+
+      const entries = Array.from(entriesById.values()).sort(
+        compareEntriesNewestFirst
+      );
+      const scopedEntries =
+        subredditName === undefined
+          ? entries
+          : entries.filter((entry) => isEntryForSubreddit(entry, subredditName));
+      return scopedEntries.slice(offset, offset + limit);
+    }
+
     for (const userKey of uniqueKeys) {
       for (const entry of await this.getUserLedger(userKey)) {
         entriesById.set(entry.entryId, entry);
@@ -387,18 +489,62 @@ export class LedgerRepository {
     return result;
   }
 
+  async cleanupLedger(
+    request: CleanupLedgerRequest
+  ): Promise<CleanupLedgerResult> {
+    const maxEntries = Math.max(0, request.maxEntries);
+    if (maxEntries === 0) {
+      return { scanned: 0, deleted: 0 };
+    }
+
+    const cutoffMs = request.nowMs - request.retentionDays * 24 * 60 * 60 * 1000;
+    const ledgerIndexKey = ledgerEntriesKey(request.subredditName);
+    const entryIds = await this.store.zRange(ledgerIndexKey, 0, maxEntries - 1);
+    let deleted = 0;
+
+    for (const entryId of entryIds) {
+      const entry = await this.getLedgerEntry(entryId);
+      if (!entry) {
+        await this.store.zRem(ledgerIndexKey, [entryId]);
+        continue;
+      }
+
+      if (
+        entry.createdAtMs > cutoffMs ||
+        !isEntryForSubreddit(entry, request.subredditName)
+      ) {
+        continue;
+      }
+
+      const activePoints = calculateActivePoints(
+        entry,
+        request.config,
+        request.nowMs
+      );
+      if (entry.status !== 'reversed' && activePoints > 0) {
+        continue;
+      }
+
+      await this.deleteLedgerEntry(entry);
+      deleted += 1;
+    }
+
+    return { scanned: entryIds.length, deleted };
+  }
+
   async recalculateActiveTotal(
     userKey: string,
     config: StrikeLedgerConfig,
     nowMs: number,
     subredditName?: string
   ): Promise<number> {
-    const entries = await this.getUserLedger(userKey);
-    const scopedEntries =
-      subredditName === undefined
-        ? entries
-        : entries.filter((entry) => isEntryForSubreddit(entry, subredditName));
-    return this.cacheActiveTotal(userKey, scopedEntries, config, nowMs);
+    const entries = await this.getActiveTotalEntriesForKeys(
+      [userKey],
+      config,
+      nowMs,
+      subredditName
+    );
+    return this.cacheActiveTotal(userKey, entries, config, nowMs);
   }
 
   async recalculateActiveTotalForKeys(
@@ -408,8 +554,62 @@ export class LedgerRepository {
     nowMs: number,
     subredditName?: string
   ): Promise<number> {
-    const entries = await this.getUserLedgerForKeys(userKeys, subredditName);
+    const entries = await this.getActiveTotalEntriesForKeys(
+      userKeys,
+      config,
+      nowMs,
+      subredditName
+    );
     return this.cacheActiveTotal(cacheUserKey, entries, config, nowMs);
+  }
+
+  private async getActiveTotalEntriesForKeys(
+    userKeys: string[],
+    config: StrikeLedgerConfig,
+    nowMs: number,
+    subredditName?: string
+  ): Promise<LedgerEntry[]> {
+    const cutoffMs = getActiveEntryCutoffMs(config, nowMs);
+    if (cutoffMs === null) {
+      return this.getUserLedgerForKeys(userKeys, subredditName);
+    }
+
+    const entriesById = new Map<string, LedgerEntry>();
+    for (const userKey of uniqueUserKeys(userKeys)) {
+      let offset = 0;
+      while (true) {
+        const page = await this.getUserLedgerPage(
+          userKey,
+          offset,
+          ACTIVE_TOTAL_PAGE_SIZE
+        );
+        if (page.length === 0) {
+          break;
+        }
+
+        for (const entry of page) {
+          if (entry.createdAtMs > cutoffMs) {
+            entriesById.set(entry.entryId, entry);
+          }
+        }
+
+        const oldestEntry = page.at(-1);
+        if (
+          page.length < ACTIVE_TOTAL_PAGE_SIZE ||
+          !oldestEntry ||
+          oldestEntry.createdAtMs <= cutoffMs
+        ) {
+          break;
+        }
+
+        offset += ACTIVE_TOTAL_PAGE_SIZE;
+      }
+    }
+
+    const entries = Array.from(entriesById.values());
+    return subredditName === undefined
+      ? entries
+      : entries.filter((entry) => isEntryForSubreddit(entry, subredditName));
   }
 
   private async cacheActiveTotal(
@@ -450,8 +650,6 @@ export class LedgerRepository {
         submittedAtMs: request.submittedAtMs,
       }),
       ledgerEntryKey(request.entry.entryId),
-      userLedgerKey(request.entry.userKey),
-      targetEntriesKey(request.entry.targetId),
     ];
   }
 
@@ -574,6 +772,10 @@ export class LedgerRepository {
       member: request.entry.entryId,
       score: request.entry.createdAtMs,
     });
+    await this.store.zAdd(ledgerEntriesKey(request.entry.subredditName), {
+      member: request.entry.entryId,
+      score: request.entry.createdAtMs,
+    });
     await this.consumeNonce(nonce, request.entry.entryId, request.nowMs);
     await this.store.set(
       getDuplicateClaimKey({
@@ -594,5 +796,23 @@ export class LedgerRepository {
       request.entry.entryId,
       { expiresAtMs: request.nowMs + RETRY_WINDOW_MS }
     );
+  }
+
+  private async deleteLedgerEntry(entry: LedgerEntry): Promise<void> {
+    const duplicateClaimKey = getDuplicateClaimKey({
+      targetId: entry.targetId,
+      action: entry.action,
+      ruleId: entry.ruleId,
+    });
+    const claimedEntryId = await this.store.get(duplicateClaimKey);
+
+    await this.store.del(ledgerEntryKey(entry.entryId));
+    await this.store.zRem(userLedgerKey(entry.userKey), [entry.entryId]);
+    await this.store.zRem(targetEntriesKey(entry.targetId), [entry.entryId]);
+    await this.store.zRem(ledgerEntriesKey(entry.subredditName), [entry.entryId]);
+
+    if (claimedEntryId === entry.entryId) {
+      await this.store.del(duplicateClaimKey);
+    }
   }
 }

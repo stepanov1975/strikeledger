@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { canonicalJson, sha256Hex } from './canonicalJson';
 import {
   DEFAULT_CONFIG,
   validateConfig,
@@ -55,28 +55,7 @@ const SETTINGS_AUDIT_SNAPSHOT_LIMIT = 20;
 const parseJson = <T>(raw: string | null): T | null =>
   raw === null ? null : (JSON.parse(raw) as T);
 
-const canonicalize = (value: unknown): unknown => {
-  if (Array.isArray(value)) {
-    return value.map(canonicalize);
-  }
-
-  if (value && typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>).sort(
-      ([left], [right]) => left.localeCompare(right)
-    );
-    return Object.fromEntries(
-      entries.map(([key, entryValue]) => [key, canonicalize(entryValue)])
-    );
-  }
-
-  return value;
-};
-
-export const canonicalJson = (value: unknown): string =>
-  JSON.stringify(canonicalize(value));
-
-export const sha256Hex = (value: string): string =>
-  createHash('sha256').update(value).digest('hex');
+export { canonicalJson, sha256Hex };
 
 const changedTopLevelFields = (
   beforeConfig: StrikeLedgerConfig,
@@ -228,6 +207,39 @@ export class ConfigRepository {
     }
 
     return result;
+  }
+
+  async getSettingsAudit(limit = 20): Promise<SettingsAuditRecord[]> {
+    const normalizedLimit = Math.max(0, limit);
+    if (normalizedLimit === 0) {
+      return [];
+    }
+
+    const snapshotKeys = await this.store.zRange(
+      settingsAuditSnapshotIndexKey,
+      0,
+      normalizedLimit - 1,
+      { reverse: true }
+    );
+    const records: SettingsAuditRecord[] = [];
+
+    for (const snapshotKey of snapshotKeys) {
+      const snapshot = parseJson<SettingsAuditSnapshotRecord>(
+        await this.store.get(snapshotKey)
+      );
+      if (!snapshot) {
+        continue;
+      }
+
+      const audit = parseJson<SettingsAuditRecord>(
+        await this.store.get(snapshot.auditKey)
+      );
+      if (audit) {
+        records.push(audit);
+      }
+    }
+
+    return records;
   }
 
   private async pruneOldSettingsSnapshots(): Promise<void> {

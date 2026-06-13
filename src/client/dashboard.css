@@ -193,6 +193,14 @@ tr:last-child td {
   color: #9f1f1f;
 }
 
+.cell-note {
+  max-width: 260px;
+  margin-top: 6px;
+  color: #5f6b7a;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 .link {
   color: #116466;
   text-decoration: none;
@@ -245,6 +253,19 @@ tr:last-child td {
   margin-top: 0;
   border-color: #b42318;
   background: #b42318;
+}
+
+.load-more:disabled,
+.secondary-button:disabled,
+.danger-button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .modal {

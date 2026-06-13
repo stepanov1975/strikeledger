@@ -34,17 +34,23 @@ type LedgerEntryRow = {
   createdAtMs: number;
   status: string;
   sideEffects: SideEffects;
+  reversedAtMs?: number;
+  reversedBy?: string;
+  reversalReason?: string;
+  reversalNote?: string;
 };
 
 type HistoryResponse = {
   context: ViewContext;
   activeTotal: number;
+  canAddReversalModNote: boolean;
   entries: LedgerEntryRow[];
   nextOffset: number | null;
 };
 
 type ProfileResponse = {
   context: ViewContext;
+  canAddReversalModNote: boolean;
   summary: {
     activeTotal: number;
     lifetimeOriginalPoints: number;
@@ -61,6 +67,11 @@ type ProfileResponse = {
 type ReverseResponse = {
   status: 'reversed' | 'already_reversed';
   activeTotal: number;
+};
+
+type RetrySideEffectsResponse = {
+  status: 'retried' | 'not_retryable';
+  activeTotal?: number;
 };
 
 type SettingsResponse = {
@@ -85,6 +96,23 @@ type SettingsSaveResponse =
 type RecalculateResponse = {
   userKey: string;
   activeTotal: number;
+};
+
+type SettingsAuditResponse = {
+  records: Array<{
+    moderatorUsername: string;
+    timestampMs: number;
+    changedFields: string[];
+    beforeHash: string;
+    afterHash: string;
+  }>;
+};
+
+type CleanupResponse = {
+  scanned: number;
+  deleted: number;
+  retentionDays: number;
+  maxEntries: number;
 };
 
 type ImportedRedditRule = {
@@ -112,12 +140,15 @@ if (!app) {
 
 let bootstrap: BootstrapResponse | null = null;
 let activeContextToken: string | null = null;
+let activeUserLookup: { keyField: 'userKey' | 'username'; value: string } | null =
+  null;
 let activeView: DashboardView = 'settings';
 let main: HTMLElement | null = null;
 let historyEntries: LedgerEntryRow[] = [];
 let historyNextOffset: number | null = null;
 let historyContext: ViewContext | null = null;
 let historyActiveTotal = 0;
+let historyCanAddReversalModNote = false;
 let historyNotice: string | null = null;
 let settingsNotice: string | null = null;
 
@@ -160,6 +191,11 @@ const formatTargetUser = (context: ViewContext): string =>
 const appendContextTokenParam = (params: URLSearchParams): boolean => {
   if (activeContextToken) {
     params.set('contextToken', activeContextToken);
+    return true;
+  }
+
+  if (activeUserLookup) {
+    params.set(activeUserLookup.keyField, activeUserLookup.value);
     return true;
   }
 
@@ -214,6 +250,7 @@ const dashboardViewLabel = (view: DashboardView): string =>
 const setActiveView = async (view: DashboardView) => {
   activeView = view;
   activeContextToken = null;
+  activeUserLookup = null;
   renderFrame();
   await loadActiveView();
 };
@@ -288,9 +325,28 @@ const sideEffectSummary = (sideEffects: SideEffects): string => {
   return notable.length > 0 ? notable.join(', ') : 'OK';
 };
 
+const formatReversalSummary = (entry: LedgerEntryRow): string | null => {
+  if (entry.status !== 'reversed') {
+    return null;
+  }
+
+  const parts = [
+    entry.reversalReason ? `Reason: ${entry.reversalReason}` : null,
+    entry.reversalNote ? `Note: ${entry.reversalNote}` : null,
+    entry.reversedBy ? `By: u/${entry.reversedBy}` : null,
+  ].filter((part): part is string => part !== null);
+
+  return parts.length > 0 ? parts.join(' · ') : null;
+};
+
+type EntryTableOptions = {
+  onReverse?: (entry: LedgerEntryRow) => void;
+  onRetry?: (entry: LedgerEntryRow) => void;
+};
+
 const renderEntryTable = (
   entries: LedgerEntryRow[],
-  onReverse?: (entry: LedgerEntryRow) => void
+  options: EntryTableOptions = {}
 ): HTMLElement => {
   const panel = create('div', 'panel');
   const table = create('table');
@@ -306,7 +362,7 @@ const renderEntryTable = (
     'Moderator',
     'Side effects',
   ];
-  if (onReverse) {
+  if (options.onReverse || options.onRetry) {
     headers.push('Actions');
   }
   for (const label of headers) {
@@ -328,6 +384,10 @@ const renderEntryTable = (
     statusCell.append(
       create('span', `status ${entry.status}`, titleCase(entry.status))
     );
+    const reversalSummary = formatReversalSummary(entry);
+    if (reversalSummary) {
+      statusCell.append(create('div', 'cell-note', reversalSummary));
+    }
     row.append(statusCell);
 
     const targetCell = create('td');
@@ -343,16 +403,29 @@ const renderEntryTable = (
       create('td', undefined, sideEffectSummary(entry.sideEffects))
     );
 
-    if (onReverse) {
+    if (options.onReverse || options.onRetry) {
       const actionCell = create('td');
-      if (entry.status !== 'reversed') {
+      const actions = create('div', 'table-actions');
+      if (options.onReverse && entry.status !== 'reversed') {
         const reverseButton = create('button', 'secondary-button', 'Reverse');
         reverseButton.type = 'button';
         reverseButton.addEventListener('click', () => {
-          onReverse(entry);
+          options.onReverse?.(entry);
         });
-        actionCell.append(reverseButton);
+        actions.append(reverseButton);
       }
+      if (
+        options.onRetry &&
+        (entry.status === 'partial' || entry.status === 'pending')
+      ) {
+        const retryButton = create('button', 'secondary-button', 'Retry');
+        retryButton.type = 'button';
+        retryButton.addEventListener('click', () => {
+          options.onRetry?.(entry);
+        });
+        actions.append(retryButton);
+      }
+      actionCell.append(actions);
       row.append(actionCell);
     }
 
@@ -381,7 +454,12 @@ const renderHistory = () => {
   if (historyEntries.length === 0) {
     children.push(create('div', 'empty', 'No ledger entries.'));
   } else {
-    children.push(renderEntryTable(historyEntries, reverseEntry));
+    children.push(
+      renderEntryTable(historyEntries, {
+        onReverse: reverseEntry,
+        onRetry: retryEntry,
+      })
+    );
   }
 
   if (historyNextOffset !== null) {
@@ -426,6 +504,7 @@ const loadHistory = async (offset: number) => {
 
   historyContext = response.context;
   historyActiveTotal = response.activeTotal;
+  historyCanAddReversalModNote = response.canAddReversalModNote;
   historyEntries = [...historyEntries, ...response.entries];
   historyNextOffset = response.nextOffset;
   renderHistory();
@@ -438,7 +517,8 @@ type ReverseDialogResult = {
 };
 
 const showReverseDialog = (
-  entry: LedgerEntryRow
+  entry: LedgerEntryRow,
+  canAddNativeModNote: boolean
 ): Promise<ReverseDialogResult | null> =>
   new Promise((resolve) => {
     const dialog = create('dialog', 'modal');
@@ -462,7 +542,8 @@ const showReverseDialog = (
     const checkboxLabel = create('label', 'checkbox-label');
     const checkbox = create('input') as HTMLInputElement;
     checkbox.type = 'checkbox';
-    checkbox.checked = true;
+    checkbox.checked = canAddNativeModNote;
+    checkbox.disabled = !canAddNativeModNote;
     checkboxLabel.append(
       checkbox,
       document.createTextNode('Add native mod note')
@@ -521,7 +602,10 @@ const showReverseDialog = (
   });
 
 const reverseEntry = async (entry: LedgerEntryRow) => {
-  const reversal = await showReverseDialog(entry);
+  const reversal = await showReverseDialog(
+    entry,
+    historyCanAddReversalModNote
+  );
   if (!reversal) {
     return;
   }
@@ -551,6 +635,32 @@ const reverseEntry = async (entry: LedgerEntryRow) => {
     await loadHistory(0);
   } catch (error) {
     showError(error instanceof Error ? error.message : 'Reversal failed.');
+  }
+};
+
+const retryEntry = async (entry: LedgerEntryRow) => {
+  try {
+    const response = await fetch('/api/retry-side-effects', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ entryId: entry.entryId }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Retry failed with ${response.status}.`);
+    }
+
+    const result = (await response.json()) as RetrySideEffectsResponse;
+    historyNotice =
+      result.status === 'not_retryable'
+        ? 'Entry does not need side-effect retry.'
+        : `Side effects retried. Active total: ${result.activeTotal}.`;
+    await loadHistory(0);
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Retry failed.');
   }
 };
 
@@ -1320,13 +1430,45 @@ const renderSettings = (response: SettingsResponse) => {
     const recalcActions = create('div', 'modal-actions');
     const recalcButton = create('button', 'secondary-button', 'Recalculate');
     recalcButton.type = 'submit';
-    recalcActions.append(recalcButton);
+    const historyButton = create('button', 'secondary-button', 'History');
+    historyButton.type = 'button';
+    historyButton.addEventListener('click', () => {
+      void openUserLookupView('history', recalcInput.value);
+    });
+    const profileButton = create('button', 'secondary-button', 'Profile');
+    profileButton.type = 'button';
+    profileButton.addEventListener('click', () => {
+      void openUserLookupView('profile', recalcInput.value);
+    });
+    recalcActions.append(recalcButton, historyButton, profileButton);
     recalcForm.append(recalcLabel, recalcActions);
     recalcForm.addEventListener('submit', (event) => {
       event.preventDefault();
       void recalculateUserTotal(recalcInput.value);
     });
-    children.push(recalcForm, buildSettingsForm(response));
+
+    const maintenanceStatus = create('div', 'rule-import-preview');
+    const maintenanceActions = create('div', 'modal-actions');
+    const cleanupButton = create('button', 'secondary-button', 'Run cleanup');
+    cleanupButton.type = 'button';
+    cleanupButton.addEventListener('click', () => {
+      cleanupButton.disabled = true;
+      void runLedgerCleanup().finally(() => {
+        cleanupButton.disabled = false;
+      });
+    });
+    const auditButton = create('button', 'secondary-button', 'Load audit');
+    auditButton.type = 'button';
+    auditButton.addEventListener('click', () => {
+      void loadSettingsAudit(maintenanceStatus);
+    });
+    maintenanceActions.append(cleanupButton, auditButton);
+
+    children.push(
+      settingsSection('User lookup', null, recalcForm),
+      settingsSection('Maintenance', null, maintenanceActions, maintenanceStatus),
+      buildSettingsForm(response)
+    );
   } else {
     children.push(renderRulesTable(response.config));
   }
@@ -1338,6 +1480,26 @@ const loadSettings = async () => {
   renderSettings(await fetchJson<SettingsResponse>('/api/settings'));
 };
 
+const getLookupPayloadField = (value: string): 'userKey' | 'username' =>
+  value.startsWith('id:') || value.startsWith('name:') ? 'userKey' : 'username';
+
+const openUserLookupView = async (
+  view: Extract<DashboardView, 'history' | 'profile'>,
+  rawValue: string
+) => {
+  const value = rawValue.trim();
+  if (!value) {
+    showError('User is required.');
+    return;
+  }
+
+  activeView = view;
+  activeContextToken = null;
+  activeUserLookup = { keyField: getLookupPayloadField(value), value };
+  renderFrame();
+  await loadActiveView();
+};
+
 const recalculateUserTotal = async (rawValue: string) => {
   const value = rawValue.trim();
   if (!value) {
@@ -1346,10 +1508,7 @@ const recalculateUserTotal = async (rawValue: string) => {
   }
 
   try {
-    const keyField =
-      value.startsWith('id:') || value.startsWith('name:')
-        ? 'userKey'
-        : 'username';
+    const keyField = getLookupPayloadField(value);
     const response = await fetch('/api/recalculate-user-total', {
       method: 'POST',
       headers: {
@@ -1368,6 +1527,82 @@ const recalculateUserTotal = async (rawValue: string) => {
     await loadSettings();
   } catch (error) {
     showError(error instanceof Error ? error.message : 'Recalculate failed.');
+  }
+};
+
+const renderSettingsAuditTable = (
+  response: SettingsAuditResponse
+): HTMLElement => {
+  if (response.records.length === 0) {
+    return create('div', 'empty', 'No settings audit records.');
+  }
+
+  const panel = create('div', 'panel');
+  const table = create('table');
+  const thead = create('thead');
+  const headerRow = create('tr');
+  for (const label of ['Date', 'Moderator', 'Fields', 'Before', 'After']) {
+    headerRow.append(create('th', undefined, label));
+  }
+  thead.append(headerRow);
+
+  const tbody = create('tbody');
+  for (const record of response.records) {
+    const row = create('tr');
+    row.append(
+      create('td', undefined, formatDate(record.timestampMs)),
+      create('td', undefined, `u/${record.moderatorUsername}`),
+      create('td', undefined, record.changedFields.join(', ') || 'none'),
+      create('td', undefined, record.beforeHash.slice(0, 12)),
+      create('td', undefined, record.afterHash.slice(0, 12))
+    );
+    tbody.append(row);
+  }
+
+  table.append(thead, tbody);
+  panel.append(table);
+  return panel;
+};
+
+const loadSettingsAudit = async (target: HTMLElement) => {
+  target.replaceChildren(create('div', 'notice', 'Loading settings audit.'));
+  try {
+    target.replaceChildren(
+      renderSettingsAuditTable(
+        await fetchJson<SettingsAuditResponse>('/api/settings/audit')
+      )
+    );
+  } catch (error) {
+    target.replaceChildren(
+      create(
+        'div',
+        'error',
+        error instanceof Error ? error.message : 'Audit load failed.'
+      )
+    );
+  }
+};
+
+const runLedgerCleanup = async () => {
+  try {
+    const response = await fetch('/api/cleanup-ledger', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Cleanup failed with ${response.status}.`);
+    }
+
+    const result = (await response.json()) as CleanupResponse;
+    settingsNotice = `Cleanup scanned ${result.scanned}, deleted ${result.deleted}.`;
+    await loadSettings();
+  } catch (error) {
+    showError(error instanceof Error ? error.message : 'Cleanup failed.');
   }
 };
 

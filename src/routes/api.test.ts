@@ -154,6 +154,8 @@ const loadApi = async (
     }>;
     nativeSettings?: Record<string, unknown>;
     postsByUser?: PostScoreMock[];
+    targetPost?: Record<string, unknown>;
+    targetComment?: Record<string, unknown>;
   } = {}
 ) => {
   vi.resetModules();
@@ -175,6 +177,43 @@ const loadApi = async (
     })),
     getRules: vi.fn(async () => options.redditRules ?? []),
     getPostsByUser: vi.fn(() => buildAsyncListing(options.postsByUser ?? [])),
+    getPostById: vi.fn(async () =>
+      options.targetPost ?? {
+        id: 't3_target',
+        subredditName: 'testsub',
+        authorId: 't2_user',
+        authorName: 'target-user',
+        permalink: '/r/testsub/comments/target',
+        locked: false,
+        removed: false,
+        nsfw: false,
+        addComment: vi.fn(async () => ({
+          id: 't1_warning',
+          distinguish: vi.fn(async () => undefined),
+          lock: vi.fn(async () => undefined),
+        })),
+        remove: vi.fn(async () => undefined),
+        markAsNsfw: vi.fn(async () => undefined),
+      }
+    ),
+    getCommentById: vi.fn(async () =>
+      options.targetComment ?? {
+        id: 't1_target',
+        postId: 't3_target',
+        subredditName: 'testsub',
+        authorId: 't2_user',
+        authorName: 'target-user',
+        permalink: '/r/testsub/comments/target/_/comment',
+        locked: false,
+        removed: false,
+        reply: vi.fn(async () => ({
+          id: 't1_warning',
+          distinguish: vi.fn(async () => undefined),
+          lock: vi.fn(async () => undefined),
+        })),
+        remove: vi.fn(async () => undefined),
+      }
+    ),
     addModNote: vi.fn(async () => ({ id: 'mod-note-1' })),
     modMail: {
       createConversation: vi.fn(async () => ({
@@ -215,6 +254,14 @@ const seedViewContext = async (
 const seedLedger = async (redis: ApiRedisMock, entry = buildEntry()) => {
   await redis.set(`ledger_entry:${entry.entryId}`, JSON.stringify(entry));
   await redis.zAdd(`user:${entry.userKey}:ledger`, {
+    member: entry.entryId,
+    score: entry.createdAtMs,
+  });
+  await redis.zAdd(`target:${entry.targetId}:entries`, {
+    member: entry.entryId,
+    score: entry.createdAtMs,
+  });
+  await redis.zAdd(`ledger:${entry.subredditName.toLowerCase()}:entries`, {
     member: entry.entryId,
     score: entry.createdAtMs,
   });
@@ -470,7 +517,7 @@ describe('api routes', () => {
     expect(redis.values.get('user:id:t2_user:active_total')).toBe('3');
   });
 
-  it('rejects raw username lookups for history', async () => {
+  it('reads history by username for moderator dashboard lookup', async () => {
     const { api, redis } = await loadApi(['posts']);
     const entry = buildEntry({
       userKey: 'name:someuser',
@@ -479,10 +526,16 @@ describe('api routes', () => {
     await seedLedger(redis, entry);
 
     const response = await api.request('/history?username=u%2FSomeUser');
+    const body = await response.json();
 
-    expect(response.status).toBe(404);
-    await expect(response.json()).resolves.toEqual({
-      error: 'invalid_context',
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      context: {
+        userKey: 'name:someuser',
+        authorName: 'SomeUser',
+      },
+      activeTotal: 3,
+      entries: [{ entryId: 'entry-1' }],
     });
   });
 
@@ -642,7 +695,7 @@ describe('api routes', () => {
     });
   });
 
-  it('rejects raw user key lookups for profile', async () => {
+  it('reads profile by user key for moderator dashboard lookup', async () => {
     const { api, redis } = await loadApi(['posts']);
     const entry = buildEntry({
       userKey: 'name:someuser',
@@ -651,11 +704,94 @@ describe('api routes', () => {
     await seedLedger(redis, entry);
 
     const response = await api.request('/profile?userKey=name%3Asomeuser');
+    const body = await response.json();
 
-    expect(response.status).toBe(404);
-    await expect(response.json()).resolves.toEqual({
-      error: 'invalid_context',
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      context: {
+        userKey: 'name:someuser',
+        authorName: 'someuser',
+      },
+      summary: {
+        activeTotal: 3,
+        lifetimeOriginalPoints: 3,
+      },
     });
+  });
+
+  it('exposes compact settings audit records to settings managers', async () => {
+    const { api } = await loadApi(['all']);
+
+    const settingsResponse = await api.request('/settings');
+    const settingsBody = await settingsResponse.json();
+    const nextConfig = {
+      ...settingsBody.config,
+      rules: settingsBody.config.rules.map((rule: Record<string, unknown>) =>
+        rule.id === 'rule-general'
+          ? { ...rule, label: 'Rule 1 - General violation' }
+          : rule
+      ),
+    };
+    const saveResponse = await api.request('/settings', {
+      method: 'POST',
+      body: JSON.stringify({
+        revision: settingsBody.config.revision,
+        config: nextConfig,
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(saveResponse.status).toBe(200);
+
+    const response = await api.request('/settings/audit');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.records).toEqual([
+      expect.objectContaining({
+        moderatorUsername: 'mod-a',
+        changedFields: ['rules'],
+      }),
+    ]);
+    expect(body.records[0]).not.toHaveProperty('beforeConfig');
+  });
+
+  it('runs bounded cleanup for old inactive ledger entries', async () => {
+    const { api, redis } = await loadApi(['all']);
+    const nowMs = Date.now();
+    await seedLedger(
+      redis,
+      buildEntry({
+        entryId: 'old-inactive',
+        targetId: 't3_old',
+        createdAtMs: nowMs - 400 * 24 * 60 * 60 * 1000,
+      })
+    );
+    await seedLedger(
+      redis,
+      buildEntry({
+        entryId: 'recent-active',
+        targetId: 't3_recent',
+        createdAtMs: nowMs - 10 * 24 * 60 * 60 * 1000,
+      })
+    );
+
+    const response = await api.request('/cleanup-ledger', {
+      method: 'POST',
+      body: JSON.stringify({ retentionDays: 365, maxEntries: 10 }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.deleted).toBe(1);
+    expect(redis.values.has('ledger_entry:old-inactive')).toBe(false);
+    expect(redis.values.has('ledger_entry:recent-active')).toBe(true);
+    expect(
+      Array.from(redis.sortedSets.get('user:id:t2_user:ledger')?.keys() ?? [])
+    ).toEqual(['recent-active']);
+    expect(
+      Array.from(redis.sortedSets.get('ledger:testsub:entries')?.keys() ?? [])
+    ).toEqual(['recent-active']);
   });
 
   it('normalizes username input when recalculating a user total', async () => {
@@ -717,6 +853,62 @@ describe('api routes', () => {
       activeTotal: 3,
     });
     expect(redis.values.get('user:name:someuser:active_total')).toBe('3');
+  });
+
+  it('retries failed side effects without duplicating successful ones', async () => {
+    const addComment = vi.fn(async () => ({
+      id: 't1_warning_2',
+      distinguish: vi.fn(async () => undefined),
+      lock: vi.fn(async () => undefined),
+    }));
+    const remove = vi.fn(async () => undefined);
+    const targetPost = {
+      id: 't3_target',
+      subredditName: 'testsub',
+      authorId: 't2_user',
+      authorName: 'target-user',
+      permalink: '/r/testsub/comments/target',
+      locked: false,
+      removed: false,
+      nsfw: false,
+      addComment,
+      remove,
+      markAsNsfw: vi.fn(async () => undefined),
+    };
+    const { api, redis } = await loadApi(['posts'], { targetPost });
+    await seedLedger(
+      redis,
+      buildEntry({
+        status: 'partial',
+        publicCommentId: 't1_warning',
+        sideEffects: {
+          ...EMPTY_SIDE_EFFECTS,
+          publicComment: 'succeeded',
+          remove: 'failed',
+          modNote: 'skipped',
+          userNotice: 'skipped',
+        },
+      })
+    );
+
+    const response = await api.request('/retry-side-effects', {
+      method: 'POST',
+      body: JSON.stringify({ entryId: 'entry-1' }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(addComment).not.toHaveBeenCalled();
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(body.entry).toMatchObject({
+      status: 'succeeded',
+      publicCommentId: 't1_warning',
+      sideEffects: {
+        publicComment: 'succeeded',
+        remove: 'succeeded',
+      },
+    });
   });
 
   it('requires posts or all permission for reversal', async () => {

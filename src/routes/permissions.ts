@@ -9,6 +9,10 @@ export type ModeratorAccess = {
   canManage: boolean;
 };
 
+export const canEnforceWithPermissions = (
+  permissions: readonly string[]
+): boolean => permissions.includes('all') || permissions.includes('posts');
+
 export const getModeratorAccess = async (
   subredditName: string
 ): Promise<ModeratorAccess | null> => {
@@ -25,7 +29,7 @@ export const getModeratorAccess = async (
   return {
     username: user.username,
     canRead: canManage || isModerator,
-    canEnforce: canManage || permissions.includes('posts'),
+    canEnforce: canEnforceWithPermissions(permissions),
     canManage,
   };
 };

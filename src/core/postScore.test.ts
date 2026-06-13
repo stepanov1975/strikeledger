@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   getCachedOrLivePostScoreSummary,
-  getPostRateKey,
   getPostScoreSummaryKey,
   POST_SCORE_SUMMARY_CACHE_TTL_MS,
-  recordPostSubmission,
   savePostScoreSummary,
   summarizeUserPostScores,
 } from './postScore';
@@ -126,13 +124,4 @@ describe('post score summary', () => {
     ).resolves.not.toBeNull();
   });
 
-  it('records submitted posts in the per-user post-rate sorted set', async () => {
-    const store = new FakeRedisStore();
-
-    await recordPostSubmission(store, 'id:t2_user', 't3_post', nowMs);
-
-    await expect(
-      store.zRange(getPostRateKey('id:t2_user'), 0, -1)
-    ).resolves.toEqual(['t3_post']);
-  });
 });

@@ -47,6 +47,8 @@ export type SideEffectRedditClient = {
   };
 };
 
+type PersistLedgerEntry = (entry: LedgerEntry) => Promise<void>;
+
 export type ExecuteSideEffectsInput = {
   entry: LedgerEntry;
   activeTotal: number;
@@ -54,6 +56,7 @@ export type ExecuteSideEffectsInput = {
   reddit: SideEffectRedditClient;
   config: StrikeLedgerConfig;
   publicCommentOverride?: string;
+  persistEntry?: PersistLedgerEntry;
 };
 
 export type ExecuteReversalSideEffectsInput = {
@@ -62,18 +65,50 @@ export type ExecuteReversalSideEffectsInput = {
   reddit: SideEffectRedditClient;
   config: StrikeLedgerConfig;
   addNativeModNote: boolean;
+  persistEntry?: PersistLedgerEntry;
 };
 
-const succeededOrFailed = async (
+type PublicCommentOptionName =
+  | 'distinguish'
+  | 'sticky'
+  | 'distinguish_sticky'
+  | 'lock';
+
+const publicCommentOptionSucceededOrFailed = async (
+  entry: LedgerEntry,
+  option: PublicCommentOptionName,
   operation: () => Promise<void>
 ): Promise<SideEffectStatus> => {
   try {
     await operation();
     return 'succeeded';
   } catch (error) {
-    logError('side_effect.failed', {}, error);
+    logError(
+      'side_effect.public_comment_option_failed',
+      {
+        entryId: entry.entryId,
+        subredditName: entry.subredditName,
+        targetId: entry.targetId,
+        targetKind: entry.targetKind,
+        action: entry.action,
+        ruleId: entry.ruleId,
+        option,
+      },
+      error
+    );
     return 'failed';
   }
+};
+
+const getDistinguishOptionName = (
+  shouldDistinguish: boolean,
+  shouldSticky: boolean
+): PublicCommentOptionName => {
+  if (shouldDistinguish && shouldSticky) {
+    return 'distinguish_sticky';
+  }
+
+  return shouldSticky ? 'sticky' : 'distinguish';
 };
 
 const buildTemplateValues = (
@@ -152,6 +187,19 @@ const getFinalStatus = (sideEffects: SideEffects): LedgerEntry['status'] => {
   return statuses.includes('failed') ? 'partial' : 'succeeded';
 };
 
+const cloneSideEffects = (sideEffects: SideEffects): SideEffects => ({
+  publicComment: sideEffects.publicComment,
+  remove: sideEffects.remove,
+  markNsfw: sideEffects.markNsfw,
+  modNote: sideEffects.modNote,
+  userNotice: sideEffects.userNotice,
+  reversalModNote: sideEffects.reversalModNote,
+  reversalUserNotice: sideEffects.reversalUserNotice,
+  ...(sideEffects.publicCommentOptions
+    ? { publicCommentOptions: { ...sideEffects.publicCommentOptions } }
+    : {}),
+});
+
 const submitPublicComment = async (
   target: SideEffectTarget,
   text: string
@@ -177,8 +225,10 @@ const executePublicCommentOptions = async (
   const shouldSticky = config.stickyAppComments[entry.action];
 
   if (shouldDistinguish || shouldSticky) {
-    const status = await succeededOrFailed(() =>
-      publicComment.distinguish(shouldSticky)
+    const status = await publicCommentOptionSucceededOrFailed(
+      entry,
+      getDistinguishOptionName(shouldDistinguish, shouldSticky),
+      () => publicComment.distinguish(shouldSticky)
     );
 
     if (shouldDistinguish) {
@@ -191,7 +241,11 @@ const executePublicCommentOptions = async (
   }
 
   if (config.lockAppComments) {
-    options.lock = await succeededOrFailed(() => publicComment.lock());
+    options.lock = await publicCommentOptionSucceededOrFailed(
+      entry,
+      'lock',
+      () => publicComment.lock()
+    );
   }
 
   return Object.keys(options).length > 0 ? options : undefined;
@@ -205,6 +259,19 @@ export const executeSideEffects = async (
   let publicCommentId = input.entry.publicCommentId;
   let modNoteId = input.entry.modNoteId;
   let userNoticeId = input.entry.userNoticeId;
+  const buildUpdatedEntry = (status: LedgerEntry['status']): LedgerEntry => ({
+    ...input.entry,
+    status,
+    sideEffects: cloneSideEffects(sideEffects),
+    ...(publicCommentId !== undefined ? { publicCommentId } : {}),
+    ...(modNoteId !== undefined ? { modNoteId } : {}),
+    ...(userNoticeId !== undefined ? { userNoticeId } : {}),
+  });
+  const persistCheckpoint = async (): Promise<void> => {
+    if (input.persistEntry) {
+      await input.persistEntry(buildUpdatedEntry(input.entry.status));
+    }
+  };
 
   try {
     const publicComment = await submitPublicComment(
@@ -220,6 +287,7 @@ export const executeSideEffects = async (
     );
     publicCommentId = publicComment.id;
     sideEffects.publicComment = 'succeeded';
+    await persistCheckpoint();
     const publicCommentOptions = await executePublicCommentOptions(
       publicComment,
       input.entry,
@@ -227,6 +295,7 @@ export const executeSideEffects = async (
     );
     if (publicCommentOptions) {
       sideEffects.publicCommentOptions = publicCommentOptions;
+      await persistCheckpoint();
     }
   } catch (error) {
     logError(
@@ -242,22 +311,55 @@ export const executeSideEffects = async (
       error
     );
     sideEffects.publicComment = 'failed';
+    await persistCheckpoint();
   }
 
   if (input.entry.action === 'warn_remove') {
-    sideEffects.remove = await succeededOrFailed(() =>
-      input.target.remove(false)
-    );
+    try {
+      await input.target.remove(false);
+      sideEffects.remove = 'succeeded';
+    } catch (error) {
+      logError(
+        'side_effect.remove_failed',
+        {
+          entryId: input.entry.entryId,
+          subredditName: input.entry.subredditName,
+          targetId: input.entry.targetId,
+          targetKind: input.entry.targetKind,
+          action: input.entry.action,
+          ruleId: input.entry.ruleId,
+        },
+        error
+      );
+      sideEffects.remove = 'failed';
+    }
+    await persistCheckpoint();
   }
 
   if (input.entry.action === 'warn_nsfw') {
-    sideEffects.markNsfw = await succeededOrFailed(async () => {
+    try {
       if (!input.target.markAsNsfw) {
         throw new Error('Target cannot be marked NSFW.');
       }
 
       await input.target.markAsNsfw();
-    });
+      sideEffects.markNsfw = 'succeeded';
+    } catch (error) {
+      logError(
+        'side_effect.mark_nsfw_failed',
+        {
+          entryId: input.entry.entryId,
+          subredditName: input.entry.subredditName,
+          targetId: input.entry.targetId,
+          targetKind: input.entry.targetKind,
+          action: input.entry.action,
+          ruleId: input.entry.ruleId,
+        },
+        error
+      );
+      sideEffects.markNsfw = 'failed';
+    }
+    await persistCheckpoint();
   }
 
   if (
@@ -278,6 +380,7 @@ export const executeSideEffects = async (
       });
       modNoteId = modNote.id;
       sideEffects.modNote = 'succeeded';
+      await persistCheckpoint();
     } catch (error) {
       logError(
         'side_effect.native_mod_note_failed',
@@ -292,6 +395,7 @@ export const executeSideEffects = async (
         error
       );
       sideEffects.modNote = 'failed';
+      await persistCheckpoint();
     }
   } else {
     sideEffects.modNote = 'skipped';
@@ -317,6 +421,7 @@ export const executeSideEffects = async (
       });
       userNoticeId = response.conversation.id;
       sideEffects.userNotice = 'succeeded';
+      await persistCheckpoint();
     } catch (error) {
       logError(
         'side_effect.user_notice_failed',
@@ -331,19 +436,13 @@ export const executeSideEffects = async (
         error
       );
       sideEffects.userNotice = 'failed';
+      await persistCheckpoint();
     }
   } else {
     sideEffects.userNotice = 'skipped';
   }
 
-  return {
-    ...input.entry,
-    status: getFinalStatus(sideEffects),
-    sideEffects,
-    ...(publicCommentId !== undefined ? { publicCommentId } : {}),
-    ...(modNoteId !== undefined ? { modNoteId } : {}),
-    ...(userNoticeId !== undefined ? { userNoticeId } : {}),
-  };
+  return buildUpdatedEntry(getFinalStatus(sideEffects));
 };
 
 const buildReversalModNote = (
@@ -364,6 +463,18 @@ export const executeReversalSideEffects = async (
   const sideEffects: SideEffects = { ...input.entry.sideEffects };
   let reversalModNoteId = input.entry.reversalModNoteId;
   let reversalUserNoticeId = input.entry.reversalUserNoticeId;
+  const buildUpdatedEntry = (): LedgerEntry => ({
+    ...input.entry,
+    status: 'reversed',
+    sideEffects: cloneSideEffects(sideEffects),
+    ...(reversalModNoteId !== undefined ? { reversalModNoteId } : {}),
+    ...(reversalUserNoticeId !== undefined ? { reversalUserNoticeId } : {}),
+  });
+  const persistCheckpoint = async (): Promise<void> => {
+    if (input.persistEntry) {
+      await input.persistEntry(buildUpdatedEntry());
+    }
+  };
 
   if (
     input.config.reversalNativeModNotesEnabled &&
@@ -381,6 +492,7 @@ export const executeReversalSideEffects = async (
       });
       reversalModNoteId = modNote.id;
       sideEffects.reversalModNote = 'succeeded';
+      await persistCheckpoint();
     } catch (error) {
       logError(
         'side_effect.reversal_mod_note_failed',
@@ -395,6 +507,7 @@ export const executeReversalSideEffects = async (
         error
       );
       sideEffects.reversalModNote = 'failed';
+      await persistCheckpoint();
     }
   } else {
     sideEffects.reversalModNote = 'skipped';
@@ -418,6 +531,7 @@ export const executeReversalSideEffects = async (
       });
       reversalUserNoticeId = response.conversation.id;
       sideEffects.reversalUserNotice = 'succeeded';
+      await persistCheckpoint();
     } catch (error) {
       logError(
         'side_effect.reversal_user_notice_failed',
@@ -432,16 +546,11 @@ export const executeReversalSideEffects = async (
         error
       );
       sideEffects.reversalUserNotice = 'failed';
+      await persistCheckpoint();
     }
   } else {
     sideEffects.reversalUserNotice = 'skipped';
   }
 
-  return {
-    ...input.entry,
-    status: 'reversed',
-    sideEffects,
-    ...(reversalModNoteId !== undefined ? { reversalModNoteId } : {}),
-    ...(reversalUserNoticeId !== undefined ? { reversalUserNoticeId } : {}),
-  };
+  return buildUpdatedEntry();
 };

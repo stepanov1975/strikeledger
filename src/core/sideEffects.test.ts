@@ -1,6 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('./logging', () => ({
+  logError: vi.fn(),
+}));
+
 import { DEFAULT_CONFIG } from './config';
 import { EMPTY_SIDE_EFFECTS, SCHEMA_VERSION, type LedgerEntry } from './domain';
+import { logError } from './logging';
 import {
   executeReversalSideEffects,
   executeSideEffects,
@@ -47,7 +53,13 @@ const buildReddit = () => ({
   },
 });
 
+const logErrorMock = vi.mocked(logError);
+
 describe('executeSideEffects', () => {
+  beforeEach(() => {
+    logErrorMock.mockClear();
+  });
+
   it('records succeeded statuses and side-effect IDs', async () => {
     const publicComment = {
       id: 'comment-1',
@@ -90,6 +102,56 @@ describe('executeSideEffects', () => {
     expect(modNoteOptions).not.toHaveProperty('label');
   });
 
+  it('checkpoints enforcement side-effect progress after each attempt', async () => {
+    const checkpoints: LedgerEntry[] = [];
+    const publicComment = {
+      id: 'comment-1',
+      distinguish: vi.fn(async () => undefined),
+      lock: vi.fn(async () => undefined),
+    };
+    const target = {
+      addComment: vi.fn(async () => publicComment),
+      remove: vi.fn(async () => undefined),
+    };
+
+    const updated = await executeSideEffects({
+      entry: buildEntry(),
+      activeTotal: 3,
+      target,
+      reddit: buildReddit(),
+      config: DEFAULT_CONFIG,
+      persistEntry: async (entry: LedgerEntry) => {
+        checkpoints.push(JSON.parse(JSON.stringify(entry)) as LedgerEntry);
+      },
+    });
+
+    expect(updated.status).toBe('succeeded');
+    expect(checkpoints).toHaveLength(5);
+    expect(checkpoints[0]).toMatchObject({
+      status: 'pending',
+      publicCommentId: 'comment-1',
+      sideEffects: {
+        publicComment: 'succeeded',
+        remove: 'pending',
+        modNote: 'pending',
+        userNotice: 'pending',
+      },
+    });
+    expect(checkpoints[1]!.sideEffects.publicCommentOptions).toMatchObject({
+      distinguish: 'succeeded',
+      lock: 'succeeded',
+    });
+    expect(checkpoints[2]!.sideEffects.remove).toBe('succeeded');
+    expect(checkpoints[3]).toMatchObject({
+      modNoteId: 'mod-note-1',
+      sideEffects: { modNote: 'succeeded' },
+    });
+    expect(checkpoints[4]).toMatchObject({
+      userNoticeId: 'conversation-1',
+      sideEffects: { userNotice: 'succeeded' },
+    });
+  });
+
   it('keeps ledger valid and partial when public comment fails', async () => {
     const target = {
       addComment: vi.fn(async () => {
@@ -112,6 +174,71 @@ describe('executeSideEffects', () => {
     expect(updated.sideEffects.remove).toBe('succeeded');
     expect(updated.sideEffects.modNote).toBe('succeeded');
     expect(updated.sideEffects.userNotice).toBe('succeeded');
+  });
+
+  it('logs public comment option failures with option context', async () => {
+    const distinguishError = new Error('distinguish failed');
+    const lockError = new Error('lock failed');
+    const publicComment = {
+      id: 'comment-1',
+      distinguish: vi.fn(async () => {
+        throw distinguishError;
+      }),
+      lock: vi.fn(async () => {
+        throw lockError;
+      }),
+    };
+    const target = {
+      addComment: vi.fn(async () => publicComment),
+      remove: vi.fn(async () => undefined),
+    };
+
+    const updated = await executeSideEffects({
+      entry: buildEntry(),
+      activeTotal: 3,
+      target,
+      reddit: buildReddit(),
+      config: {
+        ...DEFAULT_CONFIG,
+        stickyAppComments: {
+          ...DEFAULT_CONFIG.stickyAppComments,
+          warn_remove: true,
+        },
+      },
+    });
+
+    expect(updated.status).toBe('partial');
+    expect(updated.sideEffects.publicCommentOptions).toMatchObject({
+      distinguish: 'failed',
+      sticky: 'failed',
+      lock: 'failed',
+    });
+    expect(logErrorMock).toHaveBeenCalledWith(
+      'side_effect.public_comment_option_failed',
+      {
+        entryId: 'entry-1',
+        subredditName: 'testsub',
+        targetId: 't3_target',
+        targetKind: 'post',
+        action: 'warn_remove',
+        ruleId: 'rule-general',
+        option: 'distinguish_sticky',
+      },
+      distinguishError
+    );
+    expect(logErrorMock).toHaveBeenCalledWith(
+      'side_effect.public_comment_option_failed',
+      {
+        entryId: 'entry-1',
+        subredditName: 'testsub',
+        targetId: 't3_target',
+        targetKind: 'post',
+        action: 'warn_remove',
+        ruleId: 'rule-general',
+        option: 'lock',
+      },
+      lockError
+    );
   });
 
   it('uses zero-point notice templates', async () => {
@@ -253,7 +380,46 @@ describe('executeSideEffects', () => {
     expect(reddit.modMail.createConversation).not.toHaveBeenCalled();
   });
 
+  it('logs remove failures with enforcement context', async () => {
+    const removeError = new Error('remove failed');
+    const publicComment = {
+      id: 'comment-1',
+      distinguish: vi.fn(async () => undefined),
+      lock: vi.fn(async () => undefined),
+    };
+    const target = {
+      addComment: vi.fn(async () => publicComment),
+      remove: vi.fn(async () => {
+        throw removeError;
+      }),
+    };
+
+    const updated = await executeSideEffects({
+      entry: buildEntry(),
+      activeTotal: 3,
+      target,
+      reddit: buildReddit(),
+      config: DEFAULT_CONFIG,
+    });
+
+    expect(updated.status).toBe('partial');
+    expect(updated.sideEffects.remove).toBe('failed');
+    expect(logErrorMock).toHaveBeenCalledWith(
+      'side_effect.remove_failed',
+      {
+        entryId: 'entry-1',
+        subredditName: 'testsub',
+        targetId: 't3_target',
+        targetKind: 'post',
+        action: 'warn_remove',
+        ruleId: 'rule-general',
+      },
+      removeError
+    );
+  });
+
   it('marks NSFW failures partial', async () => {
+    const nsfwError = new Error('nsfw failed');
     const publicComment = {
       id: 'comment-1',
       distinguish: vi.fn(async () => undefined),
@@ -263,7 +429,7 @@ describe('executeSideEffects', () => {
       addComment: vi.fn(async () => publicComment),
       remove: vi.fn(async () => undefined),
       markAsNsfw: vi.fn(async () => {
-        throw new Error('nsfw failed');
+        throw nsfwError;
       }),
     };
 
@@ -286,6 +452,18 @@ describe('executeSideEffects', () => {
 
     expect(updated.status).toBe('partial');
     expect(updated.sideEffects.markNsfw).toBe('failed');
+    expect(logErrorMock).toHaveBeenCalledWith(
+      'side_effect.mark_nsfw_failed',
+      {
+        entryId: 'entry-1',
+        subredditName: 'testsub',
+        targetId: 't3_target',
+        targetKind: 'post',
+        action: 'warn_nsfw',
+        ruleId: 'rule-general',
+      },
+      nsfwError
+    );
   });
 
   it('records reversal mod note and user notice side effects', async () => {
@@ -316,6 +494,38 @@ describe('executeSideEffects', () => {
         body: expect.stringContaining('was reversed'),
       })
     );
+  });
+
+  it('checkpoints reversal side-effect progress after each attempt', async () => {
+    const checkpoints: LedgerEntry[] = [];
+    const updated = await executeReversalSideEffects({
+      entry: buildEntry({
+        status: 'reversed',
+        reversedAtMs: 2000,
+        reversedBy: 'mod-b',
+        reversalReason: 'issued in error',
+      }),
+      activeTotal: 0,
+      reddit: buildReddit(),
+      config: DEFAULT_CONFIG,
+      addNativeModNote: true,
+      persistEntry: async (entry: LedgerEntry) => {
+        checkpoints.push(JSON.parse(JSON.stringify(entry)) as LedgerEntry);
+      },
+    });
+
+    expect(updated.status).toBe('reversed');
+    expect(checkpoints).toHaveLength(2);
+    expect(checkpoints[0]).toMatchObject({
+      status: 'reversed',
+      reversalModNoteId: 'mod-note-1',
+      sideEffects: { reversalModNote: 'succeeded' },
+    });
+    expect(checkpoints[1]).toMatchObject({
+      status: 'reversed',
+      reversalUserNoticeId: 'conversation-1',
+      sideEffects: { reversalUserNotice: 'succeeded' },
+    });
   });
 
   it('skips username-required reversal side effects when username is deleted', async () => {

@@ -11,6 +11,7 @@ import {
   type RedisStore,
 } from './redisStore';
 import { recalculateActiveTotal as calculateActiveTotalFromEntries } from './scoring';
+import { getUserKey } from './identity';
 
 export type FormNonceRecord = {
   nonce: string;
@@ -124,6 +125,17 @@ const activeTotalKey = (userKey: string): string =>
 
 const uniqueUserKeys = (userKeys: string[]): string[] =>
   Array.from(new Set(userKeys.map((userKey) => userKey.trim()).filter(Boolean)));
+
+const getLedgerEntryUserKeys = (entry: LedgerEntry): string[] => {
+  const fallbackUserKey =
+    entry.userId && entry.username !== '[unknown]'
+      ? getUserKey({ username: entry.username })
+      : null;
+  return uniqueUserKeys([
+    entry.userKey,
+    ...(fallbackUserKey ? [fallbackUserKey] : []),
+  ]);
+};
 
 const isEntryForSubreddit = (
   entry: LedgerEntry,
@@ -266,6 +278,11 @@ export class LedgerRepository {
 
           const retryEntry = await this.getRetryEntry(request);
           if (retryEntry && retryEntry.status !== 'reversed') {
+            await this.consumeNonce(
+              nonce.record,
+              retryEntry.entryId,
+              request.nowMs
+            );
             return {
               status: 'idempotent',
               entry: retryEntry,
@@ -293,7 +310,8 @@ export class LedgerRepository {
     if (result.status === 'created' || result.status === 'idempotent') {
       return {
         ...result,
-        activeTotal: await this.recalculateActiveTotal(
+        activeTotal: await this.recalculateActiveTotalForKeys(
+          getLedgerEntryUserKeys(result.entry),
           result.entry.userKey,
           request.config,
           request.nowMs,
@@ -356,7 +374,8 @@ export class LedgerRepository {
     if (result.status === 'reversed' || result.status === 'already_reversed') {
       return {
         ...result,
-        activeTotal: await this.recalculateActiveTotal(
+        activeTotal: await this.recalculateActiveTotalForKeys(
+          getLedgerEntryUserKeys(result.entry),
           result.entry.userKey,
           request.config,
           request.nowMs,
@@ -523,6 +542,22 @@ export class LedgerRepository {
     return entryId ? this.getLedgerEntry(entryId) : null;
   }
 
+  private async consumeNonce(
+    nonce: FormNonceRecord,
+    entryId: string,
+    consumedAtMs: number
+  ): Promise<void> {
+    await this.store.set(
+      formNonceKey(nonce.nonce),
+      JSON.stringify({
+        ...nonce,
+        consumedAtMs,
+        entryId,
+      } satisfies FormNonceRecord),
+      { expiresAtMs: nonce.expiresAtMs }
+    );
+  }
+
   private async writePendingEntry(
     request: CreateLedgerEntryRequest,
     nonce: FormNonceRecord
@@ -539,15 +574,7 @@ export class LedgerRepository {
       member: request.entry.entryId,
       score: request.entry.createdAtMs,
     });
-    await this.store.set(
-      formNonceKey(nonce.nonce),
-      JSON.stringify({
-        ...nonce,
-        consumedAtMs: request.nowMs,
-        entryId: request.entry.entryId,
-      } satisfies FormNonceRecord),
-      { expiresAtMs: nonce.expiresAtMs }
-    );
+    await this.consumeNonce(nonce, request.entry.entryId, request.nowMs);
     await this.store.set(
       getDuplicateClaimKey({
         targetId: request.entry.targetId,

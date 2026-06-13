@@ -37,6 +37,10 @@ Default decay subtracts `1` active point every `30` days, clamped at zero. Decay
 - Hono JSON endpoints back the web UI.
 - `vitest` covers unit, repository, and route tests.
 
+## Reserved Devvit Triggers
+
+`devvit.json` intentionally registers no-op placeholders for `onPostSubmit`, `onPostCreate`, `onPostUpdate`, `onPostFlairUpdate`, `onPostNsfwUpdate`, `onPostSpoilerUpdate`, and `onModAction`. They currently return success without reading Reddit data or writing Redis. Keep these placeholders unless the Devvit platform no longer supports them; registering them now avoids requiring moderators to reinstall the app when future trigger-backed functionality is added.
+
 ## Development
 
 Useful commands:

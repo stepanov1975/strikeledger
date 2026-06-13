@@ -275,6 +275,7 @@ api.get('/bootstrap', async (c) => {
     view,
     subredditName: apiAccess.subredditName,
     moderatorUsername: apiAccess.access.username,
+    hasPendingBootstrap: bootstrap !== null,
     ...(bootstrap?.contextToken !== undefined
       ? { contextToken: bootstrap.contextToken }
       : {}),
@@ -744,6 +745,8 @@ api.post('/reverse', async (c) => {
     reddit,
     config,
     addNativeModNote,
+    persistEntry: (checkpointEntry) =>
+      ledgerRepository.updateLedgerEntry(checkpointEntry),
   });
   await ledgerRepository.updateLedgerEntry(updatedEntry);
   logInfo(

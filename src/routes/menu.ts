@@ -4,7 +4,7 @@ import { reddit, redis, settings } from '@devvit/web/server';
 import type { Comment, Post } from '@devvit/web/server';
 import type { FormField } from '@devvit/shared-types/shared/form.js';
 import type { T1, T3 } from '@devvit/shared-types/tid.js';
-import { DEFAULT_CONFIG } from '../core/config';
+import { DEFAULT_CONFIG, getRulePoints } from '../core/config';
 import { ConfigRepository } from '../core/configRepository';
 import {
   DashboardRepository,
@@ -167,13 +167,13 @@ const saveBootstrapAndNavigate = async (
   return { navigateTo: dashboardNavigateTarget(post) };
 };
 
-const buildRuleOptions = (config: StrikeLedgerConfig) =>
+const buildRuleOptions = (config: StrikeLedgerConfig, action: StrikeAction) =>
   getEnabledRules(config).map((rule) => ({
-    label: rule.label,
+    label: `${rule.label} (+${getRulePoints(config, rule, action)})`,
     value: rule.id,
   }));
 
-const buildEnforcementFields = (
+export const buildEnforcementFields = (
   formNonce: string,
   action: StrikeAction,
   config: StrikeLedgerConfig
@@ -182,7 +182,7 @@ const buildEnforcementFields = (
     name: 'ruleId',
     label: 'Rule',
     type: 'select',
-    options: buildRuleOptions(config),
+    options: buildRuleOptions(config, action),
     required: true,
     defaultValue: [
       getEnabledRules(config)[0]?.id ??
@@ -213,10 +213,11 @@ const buildEnforcementFields = (
   },
   {
     name: 'formNonce',
-    label: 'StrikeLedger internal nonce',
-    type: 'string',
+    label: 'Form token',
+    type: 'select',
     required: true,
-    defaultValue: formNonce,
+    options: [{ label: 'Current moderation action', value: formNonce }],
+    defaultValue: [formNonce],
   },
 ];
 

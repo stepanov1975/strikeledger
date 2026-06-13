@@ -6,15 +6,11 @@ import {
   type StrikeLedgerConfig,
   type StrikeAction,
 } from '../core/domain';
-
-type DashboardView = 'history' | 'profile' | 'settings';
-
-type BootstrapResponse = {
-  view: DashboardView;
-  subredditName: string;
-  moderatorUsername: string;
-  contextToken?: string;
-};
+import {
+  resolveDashboardLaunch,
+  type BootstrapResponse,
+  type DashboardView,
+} from './dashboardLaunch';
 
 type ViewContext = {
   subredditName: string;
@@ -115,6 +111,7 @@ if (!app) {
 }
 
 let bootstrap: BootstrapResponse | null = null;
+let activeContextToken: string | null = null;
 let activeView: DashboardView = 'settings';
 let main: HTMLElement | null = null;
 let historyEntries: LedgerEntryRow[] = [];
@@ -161,8 +158,8 @@ const formatTargetUser = (context: ViewContext): string =>
   context.authorName ? `u/${context.authorName}` : context.userKey;
 
 const appendContextTokenParam = (params: URLSearchParams): boolean => {
-  if (bootstrap?.contextToken) {
-    params.set('contextToken', bootstrap.contextToken);
+  if (activeContextToken) {
+    params.set('contextToken', activeContextToken);
     return true;
   }
 
@@ -216,6 +213,7 @@ const dashboardViewLabel = (view: DashboardView): string =>
 
 const setActiveView = async (view: DashboardView) => {
   activeView = view;
+  activeContextToken = null;
   renderFrame();
   await loadActiveView();
 };
@@ -1435,7 +1433,12 @@ const loadActiveView = async () => {
 const start = async () => {
   try {
     bootstrap = await fetchJson<BootstrapResponse>('/api/bootstrap');
-    activeView = bootstrap.view;
+    const launch = resolveDashboardLaunch(
+      bootstrap,
+      new URLSearchParams(window.location.search)
+    );
+    activeView = launch.view;
+    activeContextToken = launch.contextToken ?? null;
     renderFrame();
     await loadActiveView();
   } catch (error) {

@@ -17,6 +17,11 @@ npm run build
 - Review the standard Devvit app settings page and confirm the native setting defaults are present.
 - Open `StrikeLedger: Admin` from the subreddit menu first and confirm the dashboard post opens.
 
+## Devvit Platform Validation
+
+- Confirm moderation actions run under the app's explicit Reddit moderator permission scope by completing at least one `Warn and remove` action on a test post.
+- Repeat the ordinary-call attempt for `/internal/triggers/on-app-install`. Expected result: unreachable, blocked, or no install-side Redis mutation.
+
 ## Logs
 
 - Prefer the `npm run dev` terminal while playtesting. `devvit playtest` already streams logs and owns the local `:5678` connection used for browser-forwarded logs.

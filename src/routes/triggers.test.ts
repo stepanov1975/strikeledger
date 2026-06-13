@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 
 type RedisZMember = {
   member: string;
@@ -127,44 +128,55 @@ afterEach(() => {
 });
 
 describe('trigger routes', () => {
-  it('records post submissions and refreshes the cached score summary', async () => {
+  it('keeps event trigger placeholders as no-ops until functionality exists', async () => {
     const nowMs = Date.UTC(2026, 0, 31);
     vi.useFakeTimers();
     vi.setSystemTime(nowMs);
     const { reddit, redis, triggers } = await loadTriggers();
 
-    const response = await triggers.request('/on-post-submit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        type: 'PostSubmit',
-        subreddit: { name: 'testsub' },
-        author: { id: 't2_user', name: 'TargetUser' },
-        post: { id: 't3_new' },
-      }),
-    });
+    for (const endpoint of [
+      '/on-post-submit',
+      '/on-post-create',
+      '/on-post-update',
+      '/on-post-flair-update',
+      '/on-post-nsfw-update',
+      '/on-post-spoiler-update',
+      '/on-mod-action',
+    ]) {
+      const response = await triggers.request(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: endpoint,
+          subreddit: { name: 'testsub' },
+          author: { id: 't2_user', name: 'TargetUser' },
+          post: { id: 't3_new' },
+        }),
+      });
 
-    expect(response.status).toBe(200);
-    expect(reddit.getPostsByUser).toHaveBeenCalledWith({
-      username: 'TargetUser',
-      sort: 'new',
-      limit: 1000,
-      pageSize: 100,
-    });
-    expect(
-      redis.sortedSets.get('user:id:t2_user:post_rate')?.get('t3_new')
-    ).toBe(nowMs);
+      await expect(response.json()).resolves.toEqual({ status: 'success' });
+      expect(response.status).toBe(200);
+    }
 
-    const rawSummary = redis.values.get('user:id:t2_user:post_score_summary');
-    expect(rawSummary).toBeDefined();
-    expect(JSON.parse(rawSummary as string)).toMatchObject({
-      subredditName: 'testsub',
-      username: 'TargetUser',
-      summary: {
-        averagePostScore: 15,
-        postScorePostCount: 2,
-        postScoreWindowDays: 30,
-      },
+    expect(reddit.getPostsByUser).not.toHaveBeenCalled();
+    expect(redis.sortedSets.size).toBe(0);
+    expect(redis.values.size).toBe(0);
+  });
+
+  it('registers placeholder triggers in Devvit config', () => {
+    const config = JSON.parse(readFileSync('devvit.json', 'utf8')) as {
+      triggers?: Record<string, string>;
+    };
+
+    expect(config.triggers).toEqual({
+      onAppInstall: '/internal/triggers/on-app-install',
+      onModAction: '/internal/triggers/on-mod-action',
+      onPostCreate: '/internal/triggers/on-post-create',
+      onPostFlairUpdate: '/internal/triggers/on-post-flair-update',
+      onPostNsfwUpdate: '/internal/triggers/on-post-nsfw-update',
+      onPostSpoilerUpdate: '/internal/triggers/on-post-spoiler-update',
+      onPostSubmit: '/internal/triggers/on-post-submit',
+      onPostUpdate: '/internal/triggers/on-post-update',
     });
   });
 });

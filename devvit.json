@@ -218,14 +218,23 @@
   },
   "triggers": {
     "onAppInstall": "/internal/triggers/on-app-install",
-    "onPostSubmit": "/internal/triggers/on-post-submit"
+    "onModAction": "/internal/triggers/on-mod-action",
+    "onPostCreate": "/internal/triggers/on-post-create",
+    "onPostFlairUpdate": "/internal/triggers/on-post-flair-update",
+    "onPostNsfwUpdate": "/internal/triggers/on-post-nsfw-update",
+    "onPostSpoilerUpdate": "/internal/triggers/on-post-spoiler-update",
+    "onPostSubmit": "/internal/triggers/on-post-submit",
+    "onPostUpdate": "/internal/triggers/on-post-update"
   },
   "scripts": {
     "build": "vite build",
     "dev": "vite build --watch"
   },
   "permissions": {
-    "reddit": true,
+    "reddit": {
+      "enable": true,
+      "scope": "moderator"
+    },
     "redis": true
   },
   "dev": {

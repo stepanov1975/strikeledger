@@ -19,12 +19,14 @@ type PostScoreMock = {
 class ApiRedisMock {
   readonly values = new Map<string, string>();
   readonly sortedSets = new Map<string, Map<string, number>>();
+  readonly setCalls: Array<{ key: string; value: string }> = [];
 
   async get(key: string): Promise<string | undefined> {
     return this.values.get(key);
   }
 
   async set(key: string, value: string): Promise<string> {
+    this.setCalls.push({ key, value });
     this.values.set(key, value);
     return 'OK';
   }
@@ -41,6 +43,17 @@ class ApiRedisMock {
     set.set(member.member, member.score);
     this.sortedSets.set(key, set);
     return 1;
+  }
+
+  async zRem(key: string, members: string[]): Promise<void> {
+    const set = this.sortedSets.get(key);
+    if (!set) {
+      return;
+    }
+
+    for (const member of members) {
+      set.delete(member);
+    }
   }
 
   async zRange(
@@ -74,6 +87,32 @@ class ApiRedisMock {
     }
 
     return members.slice(start, normalizedStop + 1);
+  }
+
+  async watch() {
+    let commandCount = 0;
+    return {
+      multi: vi.fn(async () => undefined),
+      set: vi.fn(async (key: string, value: string) => {
+        commandCount += 1;
+        return this.set(key, value);
+      }),
+      del: vi.fn(async (...keys: string[]) => {
+        commandCount += 1;
+        return this.del(...keys);
+      }),
+      zAdd: vi.fn(async (key: string, member: RedisZMember) => {
+        commandCount += 1;
+        return this.zAdd(key, member);
+      }),
+      zRem: vi.fn(async (key: string, members: string[]) => {
+        commandCount += 1;
+        return this.zRem(key, members);
+      }),
+      exec: vi.fn(async () => Array.from({ length: commandCount }, () => 'OK')),
+      discard: vi.fn(async () => undefined),
+      unwatch: vi.fn(async () => undefined),
+    };
   }
 }
 
@@ -136,6 +175,12 @@ const loadApi = async (
     })),
     getRules: vi.fn(async () => options.redditRules ?? []),
     getPostsByUser: vi.fn(() => buildAsyncListing(options.postsByUser ?? [])),
+    addModNote: vi.fn(async () => ({ id: 'mod-note-1' })),
+    modMail: {
+      createConversation: vi.fn(async () => ({
+        conversation: { id: 'conversation-1' },
+      })),
+    },
   };
   const settings = {
     getAll: vi.fn(async () => options.nativeSettings ?? {}),
@@ -211,6 +256,43 @@ describe('api routes', () => {
         revision: 1,
       },
     });
+  });
+
+  it('marks bootstrap responses without pending menu launches', async () => {
+    const { api } = await loadApi(['posts']);
+
+    const response = await api.request('/bootstrap');
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      view: 'settings',
+      hasPendingBootstrap: false,
+    });
+  });
+
+  it('marks bootstrap responses that consume pending menu launches', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await redis.set(
+      'dashboard_bootstrap:testsub:mod-a',
+      JSON.stringify({
+        view: 'profile',
+        subredditName: 'testsub',
+        moderatorUsername: 'mod-a',
+        contextToken: 'view-token',
+        createdAtMs: Date.UTC(2026, 0, 1),
+        expiresAtMs: Date.UTC(2026, 0, 1) + 15 * 60 * 1000,
+      })
+    );
+
+    const response = await api.request('/bootstrap');
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      view: 'profile',
+      contextToken: 'view-token',
+      hasPendingBootstrap: true,
+    });
+    expect(redis.values.has('dashboard_bootstrap:testsub:mod-a')).toBe(false);
   });
 
   it('reads scalar runtime config from native install settings', async () => {
@@ -653,6 +735,47 @@ describe('api routes', () => {
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
       error: 'posts_permission_required',
+    });
+  });
+
+  it('checkpoints reversal side effects before the final ledger update', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await seedLedger(redis);
+
+    const response = await api.request('/reverse', {
+      method: 'POST',
+      body: JSON.stringify({
+        entryId: 'entry-1',
+        reversalReason: 'issued in error',
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    expect(response.status).toBe(200);
+    const ledgerWrites = redis.setCalls
+      .filter((call) => call.key === 'ledger_entry:entry-1')
+      .map((call) => JSON.parse(call.value) as LedgerEntry);
+
+    expect(ledgerWrites).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          reversalModNoteId: 'mod-note-1',
+          sideEffects: expect.objectContaining({
+            reversalModNote: 'succeeded',
+          }),
+        }),
+        expect.objectContaining({
+          reversalUserNoticeId: 'conversation-1',
+          sideEffects: expect.objectContaining({
+            reversalUserNotice: 'succeeded',
+          }),
+        }),
+      ])
+    );
+    expect(ledgerWrites.at(-1)).toMatchObject({
+      status: 'reversed',
+      reversalModNoteId: 'mod-note-1',
+      reversalUserNoticeId: 'conversation-1',
     });
   });
 });

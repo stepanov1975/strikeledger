@@ -206,6 +206,60 @@ describe('LedgerRepository', () => {
     await expect(repo.getCachedActiveTotal(entry.userKey)).resolves.toBe(0);
   });
 
+  it('includes fallback username entries in create and reversal totals for ID-key users', async () => {
+    const { repo, store } = createRepo();
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'entry-fallback',
+        targetId: 't3_legacy',
+        userKey: 'name:target-user',
+        username: 'Target-User',
+        originalPoints: 3,
+      })
+    );
+
+    const entry = buildEntry({
+      entryId: 'entry-current',
+      targetId: 't3_current',
+      formNonce: 'nonce-current',
+      userId: 't2_user',
+      username: 'Target-User',
+      originalPoints: 2,
+    });
+    await repo.saveFormNonce(
+      buildNonce({
+        nonce: 'nonce-current',
+        targetId: 't3_current',
+        authorId: 't2_user',
+        authorName: 'Target-User',
+      })
+    );
+
+    await expect(
+      repo.createLedgerEntry({
+        entry,
+        formNonce: entry.formNonce,
+        submittedAtMs: nowMs,
+        nowMs,
+        config: DEFAULT_CONFIG,
+      })
+    ).resolves.toMatchObject({ status: 'created', activeTotal: 5 });
+    await expect(repo.getCachedActiveTotal('id:t2_user')).resolves.toBe(5);
+
+    await expect(
+      repo.reverseLedgerEntry({
+        entryId: entry.entryId,
+        reversedAtMs: nowMs + 1000,
+        reversedBy: 'mod-b',
+        reversalReason: 'issued in error',
+        config: DEFAULT_CONFIG,
+        nowMs,
+      })
+    ).resolves.toMatchObject({ status: 'reversed', activeTotal: 3 });
+    await expect(repo.getCachedActiveTotal('id:t2_user')).resolves.toBe(3);
+  });
+
   it('returns the existing entry when a consumed nonce is replayed', async () => {
     const { repo } = createRepo();
     const entry = buildEntry();
@@ -260,6 +314,12 @@ describe('LedgerRepository', () => {
       status: 'idempotent',
       entry: firstEntry,
       activeTotal: 1,
+    });
+
+    await expect(repo.getFormNonce('nonce-2')).resolves.toMatchObject({
+      nonce: 'nonce-2',
+      consumedAtMs: nowMs,
+      entryId: firstEntry.entryId,
     });
   });
 

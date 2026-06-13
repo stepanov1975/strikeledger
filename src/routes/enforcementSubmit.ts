@@ -15,7 +15,7 @@ import {
   normalizeSelectValue,
   type TargetSnapshot,
 } from '../core/enforcement';
-import { getTargetAuthorUserKey } from '../core/identity';
+import { getTargetAuthorUserKey, normalizeUsername } from '../core/identity';
 import type {
   LedgerRepository,
   FormNonceRecord,
@@ -42,6 +42,9 @@ type TargetState = {
   target: Post | Comment;
   parentPost?: Post;
 };
+
+const TARGET_MISMATCH_TOAST =
+  'Selected content no longer matches this StrikeLedger form. Reopen the action.';
 
 type CurrentModeratorUser = {
   username: string;
@@ -128,6 +131,76 @@ const validateTargetPreconditions = (
     if ((state.target as Post).nsfw) {
       return 'Already NSFW posts cannot be warned and marked NSFW.';
     }
+  }
+
+  return null;
+};
+
+const hasExpectedTargetKind = (
+  targetId: string,
+  targetKind: TargetKind
+): boolean =>
+  targetKind === 'post' ? targetId.startsWith('t3_') : targetId.startsWith('t1_');
+
+const getComparableUsername = (
+  username: string | undefined
+): string | null => {
+  if (username === undefined) {
+    return null;
+  }
+
+  const normalized = normalizeUsername(username);
+  return normalized && normalized !== '[deleted]' && normalized !== '[unknown]'
+    ? normalized
+    : null;
+};
+
+const getNonceComparableUsername = (nonce: FormNonceRecord): string | null =>
+  getComparableUsername(
+    nonce.authorName ??
+      (nonce.userKey?.startsWith('name:') ? nonce.userKey.slice(5) : undefined)
+  );
+
+const targetAuthorMatchesNonce = (
+  nonce: FormNonceRecord,
+  target: Post | Comment
+): boolean => {
+  const currentAuthorId = target.authorId?.trim();
+  const nonceAuthorId = nonce.authorId?.trim();
+  if (currentAuthorId && nonceAuthorId && currentAuthorId !== nonceAuthorId) {
+    return false;
+  }
+
+  const currentUsername = getComparableUsername(target.authorName);
+  const nonceUsername = getNonceComparableUsername(nonce);
+  if (currentUsername && nonceUsername && currentUsername !== nonceUsername) {
+    return false;
+  }
+
+  return true;
+};
+
+const validateRefetchedTarget = (
+  nonce: FormNonceRecord,
+  state: TargetState
+): string | null => {
+  if (state.target.id !== nonce.targetId) {
+    return 'target_id_mismatch';
+  }
+
+  if (!hasExpectedTargetKind(state.target.id, nonce.targetKind)) {
+    return 'target_kind_mismatch';
+  }
+
+  if (
+    state.target.subredditName.trim().toLowerCase() !==
+    nonce.subredditName.trim().toLowerCase()
+  ) {
+    return 'subreddit_mismatch';
+  }
+
+  if (!targetAuthorMatchesNonce(nonce, state.target)) {
+    return 'author_mismatch';
   }
 
   return null;
@@ -344,6 +417,21 @@ export const handleEnforcementSubmit = async (
     return { showToast: 'StrikeLedger could not re-check the selected content.' };
   }
 
+  const targetMismatch = validateRefetchedTarget(nonce, targetState);
+  if (targetMismatch) {
+    logWarn('enforcement.submit.target_mismatch', {
+      action: nonce.action,
+      targetId: nonce.targetId,
+      actualTargetId: targetState.target.id,
+      targetKind: nonce.targetKind,
+      subredditName: nonce.subredditName,
+      actualSubredditName: targetState.target.subredditName,
+      moderatorUsername: nonce.moderatorUsername,
+      reason: targetMismatch,
+    });
+    return { showToast: TARGET_MISMATCH_TOAST };
+  }
+
   const preconditionFailure = validateTargetPreconditions(nonce, targetState);
   if (preconditionFailure) {
     logWarn('enforcement.submit.precondition_failed', {
@@ -403,6 +491,8 @@ export const handleEnforcementSubmit = async (
         ...(publicCommentOverride !== undefined
           ? { publicCommentOverride }
           : {}),
+        persistEntry: (checkpointEntry) =>
+          dependencies.repository.updateLedgerEntry(checkpointEntry),
       });
       await dependencies.repository.updateLedgerEntry(updatedEntry);
       logInfo(

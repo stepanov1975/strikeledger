@@ -90,7 +90,7 @@ The Profile view shows ledger totals and subreddit-specific post activity for th
 
 Reddit exposes post score, not exact upvote count, so this metric uses average post score as the available approximation.
 
-StrikeLedger caches the post score summary for a short period to avoid repeated Reddit lookups. The cache is refreshed when Profile needs a fresh value and after new post submissions are received by the app. If Reddit cannot return the user's post history, the profile remains usable and shows `n/a` for the metric.
+StrikeLedger caches the post score summary for a short period to avoid repeated Reddit lookups. The cache is refreshed when Profile needs a fresh value. If Reddit cannot return the user's post history, the profile remains usable and shows `n/a` for the metric.
 
 ## Templates
 
@@ -191,7 +191,7 @@ If a moderator can open the dashboard but cannot edit Admin settings, the Admin 
 
 ## Data Retention
 
-StrikeLedger stores ledger history, active-total caches, profile metric caches, and post submission counters in Devvit Redis for the app installation. Uninstalling or reinstalling the app may remove or orphan stored data. Treat uninstall and reinstall actions as data-retention events.
+StrikeLedger stores ledger history, active-total caches, profile metric caches, dashboard records, and short-lived form/view tokens in Devvit Redis for the app installation. Uninstalling or reinstalling the app may remove or orphan stored data. Treat uninstall and reinstall actions as data-retention events.
 
 ## Practical Moderation Notes
 

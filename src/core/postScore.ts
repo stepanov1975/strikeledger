@@ -54,9 +54,6 @@ const emptyPostScoreSummary = (windowDays: number): PostScoreSummary => ({
 export const getPostScoreSummaryKey = (userKey: string): string =>
   `user:${userKey}:post_score_summary`;
 
-export const getPostRateKey = (userKey: string): string =>
-  `user:${userKey}:post_rate`;
-
 const isPostScoreSummary = (value: unknown): value is PostScoreSummary => {
   if (!isRecord(value)) {
     return false;
@@ -263,16 +260,4 @@ export const getCachedOrLivePostScoreSummary = async (options: {
     options.onLookupFailure?.(error);
     return emptyPostScoreSummary(options.windowDays);
   }
-};
-
-export const recordPostSubmission = async (
-  store: RedisStore,
-  userKey: string,
-  postId: string,
-  submittedAtMs: number
-): Promise<void> => {
-  await store.zAdd(getPostRateKey(userKey), {
-    member: postId,
-    score: submittedAtMs,
-  });
 };

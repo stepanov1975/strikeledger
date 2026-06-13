@@ -19,6 +19,7 @@ import { getModeratorAccess, type ModeratorAccess } from './permissions';
 export const api = new Hono();
 
 const HISTORY_PAGE_SIZE = 25;
+const MAX_HISTORY_OFFSET = 500;
 const PROFILE_RECENT_ENTRY_LIMIT = 25;
 const PROFILE_SUMMARY_ENTRY_LIMIT = 500;
 
@@ -76,13 +77,15 @@ const getApiAccess = async (route: string): Promise<ApiAccess | null> => {
   return { subredditName: subreddit.name, access };
 };
 
-const parseOffset = (value: string | undefined): number => {
+const parseHistoryOffset = (value: string | undefined): number | null => {
   if (value === undefined) {
     return 0;
   }
 
   const offset = Number(value);
-  return Number.isInteger(offset) && offset >= 0 ? offset : 0;
+  return Number.isInteger(offset) && offset >= 0 && offset <= MAX_HISTORY_OFFSET
+    ? offset
+    : null;
 };
 
 const trimString = (value: unknown): string | null =>
@@ -374,7 +377,16 @@ api.get('/history', async (c) => {
   }
 
   const nowMs = Date.now();
-  const offset = parseOffset(c.req.query('offset'));
+  const offset = parseHistoryOffset(c.req.query('offset'));
+  if (offset === null) {
+    logWarn('api.history.invalid_offset', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+      offset: c.req.query('offset'),
+    });
+    return c.json({ error: 'invalid_offset' }, 400);
+  }
+
   const userKeys = getContextUserKeys(context);
   const entries =
     userKeys.length > 0
@@ -414,6 +426,7 @@ api.get('/history', async (c) => {
     activeTotal,
   });
 
+  const nextOffset = offset + HISTORY_PAGE_SIZE;
   return c.json({
     context,
     activeTotal,
@@ -421,7 +434,9 @@ api.get('/history', async (c) => {
       config.nativeModNotesEnabled && config.reversalNativeModNotesEnabled,
     entries: entries.map((entry) => serializeEntry(entry, nowMs, config)),
     nextOffset:
-      entries.length === HISTORY_PAGE_SIZE ? offset + HISTORY_PAGE_SIZE : null,
+      entries.length === HISTORY_PAGE_SIZE && nextOffset <= MAX_HISTORY_OFFSET
+        ? nextOffset
+        : null,
   });
 });
 
@@ -833,9 +848,7 @@ api.post('/reverse', async (c) => {
     getRepositories();
   const config = await configRepository.getConfig();
   const addNativeModNote =
-    typeof payload.addNativeModNote === 'boolean'
-      ? payload.addNativeModNote
-      : config.nativeModNotesEnabled && config.reversalNativeModNotesEnabled;
+    config.nativeModNotesEnabled && config.reversalNativeModNotesEnabled;
 
   if (!entryId || !reversalReason) {
     logWarn('api.reverse.missing_fields', {

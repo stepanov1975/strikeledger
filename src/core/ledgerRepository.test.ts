@@ -940,6 +940,33 @@ describe('LedgerRepository', () => {
     ).resolves.toEqual(['recent-active']);
   });
 
+  it('keeps old entries that were reversed inside the retention window', async () => {
+    const { repo, store } = createRepo();
+    const old = nowMs - 400 * MS_PER_DAY;
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'recently-reversed',
+        status: 'reversed',
+        createdAtMs: old,
+        reversedAtMs: nowMs - 10 * MS_PER_DAY,
+        reversedBy: 'mod-b',
+        reversalReason: 'issued in error',
+      })
+    );
+
+    const result = await repo.cleanupLedger({
+      config: DEFAULT_CONFIG,
+      maxEntries: 10,
+      nowMs,
+      retentionDays: 365,
+      subredditName: 'testsub',
+    });
+
+    expect(result).toEqual({ scanned: 1, deleted: 0 });
+    expect(await repo.getLedgerEntry('recently-reversed')).not.toBeNull();
+  });
+
   it('deletes per-user ledger metadata when cleanup removes the last user entry', async () => {
     const { repo, store } = createRepo();
     const old = nowMs - 400 * MS_PER_DAY;

@@ -53,6 +53,11 @@ export const NATIVE_SETTINGS_KEYS = {
 } as const;
 
 const MAX_TEMPLATE_LENGTH = 2000;
+export const MAX_NATIVE_TEMPLATE_BYTES = 2048;
+export const MAX_NATIVE_DECAY_INTERVAL_DAYS = getMaxDecayIntervalDays(1);
+
+const utf8ByteLength = (value: string): number =>
+  new TextEncoder().encode(value).byteLength;
 
 const integerSetting = (
   values: NativeSettingsValues,
@@ -90,6 +95,7 @@ const templateSetting = (
     typeof value !== 'string' ||
     !value.trim() ||
     value.length > MAX_TEMPLATE_LENGTH ||
+    utf8ByteLength(value) > MAX_NATIVE_TEMPLATE_BYTES ||
     validateTemplatePlaceholders(key, value, allowedPlaceholders).length > 0
   ) {
     return fallback;
@@ -141,7 +147,11 @@ export const applyNativeSettings = (
       NATIVE_SETTINGS_KEYS.decayIntervalDays,
       DEFAULT_CONFIG.decayIntervalDays,
       1,
-      Math.min(MAX_DECAY_INTERVAL_DAYS, getMaxDecayIntervalDays(decayAmount))
+      Math.min(
+        MAX_DECAY_INTERVAL_DAYS,
+        getMaxDecayIntervalDays(decayAmount),
+        MAX_NATIVE_DECAY_INTERVAL_DAYS
+      )
     ),
     defaultPublicCommentTemplate: templateSetting(
       values,

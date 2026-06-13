@@ -208,6 +208,11 @@ const compareEntriesNewestFirst = (
   return right.entryId.localeCompare(left.entryId);
 };
 
+const getCleanupRetentionTimestampMs = (entry: LedgerEntry): number =>
+  entry.status === 'reversed' && entry.reversedAtMs !== undefined
+    ? entry.reversedAtMs
+    : entry.createdAtMs;
+
 const mergeCheckpointSideEffects = (
   current: LedgerEntry,
   checkpoint: LedgerEntry
@@ -626,7 +631,7 @@ export class LedgerRepository {
       }
 
       if (
-        entry.createdAtMs > cutoffMs ||
+        getCleanupRetentionTimestampMs(entry) > cutoffMs ||
         !isEntryForSubreddit(entry, request.subredditName)
       ) {
         continue;

@@ -3,6 +3,7 @@ import {
   getRulePoints,
   validateConfig,
 } from './config';
+import { hashCanonicalJson } from './canonicalJson';
 import {
   EMPTY_SIDE_EFFECTS,
   SCHEMA_VERSION,
@@ -129,6 +130,8 @@ export const buildLedgerEntry = (input: BuildLedgerEntryInput): LedgerEntry => {
     ruleLabel: input.rule.label,
     publicCommentOverrideUsed: input.publicCommentOverrideUsed,
     originalPoints: points,
+    configRevision: config.revision,
+    configHash: hashCanonicalJson(config),
     moderatorUsername: input.moderatorUsername,
     createdAtMs: input.createdAtMs,
     status: 'pending',

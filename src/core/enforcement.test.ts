@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CONFIG, DEFAULT_RULE } from './config';
+import { hashCanonicalJson } from './canonicalJson';
 import {
   buildInitialSideEffects,
   buildLedgerEntry,
@@ -78,6 +79,8 @@ describe('enforcement helpers', () => {
       originalPoints: 1,
       status: 'pending',
       formNonce: 'nonce-1',
+      configRevision: DEFAULT_CONFIG.revision,
+      configHash: hashCanonicalJson(DEFAULT_CONFIG),
     });
     expect(entry.duplicateKey).toHaveLength(64);
     expect(entry.moderatorRetryKey).toHaveLength(64);

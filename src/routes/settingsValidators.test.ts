@@ -21,7 +21,20 @@ describe('settings validators', () => {
 
     await expect(response.json()).resolves.toEqual({
       success: false,
-      error: 'Day value must be from 1 to 3650.',
+      error: 'Day value must be from 1 to 36.',
+    });
+  });
+
+  it('rejects decay intervals that can exceed the maximum active lifetime', async () => {
+    const response = await settingsValidators.request('/validate-days', {
+      method: 'POST',
+      body: JSON.stringify({ value: 37, isEditing: true }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    await expect(response.json()).resolves.toEqual({
+      success: false,
+      error: 'Day value must be from 1 to 36.',
     });
   });
 
@@ -54,6 +67,22 @@ describe('settings validators', () => {
     await expect(response.json()).resolves.toEqual({
       success: false,
       error: 'Unsupported placeholder {activeTotal}.',
+    });
+  });
+
+  it('rejects templates larger than the native setting byte limit', async () => {
+    const response = await settingsValidators.request(
+      '/validate-public-template',
+      {
+        method: 'POST',
+        body: JSON.stringify({ value: 'é'.repeat(1025) }),
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+
+    await expect(response.json()).resolves.toEqual({
+      success: false,
+      error: 'Template must be 2048 bytes or fewer.',
     });
   });
 });

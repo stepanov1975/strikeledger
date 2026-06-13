@@ -14,6 +14,10 @@ schedulerRoutes.post('/ledger-cleanup', async (c) => {
   if (task?.name !== 'ledgerCleanup') {
     return c.json<TaskResponse>({}, 400);
   }
+  const payload =
+    task.data && typeof task.data === 'object'
+      ? (task.data as Record<string, unknown>)
+      : {};
 
   const subreddit = await reddit.getCurrentSubreddit();
   const store = new DevvitRedisStore(redis);
@@ -22,6 +26,7 @@ schedulerRoutes.post('/ledger-cleanup', async (c) => {
     configRepository: new ConfigRepository(store, settings),
     ledgerRepository: new LedgerRepository(store),
     nowMs: Date.now(),
+    payload,
   });
 
   logInfo('scheduler.cleanup.ok', {

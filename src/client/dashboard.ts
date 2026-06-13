@@ -143,7 +143,6 @@ let historyEntries: LedgerEntryRow[] = [];
 let historyNextOffset: number | null = null;
 let historyContext: ViewContext | null = null;
 let historyActiveTotal = 0;
-let historyCanAddReversalModNote = false;
 let historyNotice: string | null = null;
 let settingsNotice: string | null = null;
 
@@ -482,7 +481,6 @@ const loadHistory = async (offset: number) => {
 
   historyContext = response.context;
   historyActiveTotal = response.activeTotal;
-  historyCanAddReversalModNote = response.canAddReversalModNote;
   historyEntries = [...historyEntries, ...response.entries];
   historyNextOffset = response.nextOffset;
   renderHistory();
@@ -491,12 +489,10 @@ const loadHistory = async (offset: number) => {
 type ReverseDialogResult = {
   reversalReason: string;
   reversalNote?: string;
-  addNativeModNote: boolean;
 };
 
 const showReverseDialog = (
-  entry: LedgerEntryRow,
-  canAddNativeModNote: boolean
+  entry: LedgerEntryRow
 ): Promise<ReverseDialogResult | null> =>
   new Promise((resolve) => {
     const dialog = create('dialog', 'modal');
@@ -517,16 +513,6 @@ const showReverseDialog = (
     const note = create('textarea', 'field-control') as HTMLTextAreaElement;
     note.rows = 3;
 
-    const checkboxLabel = create('label', 'checkbox-label');
-    const checkbox = create('input') as HTMLInputElement;
-    checkbox.type = 'checkbox';
-    checkbox.checked = canAddNativeModNote;
-    checkbox.disabled = !canAddNativeModNote;
-    checkboxLabel.append(
-      checkbox,
-      document.createTextNode('Add native mod note')
-    );
-
     reasonLabel.append(reason);
     noteLabel.append(note);
 
@@ -542,7 +528,6 @@ const showReverseDialog = (
       subtitle,
       reasonLabel,
       noteLabel,
-      checkboxLabel,
       actions
     );
     dialog.append(form);
@@ -567,7 +552,6 @@ const showReverseDialog = (
       cleanup({
         reversalReason,
         ...(reversalNote ? { reversalNote } : {}),
-        addNativeModNote: checkbox.checked,
       });
     });
     dialog.addEventListener('cancel', () => cleanup(null));
@@ -580,10 +564,7 @@ const showReverseDialog = (
   });
 
 const reverseEntry = async (entry: LedgerEntryRow) => {
-  const reversal = await showReverseDialog(
-    entry,
-    historyCanAddReversalModNote
-  );
+  const reversal = await showReverseDialog(entry);
   if (!reversal) {
     return;
   }
@@ -882,7 +863,10 @@ const updateRuleControls = (rulesList: HTMLElement) => {
       ?.toggleAttribute('disabled', index === rows.length - 1);
     row
       .querySelector<HTMLButtonElement>('.rule-remove')
-      ?.toggleAttribute('disabled', rows.length <= 1);
+      ?.toggleAttribute(
+        'disabled',
+        rows.length <= 1 || row.dataset.originalRuleId !== undefined
+      );
   });
 };
 
@@ -893,6 +877,10 @@ const createRuleEditor = (
 ): HTMLElement => {
   const item = create('article', 'rule-editor');
   item.dataset.ruleRow = 'true';
+  const isSavedRule = config.rules.some((savedRule) => savedRule.id === rule.id);
+  if (isSavedRule) {
+    item.dataset.originalRuleId = rule.id;
+  }
 
   const header = create('div', 'rule-editor-header');
   header.append(create('h4', 'rule-title', rule.label || 'New rule'));
@@ -932,6 +920,10 @@ const createRuleEditor = (
   });
   const idInput = id.querySelector('input');
   idInput?.setAttribute('data-rule-field', 'id');
+  if (idInput && isSavedRule) {
+    idInput.readOnly = true;
+    idInput.title = 'Existing rule IDs cannot be changed.';
+  }
 
   const label = textField('Label', '', rule.label, {
     required: true,

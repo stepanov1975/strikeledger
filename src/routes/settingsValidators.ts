@@ -4,6 +4,10 @@ import {
   PUBLIC_PLACEHOLDERS,
   validateTemplatePlaceholders,
 } from '../core/templates';
+import {
+  MAX_NATIVE_DECAY_INTERVAL_DAYS,
+  MAX_NATIVE_TEMPLATE_BYTES,
+} from '../core/nativeSettings';
 
 type SettingsValidationRequest = {
   value?: unknown;
@@ -15,6 +19,9 @@ type SettingsValidationResponse =
   | { success: false; error: string };
 
 export const settingsValidators = new Hono();
+
+const utf8ByteLength = (value: string): number =>
+  new TextEncoder().encode(value).byteLength;
 
 const validateInteger = (
   value: unknown,
@@ -51,6 +58,13 @@ const validateTemplate = (
     };
   }
 
+  if (utf8ByteLength(value) > MAX_NATIVE_TEMPLATE_BYTES) {
+    return {
+      success: false,
+      error: `Template must be ${MAX_NATIVE_TEMPLATE_BYTES} bytes or fewer.`,
+    };
+  }
+
   const [issue] = validateTemplatePlaceholders(
     'template',
     value,
@@ -75,7 +89,9 @@ settingsValidators.post('/validate-decay-amount', async (c) => {
 
 settingsValidators.post('/validate-days', async (c) => {
   const input = await c.req.json<SettingsValidationRequest>();
-  return c.json(validateInteger(input.value, 1, 3650, 'Day value'));
+  return c.json(
+    validateInteger(input.value, 1, MAX_NATIVE_DECAY_INTERVAL_DAYS, 'Day value')
+  );
 });
 
 settingsValidators.post('/validate-public-template', async (c) => {

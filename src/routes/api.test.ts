@@ -476,6 +476,20 @@ describe('api routes', () => {
     expect(redis.values.get('user:id:t2_user:active_total')).toBe('3');
   });
 
+  it('rejects history offsets beyond the bounded review window', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await seedViewContext(redis);
+
+    const response = await api.request(
+      '/history?contextToken=token-1&offset=100000'
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: 'invalid_offset',
+    });
+  });
+
   it('checks the username fallback ledger for ID-key history contexts', async () => {
     const { api, redis } = await loadApi(['posts']);
     await seedViewContext(redis);
@@ -578,6 +592,36 @@ describe('api routes', () => {
       activeTotal: 0,
       entries: [{ entryId: 'entry-1' }],
     });
+  });
+
+  it('does not advertise history pages beyond the bounded review window', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await seedViewContext(redis, {
+      userKey: undefined,
+      authorId: undefined,
+      authorName: undefined,
+    });
+    const baseMs = Date.UTC(2026, 0, 1);
+    for (let index = 0; index < 525; index += 1) {
+      await seedLedger(
+        redis,
+        buildEntry({
+          entryId: `entry-${index}`,
+          targetId: 't3_target',
+          formNonce: `nonce-${index}`,
+          createdAtMs: baseMs + index,
+        })
+      );
+    }
+
+    const response = await api.request(
+      '/history?contextToken=token-1&offset=500'
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.entries).toHaveLength(25);
+    expect(body.nextOffset).toBeNull();
   });
 
   it('rejects raw history lookups for read-only moderators', async () => {
@@ -995,7 +1039,7 @@ describe('api routes', () => {
   });
 
   it('uses reversal context to recalculate totals across ID and username keys', async () => {
-    const { api, redis } = await loadApi(['posts']);
+    const { api, reddit, redis } = await loadApi(['posts']);
     await seedViewContext(redis);
     await seedLedger(
       redis,
@@ -1036,6 +1080,12 @@ describe('api routes', () => {
       activeTotal: 2,
     });
     expect(redis.values.get('user:id:t2_user:active_total')).toBe('2');
+    expect(reddit.addModNote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        redditId: 't3_legacy',
+        user: 'target-user',
+      })
+    );
   });
 
   it('checkpoints reversal side effects before the final ledger update', async () => {

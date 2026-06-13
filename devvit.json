@@ -223,7 +223,11 @@
     "tasks": {
       "ledgerCleanup": {
         "endpoint": "/internal/scheduler/ledger-cleanup",
-        "cron": "17 * * * *"
+        "cron": "17 * * * *",
+        "data": {
+          "retentionDays": 365,
+          "maxEntries": 2000
+        }
       }
     }
   },

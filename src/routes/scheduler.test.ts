@@ -171,7 +171,7 @@ afterEach(() => {
 });
 
 describe('scheduler routes', () => {
-  it('runs scheduled ledger cleanup for the current subreddit', async () => {
+  it('runs scheduled ledger cleanup with task data for the current subreddit', async () => {
     const nowMs = Date.UTC(2026, 0, 1);
     vi.useFakeTimers();
     vi.setSystemTime(nowMs);
@@ -205,7 +205,7 @@ describe('scheduler routes', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({});
     expect(reddit.getCurrentSubreddit).toHaveBeenCalled();
-    expect(redis.values.has('ledger_entry:old-inactive')).toBe(false);
+    expect(redis.values.has('ledger_entry:old-inactive')).toBe(true);
   });
 
   it('rejects scheduler requests for the wrong task name', async () => {
@@ -226,13 +226,24 @@ describe('scheduler routes', () => {
   it('registers the scheduled cleanup task in Devvit config', () => {
     const config = JSON.parse(readFileSync('devvit.json', 'utf8')) as {
       scheduler?: {
-        tasks?: Record<string, { endpoint: string; cron?: string }>;
+        tasks?: Record<
+          string,
+          {
+            endpoint: string;
+            cron?: string;
+            data?: { retentionDays: number; maxEntries: number };
+          }
+        >;
       };
     };
 
     expect(config.scheduler?.tasks?.ledgerCleanup).toEqual({
       endpoint: '/internal/scheduler/ledger-cleanup',
       cron: '17 * * * *',
+      data: {
+        retentionDays: 365,
+        maxEntries: 2000,
+      },
     });
   });
 });

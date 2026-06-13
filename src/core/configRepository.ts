@@ -51,6 +51,7 @@ const settingsAuditSnapshotKey = (
 ): string => `settings_audit_snapshot:${timestampMs}:${moderatorUsername}`;
 const settingsAuditSnapshotIndexKey = 'settings_audit_snapshots';
 const SETTINGS_AUDIT_SNAPSHOT_LIMIT = 20;
+const SETTINGS_AUDIT_RECORD_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 
 const parseJson = <T>(raw: string | null): T | null =>
   raw === null ? null : (JSON.parse(raw) as T);
@@ -69,6 +70,30 @@ const changedTopLevelFields = (
   return Array.from(keys)
     .filter((key) => canonicalJson(before[key]) !== canonicalJson(after[key]))
     .sort((left, right) => left.localeCompare(right));
+};
+
+const validateRuleIdImmutability = (
+  currentConfig: StrikeLedgerConfig,
+  nextConfig: StrikeLedgerConfig
+): ConfigValidationIssue[] => {
+  if (!Array.isArray(currentConfig.rules) || !Array.isArray(nextConfig.rules)) {
+    return [];
+  }
+
+  const nextRuleIds = new Set(nextConfig.rules.map((rule) => rule.id));
+  const hasMissingExistingRule = currentConfig.rules.some(
+    (rule) => !nextRuleIds.has(rule.id)
+  );
+
+  return hasMissingExistingRule
+    ? [
+        {
+          path: 'rules',
+          message:
+            'Existing rule IDs cannot be removed or changed; disable rules or edit labels instead.',
+        },
+      ]
+    : [];
 };
 
 export class ConfigRepository {
@@ -135,7 +160,10 @@ export class ConfigRepository {
           nextConfig,
           nativeSettings
         );
-        const issues = validateConfig(effectiveNextConfig);
+        const issues = [
+          ...validateRuleIdImmutability(currentConfig, nextConfig),
+          ...validateConfig(effectiveNextConfig),
+        ];
         if (issues.length > 0) {
           return { status: 'invalid', issues };
         }
@@ -159,7 +187,9 @@ export class ConfigRepository {
         };
 
         await this.store.set(configKey, JSON.stringify(nextConfig));
-        await this.store.set(auditKey, JSON.stringify(audit));
+        await this.store.set(auditKey, JSON.stringify(audit), {
+          expiresAtMs: request.timestampMs + SETTINGS_AUDIT_RECORD_TTL_MS,
+        });
         await this.store.set(
           snapshotKey,
           JSON.stringify({
@@ -227,17 +257,7 @@ export class ConfigRepository {
       return;
     }
 
-    const auditKeys: string[] = [];
-    for (const snapshotKey of oldSnapshotKeys) {
-      const snapshot = parseJson<SettingsAuditSnapshotRecord>(
-        await this.store.get(snapshotKey)
-      );
-      if (snapshot) {
-        auditKeys.push(snapshot.auditKey);
-      }
-    }
-
-    await this.store.del(...oldSnapshotKeys, ...auditKeys);
+    await this.store.del(...oldSnapshotKeys);
     await this.store.zRem(settingsAuditSnapshotIndexKey, oldSnapshotKeys);
   }
 }

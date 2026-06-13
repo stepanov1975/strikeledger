@@ -77,6 +77,8 @@ export type LedgerEntry = {
   ruleLabel: string;
   publicCommentOverrideUsed: boolean;
   originalPoints: number;
+  configRevision?: number;
+  configHash?: string;
   moderatorUsername: string;
   createdAtMs: number;
   status: LedgerStatus;

@@ -193,7 +193,7 @@ describe('ConfigRepository', () => {
     });
   });
 
-  it('allows admins to replace existing rule IDs', async () => {
+  it('rejects attempts to change existing rule IDs', async () => {
     const { repo } = createRepo();
 
     await expect(
@@ -212,14 +212,53 @@ describe('ConfigRepository', () => {
         timestampMs: nowMs,
       })
     ).resolves.toMatchObject({
-      status: 'saved',
-      config: {
+      status: 'invalid',
+      issues: expect.arrayContaining([
+        {
+          path: 'rules',
+          message:
+            'Existing rule IDs cannot be removed or changed; disable rules or edit labels instead.',
+        },
+      ]),
+    });
+  });
+
+  it('rejects attempts to remove existing rule IDs', async () => {
+    const { repo } = createRepo();
+    const saved = await repo.saveConfig({
+      expectedRevision: 1,
+      nextConfig: {
+        ...DEFAULT_CONFIG,
         rules: [
-          expect.objectContaining({
-            id: 'rule-renamed',
-          }),
+          DEFAULT_RULE,
+          { id: 'rule-extra', label: 'Extra rule', enabled: true },
         ],
       },
+      moderatorUsername: 'mod-a',
+      timestampMs: nowMs,
+    });
+    expect(saved.status).toBe('saved');
+
+    await expect(
+      repo.saveConfig({
+        expectedRevision: 2,
+        nextConfig: {
+          ...DEFAULT_CONFIG,
+          revision: 2,
+          rules: [DEFAULT_RULE],
+        },
+        moderatorUsername: 'mod-a',
+        timestampMs: nowMs + 1,
+      })
+    ).resolves.toMatchObject({
+      status: 'invalid',
+      issues: expect.arrayContaining([
+        {
+          path: 'rules',
+          message:
+            'Existing rule IDs cannot be removed or changed; disable rules or edit labels instead.',
+        },
+      ]),
     });
   });
 
@@ -273,7 +312,7 @@ describe('ConfigRepository', () => {
     ).resolves.toBeNull();
     await expect(
       store.get('settings_audit:1767225600000:mod-a')
-    ).resolves.toBeNull();
+    ).resolves.not.toBeNull();
     await expect(
       store.get('settings_audit_snapshot:1767225600024:mod-a')
     ).resolves.not.toBeNull();

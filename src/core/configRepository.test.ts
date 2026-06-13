@@ -236,7 +236,13 @@ describe('ConfigRepository', () => {
       store.get('settings_audit_snapshot:1767225600000:mod-a')
     ).resolves.toBeNull();
     await expect(
+      store.get('settings_audit:1767225600000:mod-a')
+    ).resolves.toBeNull();
+    await expect(
       store.get('settings_audit_snapshot:1767225600024:mod-a')
+    ).resolves.not.toBeNull();
+    await expect(
+      store.get('settings_audit:1767225600024:mod-a')
     ).resolves.not.toBeNull();
   });
 });

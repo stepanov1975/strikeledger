@@ -9,6 +9,7 @@ import {
   type StrikeLedgerConfig,
 } from '../core/domain';
 import { getUserKey } from '../core/identity';
+import { runLedgerCleanup } from '../core/ledgerCleanup';
 import { LedgerRepository } from '../core/ledgerRepository';
 import { logInfo, logWarn, type LogDetails } from '../core/logging';
 import { getCachedOrLivePostScoreSummary } from '../core/postScore';
@@ -23,9 +24,6 @@ import { getModeratorAccess, type ModeratorAccess } from './permissions';
 export const api = new Hono();
 
 const HISTORY_PAGE_SIZE = 25;
-const DEFAULT_LEDGER_CLEANUP_RETENTION_DAYS = 365;
-const DEFAULT_LEDGER_CLEANUP_BATCH_SIZE = 100;
-const MAX_LEDGER_CLEANUP_BATCH_SIZE = 500;
 
 const getRepositories = () => {
   const store = new DevvitRedisStore(redis);
@@ -49,6 +47,10 @@ type UserViewContext = {
   targetKind?: ViewContextRecord['targetKind'];
   authorName?: string;
 };
+
+type AuthorizedUserViewContextResult =
+  | { status: 'ok'; context: UserViewContext | null }
+  | { status: 'denied' };
 
 type RedditRuleImport = {
   id: string;
@@ -233,13 +235,27 @@ const getAuthorizedUserViewContext = async (
   token: string | undefined,
   subredditName: string,
   dashboardRepository: DashboardRepository,
+  access: ModeratorAccess,
   rawUserKey: string | null = null,
   username: string | null = null
-): Promise<UserViewContext | null> => {
-  return (
-    (await getAuthorizedViewContext(token, subredditName, dashboardRepository)) ??
-    getUserLookupContext(subredditName, rawUserKey, username)
+): Promise<AuthorizedUserViewContextResult> => {
+  const tokenContext = await getAuthorizedViewContext(
+    token,
+    subredditName,
+    dashboardRepository
   );
+  if (tokenContext) {
+    return { status: 'ok', context: tokenContext };
+  }
+
+  const lookupContext = getUserLookupContext(subredditName, rawUserKey, username);
+  if (!lookupContext) {
+    return { status: 'ok', context: null };
+  }
+
+  return access.canManage
+    ? { status: 'ok', context: lookupContext }
+    : { status: 'denied' };
 };
 
 const serializeEntry = (
@@ -329,13 +345,23 @@ api.get('/history', async (c) => {
   const { configRepository, dashboardRepository, ledgerRepository } =
     getRepositories();
   const config = await configRepository.getConfig();
-  const context = await getAuthorizedUserViewContext(
+  const contextResult = await getAuthorizedUserViewContext(
     c.req.query('contextToken'),
     apiAccess.subredditName,
     dashboardRepository,
+    apiAccess.access,
     trimString(c.req.query('userKey')),
     trimString(c.req.query('username'))
   );
+  if (contextResult.status === 'denied') {
+    logWarn('api.history.user_lookup.denied', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+    });
+    return c.json({ error: 'all_permission_required' }, 403);
+  }
+
+  const context = contextResult.context;
   if (!context) {
     logWarn('api.history.invalid_context', {
       subredditName: apiAccess.subredditName,
@@ -396,13 +422,23 @@ api.get('/profile', async (c) => {
   const { store, configRepository, dashboardRepository, ledgerRepository } =
     getRepositories();
   const config = await configRepository.getConfig();
-  const context = await getAuthorizedUserViewContext(
+  const contextResult = await getAuthorizedUserViewContext(
     c.req.query('contextToken'),
     apiAccess.subredditName,
     dashboardRepository,
+    apiAccess.access,
     trimString(c.req.query('userKey')),
     trimString(c.req.query('username'))
   );
+  if (contextResult.status === 'denied') {
+    logWarn('api.profile.user_lookup.denied', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+    });
+    return c.json({ error: 'all_permission_required' }, 403);
+  }
+
+  const context = contextResult.context;
   if (!context) {
     logWarn('api.profile.invalid_context', {
       subredditName: apiAccess.subredditName,
@@ -740,35 +776,24 @@ api.post('/cleanup-ledger', async (c) => {
     payload = {};
   }
 
-  const requestedRetentionDays = Number(payload.retentionDays);
-  const retentionDays =
-    Number.isInteger(requestedRetentionDays) && requestedRetentionDays > 0
-      ? requestedRetentionDays
-      : DEFAULT_LEDGER_CLEANUP_RETENTION_DAYS;
-  const requestedMaxEntries = Number(payload.maxEntries);
-  const maxEntries =
-    Number.isInteger(requestedMaxEntries) && requestedMaxEntries > 0
-      ? Math.min(requestedMaxEntries, MAX_LEDGER_CLEANUP_BATCH_SIZE)
-      : DEFAULT_LEDGER_CLEANUP_BATCH_SIZE;
-
   const { configRepository, ledgerRepository } = getRepositories();
-  const result = await ledgerRepository.cleanupLedger({
+  const result = await runLedgerCleanup({
     subredditName: apiAccess.subredditName,
-    config: await configRepository.getConfig(),
+    configRepository,
+    ledgerRepository,
     nowMs: Date.now(),
-    retentionDays,
-    maxEntries,
+    payload,
   });
   logInfo('api.cleanup.ok', {
     subredditName: apiAccess.subredditName,
     moderatorUsername: apiAccess.access.username,
-    retentionDays,
-    maxEntries,
+    retentionDays: result.retentionDays,
+    maxEntries: result.maxEntries,
     scanned: result.scanned,
     deleted: result.deleted,
   });
 
-  return c.json({ ...result, retentionDays, maxEntries });
+  return c.json(result);
 });
 
 api.post('/retry-side-effects', async (c) => {

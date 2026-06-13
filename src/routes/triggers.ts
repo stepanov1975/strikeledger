@@ -25,9 +25,8 @@ triggers.post('/on-app-install', async (c) => {
   return c.json<TriggerResponse>(successResponse, 200);
 });
 
-for (const [triggerName, route] of placeholderTriggerRoutes) {
+for (const [, route] of placeholderTriggerRoutes) {
   triggers.post(route, (c) => {
-    logInfo('trigger.placeholder', { triggerName });
     return c.json<TriggerResponse>(successResponse, 200);
   });
 }

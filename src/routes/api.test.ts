@@ -518,7 +518,7 @@ describe('api routes', () => {
   });
 
   it('reads history by username for moderator dashboard lookup', async () => {
-    const { api, redis } = await loadApi(['posts']);
+    const { api, redis } = await loadApi(['all']);
     const entry = buildEntry({
       userKey: 'name:someuser',
       username: 'SomeUser',
@@ -536,6 +536,24 @@ describe('api routes', () => {
       },
       activeTotal: 3,
       entries: [{ entryId: 'entry-1' }],
+    });
+  });
+
+  it('rejects raw history lookups for read-only moderators', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await seedLedger(
+      redis,
+      buildEntry({
+        userKey: 'name:someuser',
+        username: 'SomeUser',
+      })
+    );
+
+    const response = await api.request('/history?username=u%2FSomeUser');
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: 'all_permission_required',
     });
   });
 
@@ -696,7 +714,7 @@ describe('api routes', () => {
   });
 
   it('reads profile by user key for moderator dashboard lookup', async () => {
-    const { api, redis } = await loadApi(['posts']);
+    const { api, redis } = await loadApi(['all']);
     const entry = buildEntry({
       userKey: 'name:someuser',
       username: 'SomeUser',
@@ -716,6 +734,24 @@ describe('api routes', () => {
         activeTotal: 3,
         lifetimeOriginalPoints: 3,
       },
+    });
+  });
+
+  it('rejects raw profile lookups for read-only moderators', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await seedLedger(
+      redis,
+      buildEntry({
+        userKey: 'name:someuser',
+        username: 'SomeUser',
+      })
+    );
+
+    const response = await api.request('/profile?userKey=name%3Asomeuser');
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({
+      error: 'all_permission_required',
     });
   });
 

@@ -594,7 +594,7 @@ The active-total cache is rebuildable and must not be the reason durable ledger 
 
 Native Reddit mod notes are a secondary moderation trail, not the source of truth, because the app needs structured data for history, reversal, scoring, and settings audit.
 
-Redis data is app-installation scoped. Because bulk ledger export is not in MVP, launch documentation must warn moderators that uninstalling or reinstalling the app may remove or orphan ledger history unless Reddit provides a documented retention path.
+Redis data is app-installation scoped. Cleanup deletes old reversed entries and old entries with no active points after the configured retention window; entries that still contribute active points are retained. Because bulk ledger export is not in MVP, launch documentation must warn moderators that uninstalling or reinstalling the app may remove or orphan ledger history unless Reddit provides a documented retention path.
 
 ## Permissions
 

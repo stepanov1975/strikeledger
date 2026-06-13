@@ -226,6 +226,14 @@
     "onPostSubmit": "/internal/triggers/on-post-submit",
     "onPostUpdate": "/internal/triggers/on-post-update"
   },
+  "scheduler": {
+    "tasks": {
+      "ledgerCleanup": {
+        "endpoint": "/internal/scheduler/ledger-cleanup",
+        "cron": "17 3 * * *"
+      }
+    }
+  },
   "scripts": {
     "build": "vite build",
     "dev": "vite build --watch"

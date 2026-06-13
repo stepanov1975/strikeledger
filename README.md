@@ -63,7 +63,7 @@ Import modes:
 | Mode                  | Use when                                                                                                               |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | Add missing rules     | You want to keep existing StrikeLedger rules and add subreddit rules that are not already present.                     |
-| Replace current rules | You want the StrikeLedger rule list to match the imported subreddit rules.                                             |
+| Replace active rules  | You want the active StrikeLedger rule list to match the imported subreddit rules without deleting old rule IDs.        |
 | Sync labels and order | You want matching existing rules to use the imported labels and order while preserving their existing custom settings. |
 
 After applying an import preview, click `Save admin changes` to make the changes active.
@@ -191,7 +191,11 @@ If a moderator can open the dashboard but cannot edit Admin settings, the Admin 
 
 ## Data Retention
 
-StrikeLedger stores ledger history, active-total caches, profile metric caches, dashboard records, and short-lived form/view tokens in Devvit Redis for the app installation. Uninstalling or reinstalling the app may remove or orphan stored data. Treat uninstall and reinstall actions as data-retention events.
+StrikeLedger stores ledger history, active-total caches, profile metric caches, dashboard records, and short-lived form/view tokens in Devvit Redis for the app installation.
+
+The app runs a daily cleanup job. Cleanup deletes old reversed entries and old entries that have no active points; entries that still contribute active points are kept. The default cleanup retention window is 365 days, and Admin users can run the same cleanup from the dashboard.
+
+Uninstalling or reinstalling the app may remove or orphan stored data. Treat uninstall and reinstall actions as data-retention events.
 
 ## Practical Moderation Notes
 

@@ -224,6 +224,57 @@ describe('executeSideEffects', () => {
     expect(updated.sideEffects.userNotice).toBe('succeeded');
   });
 
+  it('keeps successful Reddit side effects when checkpoint persistence fails', async () => {
+    const checkpointError = new Error('redis unavailable');
+    const publicComment = {
+      id: 'comment-1',
+      distinguish: vi.fn(async () => undefined),
+      lock: vi.fn(async () => undefined),
+    };
+    const target = {
+      addComment: vi.fn(async () => publicComment),
+      remove: vi.fn(async () => undefined),
+    };
+
+    const updated = await executeSideEffects({
+      entry: buildEntry({
+        action: 'warn',
+        sideEffects: {
+          ...EMPTY_SIDE_EFFECTS,
+          publicComment: 'pending',
+        },
+      }),
+      activeTotal: 1,
+      target,
+      reddit: buildReddit(),
+      config: {
+        ...DEFAULT_CONFIG,
+        distinguishAppComments: false,
+        lockAppComments: false,
+      },
+      persistEntry: async () => {
+        throw checkpointError;
+      },
+    });
+
+    expect(updated.status).toBe('succeeded');
+    expect(updated.publicCommentId).toBe('comment-1');
+    expect(updated.sideEffects.publicComment).toBe('succeeded');
+    expect(target.addComment).toHaveBeenCalledTimes(1);
+    expect(logErrorMock).toHaveBeenCalledWith(
+      'side_effect.checkpoint_failed',
+      {
+        entryId: 'entry-1',
+        subredditName: 'testsub',
+        targetId: 't3_target',
+        targetKind: 'post',
+        action: 'warn',
+        ruleId: 'rule-general',
+      },
+      checkpointError
+    );
+  });
+
   it('logs public comment option failures with option context', async () => {
     const distinguishError = new Error('distinguish failed');
     const lockError = new Error('lock failed');

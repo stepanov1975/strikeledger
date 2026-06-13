@@ -11,6 +11,7 @@ import {
   type RedisStore,
 } from './redisStore';
 import {
+  MS_PER_DAY,
   calculateActivePoints,
   getDecayIntervalMs,
   recalculateActiveTotal as calculateActiveTotalFromEntries,
@@ -141,7 +142,10 @@ const activeTotalKey = (userKey: string): string =>
   `user:${userKey}:active_total`;
 const ledgerEntriesKey = (subredditName: string): string =>
   `ledger:${subredditName.trim().toLowerCase()}:entries`;
+const cleanupCursorKey = (subredditName: string): string =>
+  `ledger:${subredditName.trim().toLowerCase()}:cleanup_cursor`;
 const ACTIVE_TOTAL_PAGE_SIZE = 100;
+const ACTIVE_TOTAL_CACHE_TTL_MS = 366 * MS_PER_DAY;
 const MAX_ENTRY_ORIGINAL_POINTS = 100;
 
 const uniqueUserKeys = (userKeys: string[]): string[] =>
@@ -189,6 +193,11 @@ const getActiveEntryCutoffMs = (
   return nowMs - maxActiveIntervals * getDecayIntervalMs(config);
 };
 
+const parseCleanupCursor = (raw: string | null): number => {
+  const cursor = Number(raw);
+  return Number.isInteger(cursor) && cursor >= 0 ? cursor : 0;
+};
+
 export class LedgerRepository {
   constructor(private readonly store: RedisStore) {}
 
@@ -223,11 +232,19 @@ export class LedgerRepository {
           return null;
         }
 
+        const sideEffects =
+          current.status === 'reversed' && checkpoint.status !== 'reversed'
+            ? {
+                ...checkpoint.sideEffects,
+                reversalModNote: current.sideEffects.reversalModNote,
+                reversalUserNotice: current.sideEffects.reversalUserNotice,
+              }
+            : checkpoint.sideEffects;
         const updated: LedgerEntry = {
           ...current,
           status:
             current.status === 'reversed' ? current.status : checkpoint.status,
-          sideEffects: checkpoint.sideEffects,
+          sideEffects,
           ...(checkpoint.publicCommentId !== undefined
             ? { publicCommentId: checkpoint.publicCommentId }
             : {}),
@@ -499,10 +516,23 @@ export class LedgerRepository {
 
     const cutoffMs = request.nowMs - request.retentionDays * 24 * 60 * 60 * 1000;
     const ledgerIndexKey = ledgerEntriesKey(request.subredditName);
-    const entryIds = await this.store.zRange(ledgerIndexKey, 0, maxEntries - 1);
+    const cursorKey = cleanupCursorKey(request.subredditName);
+    let cursor = parseCleanupCursor(await this.store.get(cursorKey));
+    let entryIds = await this.store.zRange(
+      ledgerIndexKey,
+      cursor,
+      cursor + maxEntries - 1
+    );
+    if (entryIds.length === 0 && cursor > 0) {
+      cursor = 0;
+      entryIds = await this.store.zRange(ledgerIndexKey, 0, maxEntries - 1);
+    }
+
+    let scanned = 0;
     let deleted = 0;
 
     for (const entryId of entryIds) {
+      scanned += 1;
       const entry = await this.getLedgerEntry(entryId);
       if (!entry) {
         await this.store.zRem(ledgerIndexKey, [entryId]);
@@ -529,7 +559,10 @@ export class LedgerRepository {
       deleted += 1;
     }
 
-    return { scanned: entryIds.length, deleted };
+    const nextCursor = entryIds.length < maxEntries ? 0 : cursor + scanned;
+    await this.store.set(cursorKey, String(nextCursor));
+
+    return { scanned, deleted };
   }
 
   async recalculateActiveTotal(
@@ -620,7 +653,9 @@ export class LedgerRepository {
   ): Promise<number> {
     const activeTotal = calculateActiveTotalFromEntries(entries, config, nowMs);
     try {
-      await this.store.set(activeTotalKey(userKey), String(activeTotal));
+      await this.store.set(activeTotalKey(userKey), String(activeTotal), {
+        expiresAtMs: nowMs + ACTIVE_TOTAL_CACHE_TTL_MS,
+      });
     } catch (error) {
       logError(
         'ledger.active_total_cache_failed',

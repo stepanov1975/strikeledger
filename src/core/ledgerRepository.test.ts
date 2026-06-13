@@ -669,7 +669,12 @@ describe('LedgerRepository', () => {
     const { repo, store } = createRepo();
     const reversedEntry = buildEntry({
       status: 'reversed',
-      sideEffects: { ...EMPTY_SIDE_EFFECTS, publicComment: 'failed' },
+      sideEffects: {
+        ...EMPTY_SIDE_EFFECTS,
+        publicComment: 'failed',
+        reversalModNote: 'succeeded',
+        reversalUserNotice: 'succeeded',
+      },
       reversalReason: 'mistake',
       reversalNote: 'Handled by another moderator.',
       reversedBy: 'mod-b',
@@ -691,6 +696,8 @@ describe('LedgerRepository', () => {
     expect(stored?.reversalReason).toBe('mistake');
     expect(stored?.reversalNote).toBe('Handled by another moderator.');
     expect(stored?.sideEffects.publicComment).toBe('succeeded');
+    expect(stored?.sideEffects.reversalModNote).toBe('succeeded');
+    expect(stored?.sideEffects.reversalUserNotice).toBe('succeeded');
     expect(stored?.publicCommentId).toBe('t1_comment');
   });
 
@@ -733,6 +740,48 @@ describe('LedgerRepository', () => {
     await expect(
       store.zRange('ledger:testsub:entries', 0, -1)
     ).resolves.toEqual(['recent-active']);
+  });
+
+  it('advances cleanup past old active entries', async () => {
+    const { repo, store } = createRepo();
+    const old = nowMs - 400 * MS_PER_DAY;
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'old-active',
+        targetId: 't3_old_active',
+        createdAtMs: old,
+        originalPoints: 100,
+      })
+    );
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'old-inactive',
+        targetId: 't3_old_inactive',
+        createdAtMs: old + 1,
+      })
+    );
+
+    const firstRun = await repo.cleanupLedger({
+      config: DEFAULT_CONFIG,
+      maxEntries: 1,
+      nowMs,
+      retentionDays: 365,
+      subredditName: 'testsub',
+    });
+    const secondRun = await repo.cleanupLedger({
+      config: DEFAULT_CONFIG,
+      maxEntries: 1,
+      nowMs,
+      retentionDays: 365,
+      subredditName: 'testsub',
+    });
+
+    expect(firstRun).toEqual({ scanned: 1, deleted: 0 });
+    expect(secondRun).toEqual({ scanned: 1, deleted: 1 });
+    expect(await repo.getLedgerEntry('old-active')).not.toBeNull();
+    expect(await repo.getLedgerEntry('old-inactive')).toBeNull();
   });
 
   it('reads and recalculates across primary and fallback user keys', async () => {

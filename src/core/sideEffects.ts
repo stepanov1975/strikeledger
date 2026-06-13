@@ -218,6 +218,21 @@ const submitPublicComment = async (
   throw new Error('Target cannot receive a public comment.');
 };
 
+const logCheckpointFailure = (entry: LedgerEntry, error: unknown): void => {
+  logError(
+    'side_effect.checkpoint_failed',
+    {
+      entryId: entry.entryId,
+      subredditName: entry.subredditName,
+      targetId: entry.targetId,
+      targetKind: entry.targetKind,
+      action: entry.action,
+      ruleId: entry.ruleId,
+    },
+    error
+  );
+};
+
 const executePublicCommentOptions = async (
   publicComment: PublicComment,
   entry: LedgerEntry,
@@ -272,7 +287,11 @@ export const executeSideEffects = async (
   });
   const persistCheckpoint = async (): Promise<void> => {
     if (input.persistEntry) {
-      await input.persistEntry(buildUpdatedEntry(input.entry.status));
+      try {
+        await input.persistEntry(buildUpdatedEntry(input.entry.status));
+      } catch (error) {
+        logCheckpointFailure(input.entry, error);
+      }
     }
   };
 
@@ -487,7 +506,11 @@ export const executeReversalSideEffects = async (
   });
   const persistCheckpoint = async (): Promise<void> => {
     if (input.persistEntry) {
-      await input.persistEntry(buildUpdatedEntry());
+      try {
+        await input.persistEntry(buildUpdatedEntry());
+      } catch (error) {
+        logCheckpointFailure(input.entry, error);
+      }
     }
   };
 

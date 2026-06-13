@@ -455,7 +455,7 @@ Default first-install rule set:
 - Labels: required, max 120 characters.
 - Templates: required global public and private templates; optional rule templates; max 2000 characters.
 - Point values: integers from 0 to 100.
-- Decay amount: integer from 0 to 100.
+- Decay amount: integer from 1 to 100.
 - Decay interval: integer from 1 to 3650 days.
 - At least one enabled rule is required.
 - Public templates and public comment overrides reject private-only placeholders such as `{pointsAdded}` and `{activeTotal}`.

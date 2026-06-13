@@ -515,6 +515,7 @@ export const executeReversalSideEffects = async (
   };
 
   if (
+    input.config.nativeModNotesEnabled &&
     input.config.reversalNativeModNotesEnabled &&
     input.addNativeModNote &&
     hasUsableUsername(input.entry.username)

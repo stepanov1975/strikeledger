@@ -59,7 +59,7 @@ describe('config validation', () => {
   it('rejects invalid point and decay values', () => {
     const config = cloneConfig();
     config.actionPoints.warn_remove = 101;
-    config.decayAmount = -1;
+    config.decayAmount = 0;
     config.decayIntervalDays = 0;
 
     expect(validateConfig(config)).toEqual(
@@ -70,7 +70,7 @@ describe('config validation', () => {
         },
         {
           path: 'decayAmount',
-          message: 'Decay amount must be an integer from 0 to 100.',
+          message: 'Decay amount must be an integer from 1 to 100.',
         },
         {
           path: 'decayIntervalDays',

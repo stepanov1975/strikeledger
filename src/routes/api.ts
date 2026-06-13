@@ -19,6 +19,8 @@ import { getModeratorAccess, type ModeratorAccess } from './permissions';
 export const api = new Hono();
 
 const HISTORY_PAGE_SIZE = 25;
+const PROFILE_RECENT_ENTRY_LIMIT = 25;
+const PROFILE_SUMMARY_ENTRY_LIMIT = 500;
 
 const getRepositories = () => {
   const store = new DevvitRedisStore(redis);
@@ -173,6 +175,40 @@ const getContextUserKeys = (context: UserViewContext): string[] => {
   }
 
   return userKeys;
+};
+
+const uniqueStrings = (values: string[]): string[] =>
+  Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+
+const getEntryUserKeys = (entry: LedgerEntry): string[] => {
+  const fallbackUserKey = getUserKey({ username: entry.username });
+  return uniqueStrings([
+    entry.userKey,
+    ...(fallbackUserKey ? [fallbackUserKey] : []),
+  ]);
+};
+
+const getReversalUserScope = (
+  entry: LedgerEntry,
+  context: UserViewContext | null
+): { userKeys: string[]; cacheUserKey: string } => {
+  const entryKeys = getEntryUserKeys(entry);
+  if (!context?.userKey) {
+    return { userKeys: entryKeys, cacheUserKey: entry.userKey };
+  }
+
+  const contextKeys = getContextUserKeys(context);
+  const contextMatchesEntry = entryKeys.some((key) =>
+    contextKeys.includes(key)
+  );
+  if (!contextMatchesEntry) {
+    return { userKeys: entryKeys, cacheUserKey: entry.userKey };
+  }
+
+  return {
+    userKeys: uniqueStrings([...entryKeys, ...contextKeys]),
+    cacheUserKey: context.userKey,
+  };
 };
 
 const getAuthorizedViewContext = async (
@@ -429,10 +465,14 @@ api.get('/profile', async (c) => {
 
   const nowMs = Date.now();
   const userKeys = getContextUserKeys(context);
-  const entries = await ledgerRepository.getUserLedgerForKeys(
+  const profileEntries = await ledgerRepository.getUserLedgerPageForKeys(
     userKeys,
+    0,
+    PROFILE_SUMMARY_ENTRY_LIMIT + 1,
     apiAccess.subredditName
   );
+  const hasMoreEntries = profileEntries.length > PROFILE_SUMMARY_ENTRY_LIMIT;
+  const entries = profileEntries.slice(0, PROFILE_SUMMARY_ENTRY_LIMIT);
   const activeTotal = await ledgerRepository.recalculateActiveTotalForKeys(
     userKeys,
     context.userKey,
@@ -443,6 +483,10 @@ api.get('/profile', async (c) => {
   const activeOriginalPoints = entries
     .filter((entry) => entry.status !== 'reversed')
     .reduce((total, entry) => total + entry.originalPoints, 0);
+  const activePointsInSummary = entries.reduce(
+    (total, entry) => total + calculateActivePoints(entry, config, nowMs),
+    0
+  );
   const lifetimeOriginalPoints = entries.reduce(
     (total, entry) => total + entry.originalPoints,
     0
@@ -461,6 +505,7 @@ api.get('/profile', async (c) => {
     targetId: context.targetId,
     targetKind: context.targetKind,
     entryCount: entries.length,
+    hasMoreEntries,
     activeTotal,
     reversedEntries: entries.filter((entry) => entry.status === 'reversed')
       .length,
@@ -473,13 +518,15 @@ api.get('/profile', async (c) => {
     summary: {
       activeTotal,
       lifetimeOriginalPoints,
-      decayedPoints: Math.max(0, activeOriginalPoints - activeTotal),
+      decayedPoints: Math.max(0, activeOriginalPoints - activePointsInSummary),
       reversedEntries: entries.filter((entry) => entry.status === 'reversed')
         .length,
       removalsByRule,
+      hasMoreEntries,
+      summaryEntryLimit: PROFILE_SUMMARY_ENTRY_LIMIT,
     },
     recentEntries: entries
-      .slice(0, HISTORY_PAGE_SIZE)
+      .slice(0, PROFILE_RECENT_ENTRY_LIMIT)
       .map((entry) => serializeEntry(entry, nowMs, config)),
   });
 });
@@ -782,12 +829,13 @@ api.post('/reverse', async (c) => {
   const entryId = trimString(payload.entryId);
   const reversalReason = trimString(payload.reversalReason);
   const reversalNote = trimString(payload.reversalNote);
-  const { configRepository, ledgerRepository } = getRepositories();
+  const { configRepository, dashboardRepository, ledgerRepository } =
+    getRepositories();
   const config = await configRepository.getConfig();
   const addNativeModNote =
     typeof payload.addNativeModNote === 'boolean'
       ? payload.addNativeModNote
-      : config.reversalNativeModNotesEnabled;
+      : config.nativeModNotesEnabled && config.reversalNativeModNotesEnabled;
 
   if (!entryId || !reversalReason) {
     logWarn('api.reverse.missing_fields', {
@@ -814,12 +862,20 @@ api.post('/reverse', async (c) => {
   }
 
   const nowMs = Date.now();
+  const reversalContext = await getAuthorizedViewContext(
+    trimString(payload.contextToken) ?? undefined,
+    apiAccess.subredditName,
+    dashboardRepository
+  );
+  const reversalUserScope = getReversalUserScope(existingEntry, reversalContext);
   const result = await ledgerRepository.reverseLedgerEntry({
     entryId,
     reversedAtMs: nowMs,
     reversedBy: apiAccess.access.username,
     reversalReason,
     ...(reversalNote ? { reversalNote } : {}),
+    userKeys: reversalUserScope.userKeys,
+    cacheUserKey: reversalUserScope.cacheUserKey,
     config,
     nowMs,
   });

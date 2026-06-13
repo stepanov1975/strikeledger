@@ -57,6 +57,8 @@ type ProfileResponse = {
     decayedPoints: number;
     reversedEntries: number;
     removalsByRule: Record<string, number>;
+    hasMoreEntries: boolean;
+    summaryEntryLimit: number;
   };
   recentEntries: LedgerEntryRow[];
 };
@@ -592,6 +594,7 @@ const reverseEntry = async (entry: LedgerEntryRow) => {
       },
       body: JSON.stringify({
         entryId: entry.entryId,
+        ...(activeContextToken ? { contextToken: activeContextToken } : {}),
         ...reversal,
       }),
     });
@@ -619,16 +622,31 @@ const renderProfile = (response: ProfileResponse) => {
   const removals = Object.entries(response.summary.removalsByRule)
     .map(([rule, count]) => `${rule}: ${count}`)
     .join(', ');
+  const pointsLabel = response.summary.hasMoreEntries
+    ? `Points in latest ${response.summary.summaryEntryLimit}`
+    : 'Lifetime points';
+  const reversedLabel = response.summary.hasMoreEntries
+    ? `Reversed in latest ${response.summary.summaryEntryLimit}`
+    : 'Reversed entries';
+  const decayedLabel = response.summary.hasMoreEntries
+    ? `Decayed in latest ${response.summary.summaryEntryLimit}`
+    : 'Decayed points';
 
   main.replaceChildren(
     renderToolbar('Profile', formatTargetUser(response.context)),
     renderMetrics([
       ['Active total', response.summary.activeTotal],
-      ['Lifetime points', response.summary.lifetimeOriginalPoints],
-      ['Decayed points', response.summary.decayedPoints],
-      ['Reversed entries', response.summary.reversedEntries],
+      [pointsLabel, response.summary.lifetimeOriginalPoints],
+      [decayedLabel, response.summary.decayedPoints],
+      [reversedLabel, response.summary.reversedEntries],
     ]),
-    create('p', 'subtitle', removals || 'No removals recorded.'),
+    create(
+      'p',
+      'subtitle',
+      response.summary.hasMoreEntries
+        ? removals || 'No removals in the latest entries.'
+        : removals || 'No removals recorded.'
+    ),
     response.recentEntries.length > 0
       ? renderEntryTable(response.recentEntries)
       : create('div', 'empty', 'No ledger entries.')

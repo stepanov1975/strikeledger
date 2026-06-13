@@ -252,7 +252,17 @@ export class ConfigRepository {
       return;
     }
 
-    await this.store.del(...oldSnapshotKeys);
+    const auditKeys: string[] = [];
+    for (const snapshotKey of oldSnapshotKeys) {
+      const snapshot = parseJson<SettingsAuditSnapshotRecord>(
+        await this.store.get(snapshotKey)
+      );
+      if (snapshot) {
+        auditKeys.push(snapshot.auditKey);
+      }
+    }
+
+    await this.store.del(...oldSnapshotKeys, ...auditKeys);
     await this.store.zRem(settingsAuditSnapshotIndexKey, oldSnapshotKeys);
   }
 }

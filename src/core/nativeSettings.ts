@@ -127,7 +127,7 @@ export const applyNativeSettings = (
     values,
     NATIVE_SETTINGS_KEYS.decayAmount,
     DEFAULT_CONFIG.decayAmount,
-    0,
+    1,
     100
   ),
   decayIntervalDays: integerSetting(

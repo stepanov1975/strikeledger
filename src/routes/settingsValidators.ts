@@ -70,7 +70,7 @@ settingsValidators.post('/validate-points', async (c) => {
 
 settingsValidators.post('/validate-decay-amount', async (c) => {
   const input = await c.req.json<SettingsValidationRequest>();
-  return c.json(validateInteger(input.value, 0, 100, 'Decay amount'));
+  return c.json(validateInteger(input.value, 1, 100, 'Decay amount'));
 });
 
 settingsValidators.post('/validate-days', async (c) => {

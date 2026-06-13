@@ -20,6 +20,12 @@ class ApiRedisMock {
   readonly values = new Map<string, string>();
   readonly sortedSets = new Map<string, Map<string, number>>();
   readonly setCalls: Array<{ key: string; value: string }> = [];
+  readonly zRangeCalls: Array<{
+    key: string;
+    start: number;
+    stop: number;
+    options: { reverse?: boolean };
+  }> = [];
 
   async get(key: string): Promise<string | undefined> {
     return this.values.get(key);
@@ -36,6 +42,13 @@ class ApiRedisMock {
       this.values.delete(key);
       this.sortedSets.delete(key);
     }
+  }
+
+  async incrBy(key: string, value: number): Promise<number> {
+    const current = Number(this.values.get(key) ?? '0');
+    const next = Number.isFinite(current) ? current + value : value;
+    this.values.set(key, String(next));
+    return next;
   }
 
   async zAdd(key: string, member: RedisZMember): Promise<number> {
@@ -62,6 +75,7 @@ class ApiRedisMock {
     stop: number,
     options: { reverse?: boolean } = {}
   ): Promise<RedisZMember[]> {
+    this.zRangeCalls.push({ key, start, stop, options });
     const set = this.sortedSets.get(key);
     if (!set) {
       return [];
@@ -100,6 +114,10 @@ class ApiRedisMock {
       del: vi.fn(async (...keys: string[]) => {
         commandCount += 1;
         return this.del(...keys);
+      }),
+      incrBy: vi.fn(async (key: string, value: number) => {
+        commandCount += 1;
+        return this.incrBy(key, value);
       }),
       zAdd: vi.fn(async (key: string, member: RedisZMember) => {
         commandCount += 1;
@@ -693,6 +711,17 @@ describe('api routes', () => {
     expect(body.summary).not.toHaveProperty('postScoreWindowDays');
   });
 
+  it('bounds profile ledger reads', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await seedViewContext(redis);
+    await seedLedger(redis);
+
+    const response = await api.request('/profile?contextToken=token-1');
+
+    expect(response.status).toBe(200);
+    expect(redis.zRangeCalls.some((call) => call.stop === -1)).toBe(false);
+  });
+
   it('reads profile by user key for moderator dashboard lookup', async () => {
     const { api, redis } = await loadApi(['all']);
     const entry = buildEntry({
@@ -934,6 +963,50 @@ describe('api routes', () => {
     await expect(response.json()).resolves.toEqual({
       error: 'posts_permission_required',
     });
+  });
+
+  it('uses reversal context to recalculate totals across ID and username keys', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await seedViewContext(redis);
+    await seedLedger(
+      redis,
+      buildEntry({
+        entryId: 'entry-id',
+        userKey: 'id:t2_user',
+        username: 'target-user',
+        targetId: 't3_current',
+        originalPoints: 2,
+      })
+    );
+    await seedLedger(
+      redis,
+      buildEntry({
+        entryId: 'entry-legacy',
+        userKey: 'name:target-user',
+        username: 'target-user',
+        targetId: 't3_legacy',
+        originalPoints: 3,
+      })
+    );
+
+    const response = await api.request('/reverse', {
+      method: 'POST',
+      body: JSON.stringify({
+        entryId: 'entry-legacy',
+        reversalReason: 'issued in error',
+        contextToken: 'token-1',
+        addNativeModNote: false,
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      status: 'reversed',
+      activeTotal: 2,
+    });
+    expect(redis.values.get('user:id:t2_user:active_total')).toBe('2');
   });
 
   it('checkpoints reversal side effects before the final ledger update', async () => {

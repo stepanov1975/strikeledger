@@ -79,6 +79,8 @@ export type ReverseLedgerEntryRequest = {
   reversedBy: string;
   reversalReason: string;
   reversalNote?: string;
+  userKeys?: string[];
+  cacheUserKey?: string;
   config: StrikeLedgerConfig;
   nowMs: number;
 };
@@ -140,11 +142,14 @@ const targetEntriesKey = (targetId: string): string =>
   `target:${targetId}:entries`;
 const activeTotalKey = (userKey: string): string =>
   `user:${userKey}:active_total`;
+const userLedgerVersionKey = (userKey: string): string =>
+  `user:${userKey}:ledger_version`;
 const ledgerEntriesKey = (subredditName: string): string =>
   `ledger:${subredditName.trim().toLowerCase()}:entries`;
 const cleanupCursorKey = (subredditName: string): string =>
   `ledger:${subredditName.trim().toLowerCase()}:cleanup_cursor`;
 const ACTIVE_TOTAL_PAGE_SIZE = 100;
+const ACTIVE_TOTAL_RECALC_ATTEMPTS = 3;
 const ACTIVE_TOTAL_CACHE_TTL_MS = 366 * MS_PER_DAY;
 const MAX_ENTRY_ORIGINAL_POINTS = 100;
 
@@ -152,14 +157,33 @@ const uniqueUserKeys = (userKeys: string[]): string[] =>
   Array.from(new Set(userKeys.map((userKey) => userKey.trim()).filter(Boolean)));
 
 const getLedgerEntryUserKeys = (entry: LedgerEntry): string[] => {
-  const fallbackUserKey =
-    entry.userId && entry.username !== '[unknown]'
-      ? getUserKey({ username: entry.username })
-      : null;
+  const fallbackUserKey = getUserKey({ username: entry.username });
   return uniqueUserKeys([
     entry.userKey,
     ...(fallbackUserKey ? [fallbackUserKey] : []),
   ]);
+};
+
+const parseLedgerVersion = (raw: string | null): number => {
+  const version = Number(raw);
+  return Number.isInteger(version) && version >= 0 ? version : 0;
+};
+
+const ledgerVersionsEqual = (
+  left: Map<string, number>,
+  right: Map<string, number>
+): boolean => {
+  if (left.size !== right.size) {
+    return false;
+  }
+
+  for (const [key, version] of left) {
+    if (right.get(key) !== version) {
+      return false;
+    }
+  }
+
+  return true;
 };
 
 const isEntryForSubreddit = (
@@ -513,6 +537,10 @@ export class LedgerRepository {
           ledgerEntryKey(reversedEntry.entryId),
           JSON.stringify(reversedEntry)
         );
+        await this.bumpUserLedgerVersions([
+          ...getLedgerEntryUserKeys(reversedEntry),
+          ...(request.userKeys ?? []),
+        ]);
         if (claimedEntryId === reversedEntry.entryId) {
           await this.store.del(duplicateClaimKey);
         }
@@ -522,11 +550,15 @@ export class LedgerRepository {
     );
 
     if (result.status === 'reversed' || result.status === 'already_reversed') {
+      const userKeys = uniqueUserKeys([
+        ...getLedgerEntryUserKeys(result.entry),
+        ...(request.userKeys ?? []),
+      ]);
       return {
         ...result,
         activeTotal: await this.recalculateActiveTotalForKeys(
-          getLedgerEntryUserKeys(result.entry),
-          result.entry.userKey,
+          userKeys,
+          request.cacheUserKey ?? result.entry.userKey,
           request.config,
           request.nowMs,
           result.entry.subredditName
@@ -608,13 +640,13 @@ export class LedgerRepository {
     nowMs: number,
     subredditName?: string
   ): Promise<number> {
-    const entries = await this.getActiveTotalEntriesForKeys(
+    return this.recalculateActiveTotalForKeys(
       [userKey],
+      userKey,
       config,
       nowMs,
       subredditName
     );
-    return this.cacheActiveTotal(userKey, entries, config, nowMs);
   }
 
   async recalculateActiveTotalForKeys(
@@ -624,13 +656,50 @@ export class LedgerRepository {
     nowMs: number,
     subredditName?: string
   ): Promise<number> {
+    const sourceUserKeys = uniqueUserKeys([...userKeys, cacheUserKey]);
+    for (let attempt = 0; attempt < ACTIVE_TOTAL_RECALC_ATTEMPTS; attempt += 1) {
+      const beforeVersions = await this.getUserLedgerVersions(sourceUserKeys);
+      const entries = await this.getActiveTotalEntriesForKeys(
+        sourceUserKeys,
+        config,
+        nowMs,
+        subredditName
+      );
+      const afterVersions = await this.getUserLedgerVersions(sourceUserKeys);
+      if (!ledgerVersionsEqual(beforeVersions, afterVersions)) {
+        continue;
+      }
+
+      const activeTotal = calculateActiveTotalFromEntries(
+        entries,
+        config,
+        nowMs
+      );
+      if (
+        await this.cacheActiveTotalIfLedgerStable(
+          cacheUserKey,
+          activeTotal,
+          sourceUserKeys,
+          afterVersions,
+          nowMs
+        )
+      ) {
+        return activeTotal;
+      }
+    }
+
     const entries = await this.getActiveTotalEntriesForKeys(
-      userKeys,
+      sourceUserKeys,
       config,
       nowMs,
       subredditName
     );
-    return this.cacheActiveTotal(cacheUserKey, entries, config, nowMs);
+    const activeTotal = calculateActiveTotalFromEntries(entries, config, nowMs);
+    logError('ledger.active_total_cache_stale', {
+      userKey: cacheUserKey,
+      activeTotal,
+    });
+    return activeTotal;
   }
 
   private async getActiveTotalEntriesForKeys(
@@ -682,17 +751,52 @@ export class LedgerRepository {
       : entries.filter((entry) => isEntryForSubreddit(entry, subredditName));
   }
 
-  private async cacheActiveTotal(
+  private async getUserLedgerVersions(
+    userKeys: string[]
+  ): Promise<Map<string, number>> {
+    const versions = new Map<string, number>();
+    for (const userKey of uniqueUserKeys(userKeys)) {
+      versions.set(
+        userKey,
+        parseLedgerVersion(await this.store.get(userLedgerVersionKey(userKey)))
+      );
+    }
+
+    return versions;
+  }
+
+  private async bumpUserLedgerVersions(userKeys: string[]): Promise<void> {
+    for (const userKey of uniqueUserKeys(userKeys)) {
+      await this.store.incrBy(userLedgerVersionKey(userKey), 1);
+    }
+  }
+
+  private async cacheActiveTotalIfLedgerStable(
     userKey: string,
-    entries: LedgerEntry[],
-    config: StrikeLedgerConfig,
+    activeTotal: number,
+    sourceUserKeys: string[],
+    expectedVersions: Map<string, number>,
     nowMs: number
-  ): Promise<number> {
-    const activeTotal = calculateActiveTotalFromEntries(entries, config, nowMs);
+  ): Promise<boolean> {
     try {
-      await this.store.set(activeTotalKey(userKey), String(activeTotal), {
-        expiresAtMs: nowMs + ACTIVE_TOTAL_CACHE_TTL_MS,
-      });
+      return await this.store.runTransaction(
+        [
+          activeTotalKey(userKey),
+          ...uniqueUserKeys(sourceUserKeys).map(userLedgerVersionKey),
+        ],
+        async (): Promise<boolean> => {
+          const currentVersions =
+            await this.getUserLedgerVersions(sourceUserKeys);
+          if (!ledgerVersionsEqual(currentVersions, expectedVersions)) {
+            return false;
+          }
+
+          await this.store.set(activeTotalKey(userKey), String(activeTotal), {
+            expiresAtMs: nowMs + ACTIVE_TOTAL_CACHE_TTL_MS,
+          });
+          return true;
+        }
+      );
     } catch (error) {
       logError(
         'ledger.active_total_cache_failed',
@@ -702,8 +806,8 @@ export class LedgerRepository {
         },
         error
       );
+      return false;
     }
-    return activeTotal;
   }
 
   private getCreateWatchedKeys(request: CreateLedgerEntryRequest): string[] {
@@ -836,10 +940,13 @@ export class LedgerRepository {
       ledgerEntryKey(request.entry.entryId),
       JSON.stringify(request.entry)
     );
-    await this.store.zAdd(userLedgerKey(request.entry.userKey), {
-      member: request.entry.entryId,
-      score: request.entry.createdAtMs,
-    });
+    const userKeys = getLedgerEntryUserKeys(request.entry);
+    for (const userKey of userKeys) {
+      await this.store.zAdd(userLedgerKey(userKey), {
+        member: request.entry.entryId,
+        score: request.entry.createdAtMs,
+      });
+    }
     await this.store.zAdd(targetEntriesKey(request.entry.targetId), {
       member: request.entry.entryId,
       score: request.entry.createdAtMs,
@@ -868,6 +975,7 @@ export class LedgerRepository {
       request.entry.entryId,
       { expiresAtMs: request.nowMs + RETRY_WINDOW_MS }
     );
+    await this.bumpUserLedgerVersions(userKeys);
   }
 
   private async deleteLedgerEntry(entry: LedgerEntry): Promise<void> {
@@ -886,9 +994,10 @@ export class LedgerRepository {
 
       const claimedEntryId = await this.store.get(duplicateClaimKey);
       await this.store.del(entryKey);
-      await this.store.zRem(userLedgerKey(currentEntry.userKey), [
-        currentEntry.entryId,
-      ]);
+      const userKeys = getLedgerEntryUserKeys(currentEntry);
+      for (const userKey of userKeys) {
+        await this.store.zRem(userLedgerKey(userKey), [currentEntry.entryId]);
+      }
       await this.store.zRem(targetEntriesKey(currentEntry.targetId), [
         currentEntry.entryId,
       ]);
@@ -899,6 +1008,7 @@ export class LedgerRepository {
       if (claimedEntryId === currentEntry.entryId) {
         await this.store.del(duplicateClaimKey);
       }
+      await this.bumpUserLedgerVersions(userKeys);
     });
   }
 }

@@ -595,6 +595,29 @@ describe('executeSideEffects', () => {
     );
   });
 
+  it('skips reversal mod notes when native mod notes are disabled globally', async () => {
+    const reddit = buildReddit();
+    const updated = await executeReversalSideEffects({
+      entry: buildEntry({
+        status: 'reversed',
+        reversedAtMs: 2000,
+        reversedBy: 'mod-b',
+        reversalReason: 'issued in error',
+      }),
+      activeTotal: 0,
+      reddit,
+      config: {
+        ...DEFAULT_CONFIG,
+        nativeModNotesEnabled: false,
+        reversalNativeModNotesEnabled: true,
+      },
+      addNativeModNote: true,
+    });
+
+    expect(updated.sideEffects.reversalModNote).toBe('skipped');
+    expect(reddit.addModNote).not.toHaveBeenCalled();
+  });
+
   it('checkpoints reversal side-effect progress after each attempt', async () => {
     const checkpoints: LedgerEntry[] = [];
     const updated = await executeReversalSideEffects({

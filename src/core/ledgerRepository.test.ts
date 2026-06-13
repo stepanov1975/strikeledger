@@ -64,6 +64,26 @@ class RecordingRedisStore extends FakeRedisStore {
   }
 }
 
+class MutatingLedgerRedisStore extends FakeRedisStore {
+  mutation: (() => Promise<void>) | null = null;
+  private mutated = false;
+
+  override async zRange(
+    key: string,
+    start: number,
+    stop: number,
+    options?: ZRangeOptions
+  ): Promise<string[]> {
+    const result = await super.zRange(key, start, stop, options);
+    if (!this.mutated && key === 'user:id:t2_user:ledger' && this.mutation) {
+      this.mutated = true;
+      await this.mutation();
+    }
+
+    return result;
+  }
+}
+
 const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => {
   const submittedAtMs = overrides.createdAtMs ?? nowMs;
   const targetId = overrides.targetId ?? 't3_target';
@@ -314,6 +334,89 @@ describe('LedgerRepository', () => {
     await expect(repo.getCachedActiveTotal('id:t2_user')).resolves.toBe(3);
   });
 
+  it('indexes ID-key entries under the normalized username fallback', async () => {
+    const { repo, store } = createRepo();
+    const entry = buildEntry({
+      entryId: 'entry-current',
+      targetId: 't3_current',
+      formNonce: 'nonce-current',
+      userId: 't2_user',
+      username: 'Target-User',
+      originalPoints: 2,
+    });
+    await repo.saveFormNonce(
+      buildNonce({
+        nonce: 'nonce-current',
+        targetId: 't3_current',
+        authorId: 't2_user',
+        authorName: 'Target-User',
+      })
+    );
+
+    await repo.createLedgerEntry({
+      entry,
+      formNonce: entry.formNonce,
+      submittedAtMs: nowMs,
+      nowMs,
+      config: DEFAULT_CONFIG,
+    });
+
+    await expect(
+      store.zRange('user:name:target-user:ledger', 0, -1)
+    ).resolves.toEqual(['entry-current']);
+    await expect(
+      repo.recalculateActiveTotalForKeys(
+        ['name:target-user'],
+        'name:target-user',
+        DEFAULT_CONFIG,
+        nowMs,
+        'testsub'
+      )
+    ).resolves.toBe(2);
+  });
+
+  it('uses related user keys when reversing a legacy username entry', async () => {
+    const { repo, store } = createRepo();
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'entry-id',
+        userKey: 'id:t2_user',
+        userId: 't2_user',
+        username: 'TargetUser',
+        targetId: 't3_current',
+        originalPoints: 2,
+      })
+    );
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'entry-legacy',
+        userKey: 'name:targetuser',
+        username: 'TargetUser',
+        targetId: 't3_legacy',
+        originalPoints: 3,
+      })
+    );
+
+    const result = await repo.reverseLedgerEntry({
+      entryId: 'entry-legacy',
+      reversedAtMs: nowMs + 1000,
+      reversedBy: 'mod-b',
+      reversalReason: 'issued in error',
+      config: DEFAULT_CONFIG,
+      nowMs,
+      userKeys: ['id:t2_user', 'name:targetuser'],
+      cacheUserKey: 'id:t2_user',
+    } as Parameters<LedgerRepository['reverseLedgerEntry']>[0] & {
+      userKeys: string[];
+      cacheUserKey: string;
+    });
+
+    expect(result).toMatchObject({ status: 'reversed', activeTotal: 2 });
+    await expect(repo.getCachedActiveTotal('id:t2_user')).resolves.toBe(2);
+  });
+
   it('returns the existing entry when a consumed nonce is replayed', async () => {
     const { repo } = createRepo();
     const entry = buildEntry();
@@ -434,7 +537,7 @@ describe('LedgerRepository', () => {
     });
 
     expect(reversed.status).toBe('reversed');
-    expect(store.transactionWatchKeys.at(-1)).toEqual(
+    expect(store.transactionWatchKeys).toContainEqual(
       expect.arrayContaining([
         'ledger_entry:entry-1',
         getDuplicateClaimKey({
@@ -895,6 +998,43 @@ describe('LedgerRepository', () => {
       )
     ).resolves.toBe(3);
     expect(store.zRangeCalls.some((call) => call.stop === -1)).toBe(false);
+  });
+
+  it('retries active-total recalculation when the ledger changes mid-read', async () => {
+    const store = new MutatingLedgerRedisStore();
+    const repo = new LedgerRepository(store);
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'entry-first',
+        targetId: 't3_first',
+        originalPoints: 1,
+        createdAtMs: nowMs,
+      })
+    );
+    store.mutation = async () => {
+      await seedEntry(
+        store,
+        buildEntry({
+          entryId: 'entry-second',
+          targetId: 't3_second',
+          originalPoints: 2,
+          createdAtMs: nowMs + 1,
+        })
+      );
+      await store.set('user:id:t2_user:ledger_version', '1');
+    };
+
+    await expect(
+      repo.recalculateActiveTotalForKeys(
+        ['id:t2_user'],
+        'id:t2_user',
+        DEFAULT_CONFIG,
+        nowMs,
+        'testsub'
+      )
+    ).resolves.toBe(3);
+    await expect(repo.getCachedActiveTotal('id:t2_user')).resolves.toBe(3);
   });
 
   it('rejects ledger entries from future schema versions', async () => {

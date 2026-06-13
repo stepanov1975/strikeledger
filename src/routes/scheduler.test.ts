@@ -35,6 +35,13 @@ class SchedulerRedisMock {
     }
   }
 
+  async incrBy(key: string, value: number): Promise<number> {
+    const current = Number(this.values.get(key) ?? '0');
+    const next = Number.isFinite(current) ? current + value : value;
+    this.values.set(key, String(next));
+    return next;
+  }
+
   async zAdd(key: string, member: RedisZMember): Promise<number> {
     const set = this.sortedSets.get(key) ?? new Map<string, number>();
     set.set(member.member, member.score);
@@ -102,6 +109,10 @@ class SchedulerRedisMock {
       del: vi.fn(async (...keys: string[]) => {
         commandCount += 1;
         return this.del(...keys);
+      }),
+      incrBy: vi.fn(async (key: string, value: number) => {
+        commandCount += 1;
+        return this.incrBy(key, value);
       }),
       zAdd: vi.fn(async (key: string, member: RedisZMember) => {
         commandCount += 1;

@@ -4,7 +4,7 @@ import { DevvitRedisStore } from './devvitRedisStore';
 
 const buildClients = () => {
   const calls: string[] = [];
-  const defaultExecResults: unknown[] = ['OK', 1];
+  const defaultExecResults: unknown[] = ['OK', 1, 1];
   const execResultsQueue: unknown[][] = [];
   const transaction = {
     multi: vi.fn(async () => {
@@ -29,6 +29,10 @@ const buildClients = () => {
       calls.push('tx.del');
       return transaction as unknown as TxClientLike;
     }),
+    incrBy: vi.fn(async () => {
+      calls.push('tx.incrBy');
+      return transaction as unknown as TxClientLike;
+    }),
     zAdd: vi.fn(async () => {
       calls.push('tx.zAdd');
       return transaction as unknown as TxClientLike;
@@ -45,6 +49,7 @@ const buildClients = () => {
     }),
     set: vi.fn(),
     del: vi.fn(),
+    incrBy: vi.fn(),
     zAdd: vi.fn(),
     zRange: vi.fn(async () => []),
   };
@@ -66,6 +71,7 @@ describe('DevvitRedisStore', () => {
       store.runTransaction(['watched-key'], async () => {
         await store.get('watched-key');
         await store.set('write-key', 'value');
+        await store.incrBy('counter-key', 1);
         await store.zAdd('set-key', { member: 'entry-1', score: 1 });
         return 'done';
       })
@@ -79,6 +85,7 @@ describe('DevvitRedisStore', () => {
       'redis.get',
       'tx.multi',
       'tx.set',
+      'tx.incrBy',
       'tx.zAdd',
       'tx.exec',
     ]);

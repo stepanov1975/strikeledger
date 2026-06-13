@@ -295,11 +295,11 @@ export const validateConfig = (
 
   if (
     typeof config.decayAmount !== 'number' ||
-    !isIntegerInRange(config.decayAmount, 0, 100)
+    !isIntegerInRange(config.decayAmount, 1, 100)
   ) {
     issues.push({
       path: 'decayAmount',
-      message: 'Decay amount must be an integer from 0 to 100.',
+      message: 'Decay amount must be an integer from 1 to 100.',
     });
   }
 

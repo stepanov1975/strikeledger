@@ -25,6 +25,22 @@ describe('settings validators', () => {
     });
   });
 
+  it('rejects zero decay amount', async () => {
+    const response = await settingsValidators.request(
+      '/validate-decay-amount',
+      {
+        method: 'POST',
+        body: JSON.stringify({ value: 0, isEditing: true }),
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+
+    await expect(response.json()).resolves.toEqual({
+      success: false,
+      error: 'Decay amount must be from 1 to 100.',
+    });
+  });
+
   it('rejects private placeholders in public templates', async () => {
     const response = await settingsValidators.request(
       '/validate-public-template',

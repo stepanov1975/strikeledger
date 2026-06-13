@@ -33,9 +33,8 @@ Before using enforcement actions, review native app settings:
 
 1. Confirm point values for each action.
 2. Set decay behavior.
-3. Configure profile metrics.
-4. Choose side effects such as private user notices, native mod notes, comment distinguish, sticky, and lock behavior.
-5. Review public, private, and native mod note templates.
+3. Choose side effects such as private user notices, native mod notes, comment distinguish, sticky, and lock behavior.
+4. Review public, private, and native mod note templates.
 
 Then use `StrikeLedger: Admin` to configure rules, import Reddit rules, and run repair tools.
 
@@ -140,14 +139,13 @@ History is loaded from a short-lived server-issued context token. Open History f
 Use `StrikeLedger: Profile` from a post or comment to open the author's profile summary. The Profile tab shows:
 
 - Active total.
-- Lifetime original points.
+- Original points.
 - Decayed points.
 - Reversed entry count.
-- Average post score for the configured recent window.
 - Removals grouped by rule.
 - Recent ledger entries.
 
-Profile is loaded from a short-lived server-issued context token. Open Profile from a post or comment menu item when you need a selected user's summary.
+Profile is loaded from a short-lived server-issued context token. Open Profile from a post or comment menu item when you need a selected user's summary. Active total is recalculated from the active ledger window; historical summary metrics are bounded to the latest entries on very large ledgers.
 
 ## Reversing A Ledger Entry
 
@@ -185,9 +183,9 @@ If a moderator can open the dashboard but cannot edit Admin settings, the Admin 
 
 ## Data Retention
 
-StrikeLedger stores ledger history, active-total caches, profile metric caches, dashboard records, and short-lived form/view tokens in Devvit Redis for the app installation.
+StrikeLedger stores ledger history, active-total caches, dashboard records, and short-lived form/view tokens in Devvit Redis for the app installation.
 
-The app runs a daily cleanup job. Cleanup deletes old reversed entries and old entries that have no active points; entries that still contribute active points are kept. The default cleanup retention window is 365 days, and Admin users can run the same cleanup from the dashboard.
+The app runs an hourly cleanup job. Cleanup deletes old reversed entries and old entries that have no active points; entries that still contribute active points are kept. The default cleanup retention window is 365 days, and Admin users can run the same cleanup from the dashboard.
 
 Uninstalling or reinstalling the app may remove or orphan stored data. Treat uninstall and reinstall actions as data-retention events.
 

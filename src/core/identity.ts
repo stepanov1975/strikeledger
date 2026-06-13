@@ -14,7 +14,7 @@ export const getUserKey = (identity: {
   }
 
   const username = normalizeUsername(identity.username);
-  if (!username || username === '[deleted]') {
+  if (!username || username === '[deleted]' || username === '[unknown]') {
     return null;
   }
 

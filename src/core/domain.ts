@@ -49,7 +49,6 @@ export type StrikeLedgerConfig = {
   actionPoints: ActionPointDefaults;
   decayAmount: number;
   decayIntervalDays: number;
-  postScoreWindowDays: number;
   defaultPublicCommentTemplate: string;
   defaultPrivateUserNoticeTemplate: string;
   defaultZeroPointPrivateUserNoticeTemplate: string;

@@ -84,13 +84,7 @@ Default decay subtracts `1` active point every `30` days from each non-reversed 
 
 ## Profile Metrics
 
-The Profile view shows ledger totals and subreddit-specific post activity for the selected user.
-
-`Avg post score, last 30 days` is calculated from retrievable Reddit posts by that user in the current subreddit. The timeframe is configurable in native app settings with `Post score window days`; the default is 30 days. If no matching retrievable posts are found, the metric shows `n/a`.
-
-Reddit exposes post score, not exact upvote count, so this metric uses average post score as the available approximation.
-
-StrikeLedger caches the post score summary for a short period to avoid repeated Reddit lookups. The cache is refreshed when Profile needs a fresh value. If Reddit cannot return the user's post history, the profile remains usable and shows `n/a` for the metric.
+The Profile view shows ledger totals for the selected user: active points, lifetime points, decayed points, reversed entries, and removals by rule.
 
 ## Templates
 

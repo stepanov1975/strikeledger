@@ -14,7 +14,7 @@ import {
 
 type ViewContext = {
   subredditName: string;
-  userKey: string;
+  userKey?: string;
   targetId?: string;
   targetKind?: 'post' | 'comment';
   authorName?: string;
@@ -56,9 +56,6 @@ type ProfileResponse = {
     lifetimeOriginalPoints: number;
     decayedPoints: number;
     reversedEntries: number;
-    averagePostScore: number | null;
-    postScorePostCount: number;
-    postScoreWindowDays: number;
     removalsByRule: Record<string, number>;
   };
   recentEntries: LedgerEntryRow[];
@@ -67,11 +64,6 @@ type ProfileResponse = {
 type ReverseResponse = {
   status: 'reversed' | 'already_reversed';
   activeTotal: number;
-};
-
-type RetrySideEffectsResponse = {
-  status: 'retried' | 'not_retryable';
-  activeTotal?: number;
 };
 
 type SettingsResponse = {
@@ -186,7 +178,9 @@ const formatDate = (value: number): string =>
   }).format(new Date(value));
 
 const formatTargetUser = (context: ViewContext): string =>
-  context.authorName ? `u/${context.authorName}` : context.userKey;
+  context.authorName
+    ? `u/${context.authorName}`
+    : context.userKey ?? `${context.targetKind ?? 'target'} ${context.targetId ?? ''}`.trim();
 
 const appendContextTokenParam = (params: URLSearchParams): boolean => {
   if (activeContextToken) {
@@ -296,14 +290,6 @@ const renderMetrics = (
   return metrics;
 };
 
-const formatAverageScore = (score: number | null): string => {
-  if (score === null) {
-    return 'n/a';
-  }
-
-  return Number.isInteger(score) ? String(score) : score.toFixed(1);
-};
-
 const sideEffectSummary = (sideEffects: SideEffects): string => {
   const notable: string[] = [];
 
@@ -341,7 +327,6 @@ const formatReversalSummary = (entry: LedgerEntryRow): string | null => {
 
 type EntryTableOptions = {
   onReverse?: (entry: LedgerEntryRow) => void;
-  onRetry?: (entry: LedgerEntryRow) => void;
 };
 
 const renderEntryTable = (
@@ -362,7 +347,7 @@ const renderEntryTable = (
     'Moderator',
     'Side effects',
   ];
-  if (options.onReverse || options.onRetry) {
+  if (options.onReverse) {
     headers.push('Actions');
   }
   for (const label of headers) {
@@ -403,7 +388,7 @@ const renderEntryTable = (
       create('td', undefined, sideEffectSummary(entry.sideEffects))
     );
 
-    if (options.onReverse || options.onRetry) {
+    if (options.onReverse) {
       const actionCell = create('td');
       const actions = create('div', 'table-actions');
       if (options.onReverse && entry.status !== 'reversed') {
@@ -413,17 +398,6 @@ const renderEntryTable = (
           options.onReverse?.(entry);
         });
         actions.append(reverseButton);
-      }
-      if (
-        options.onRetry &&
-        (entry.status === 'partial' || entry.status === 'pending')
-      ) {
-        const retryButton = create('button', 'secondary-button', 'Retry');
-        retryButton.type = 'button';
-        retryButton.addEventListener('click', () => {
-          options.onRetry?.(entry);
-        });
-        actions.append(retryButton);
       }
       actionCell.append(actions);
       row.append(actionCell);
@@ -457,7 +431,6 @@ const renderHistory = () => {
     children.push(
       renderEntryTable(historyEntries, {
         onReverse: reverseEntry,
-        onRetry: retryEntry,
       })
     );
   }
@@ -638,32 +611,6 @@ const reverseEntry = async (entry: LedgerEntryRow) => {
   }
 };
 
-const retryEntry = async (entry: LedgerEntryRow) => {
-  try {
-    const response = await fetch('/api/retry-side-effects', {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ entryId: entry.entryId }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Retry failed with ${response.status}.`);
-    }
-
-    const result = (await response.json()) as RetrySideEffectsResponse;
-    historyNotice =
-      result.status === 'not_retryable'
-        ? 'Entry does not need side-effect retry.'
-        : `Side effects retried. Active total: ${result.activeTotal}.`;
-    await loadHistory(0);
-  } catch (error) {
-    showError(error instanceof Error ? error.message : 'Retry failed.');
-  }
-};
-
 const renderProfile = (response: ProfileResponse) => {
   if (!main) {
     return;
@@ -680,10 +627,6 @@ const renderProfile = (response: ProfileResponse) => {
       ['Lifetime points', response.summary.lifetimeOriginalPoints],
       ['Decayed points', response.summary.decayedPoints],
       ['Reversed entries', response.summary.reversedEntries],
-      [
-        `Avg post score, last ${response.summary.postScoreWindowDays} days`,
-        formatAverageScore(response.summary.averagePostScore),
-      ],
     ]),
     create('p', 'subtitle', removals || 'No removals recorded.'),
     response.recentEntries.length > 0
@@ -1410,7 +1353,6 @@ const renderSettings = (response: SettingsResponse) => {
         'Decay',
         `${response.config.decayAmount}/${response.config.decayIntervalDays}d`,
       ],
-      ['Post score window', `${response.config.postScoreWindowDays}d`],
       ['User notices', response.config.userNoticesEnabled ? 'On' : 'Off'],
       ['Mod notes', response.config.nativeModNotesEnabled ? 'On' : 'Off'],
     ]),

@@ -539,6 +539,29 @@ describe('api routes', () => {
     });
   });
 
+  it('reads target-only history from a server-side view context token', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await seedViewContext(redis, {
+      userKey: undefined,
+      authorId: undefined,
+      authorName: undefined,
+    });
+    await seedLedger(redis);
+
+    const response = await api.request('/history?contextToken=token-1');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      context: {
+        targetId: 't3_target',
+        targetKind: 'post',
+      },
+      activeTotal: 0,
+      entries: [{ entryId: 'entry-1' }],
+    });
+  });
+
   it('rejects raw history lookups for read-only moderators', async () => {
     const { api, redis } = await loadApi(['posts']);
     await seedLedger(
@@ -648,15 +671,14 @@ describe('api routes', () => {
     ]);
   });
 
-  it('calculates average post score for current subreddit posts in the profile window', async () => {
-    const daysAgo = (days: number): Date =>
-      new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  it('does not fetch live Reddit post scores for profile lookups', async () => {
     const { api, reddit, redis } = await loadApi(['posts'], {
       postsByUser: [
-        { subredditName: 'testsub', createdAt: daysAgo(10), score: 10 },
-        { subredditName: 'othersub', createdAt: daysAgo(12), score: 999 },
-        { subredditName: 'TESTSUB', createdAt: daysAgo(29), score: 20 },
-        { subredditName: 'testsub', createdAt: daysAgo(31), score: 100 },
+        {
+          subredditName: 'testsub',
+          createdAt: new Date(),
+          score: 10,
+        },
       ],
     });
     await seedViewContext(redis);
@@ -665,52 +687,10 @@ describe('api routes', () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(reddit.getPostsByUser).toHaveBeenCalledWith({
-      username: 'target-user',
-      sort: 'new',
-      limit: 1000,
-      pageSize: 100,
-    });
-    expect(body.summary).toMatchObject({
-      averagePostScore: 15,
-      postScorePostCount: 2,
-      postScoreWindowDays: 30,
-    });
-  });
-
-  it('uses the cached post score summary for profile lookups', async () => {
-    const nowMs = Date.now();
-    const { api, reddit, redis } = await loadApi(['posts']);
-    await seedViewContext(redis, {
-      userKey: 'name:target-user',
-      authorName: 'target-user',
-    });
-    await redis.set(
-      'user:name:target-user:post_score_summary',
-      JSON.stringify({
-        schemaVersion: 1,
-        subredditName: 'testsub',
-        username: 'target-user',
-        calculatedAtMs: nowMs,
-        expiresAtMs: nowMs + 60 * 60 * 1000,
-        summary: {
-          averagePostScore: 42,
-          postScorePostCount: 3,
-          postScoreWindowDays: 30,
-        },
-      })
-    );
-
-    const response = await api.request('/profile?contextToken=token-1');
-    const body = await response.json();
-
-    expect(response.status).toBe(200);
     expect(reddit.getPostsByUser).not.toHaveBeenCalled();
-    expect(body.summary).toMatchObject({
-      averagePostScore: 42,
-      postScorePostCount: 3,
-      postScoreWindowDays: 30,
-    });
+    expect(body.summary).not.toHaveProperty('averagePostScore');
+    expect(body.summary).not.toHaveProperty('postScorePostCount');
+    expect(body.summary).not.toHaveProperty('postScoreWindowDays');
   });
 
   it('reads profile by user key for moderator dashboard lookup', async () => {
@@ -891,7 +871,7 @@ describe('api routes', () => {
     expect(redis.values.get('user:name:someuser:active_total')).toBe('3');
   });
 
-  it('retries failed side effects without duplicating successful ones', async () => {
+  it('does not expose a client-initiated side-effect retry API', async () => {
     const addComment = vi.fn(async () => ({
       id: 't1_warning_2',
       distinguish: vi.fn(async () => undefined),
@@ -932,19 +912,9 @@ describe('api routes', () => {
       body: JSON.stringify({ entryId: 'entry-1' }),
       headers: { 'Content-Type': 'application/json' },
     });
-    const body = await response.json();
-
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(404);
     expect(addComment).not.toHaveBeenCalled();
-    expect(remove).toHaveBeenCalledTimes(1);
-    expect(body.entry).toMatchObject({
-      status: 'succeeded',
-      publicCommentId: 't1_warning',
-      sideEffects: {
-        publicComment: 'succeeded',
-        remove: 'succeeded',
-      },
-    });
+    expect(remove).not.toHaveBeenCalled();
   });
 
   it('requires posts or all permission for reversal', async () => {

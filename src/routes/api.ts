@@ -12,13 +12,8 @@ import { getUserKey } from '../core/identity';
 import { runLedgerCleanup } from '../core/ledgerCleanup';
 import { LedgerRepository } from '../core/ledgerRepository';
 import { logInfo, logWarn, type LogDetails } from '../core/logging';
-import { getCachedOrLivePostScoreSummary } from '../core/postScore';
 import { calculateActivePoints } from '../core/scoring';
-import {
-  executeReversalSideEffects,
-  executeSideEffects,
-  type SideEffectTarget,
-} from '../core/sideEffects';
+import { executeReversalSideEffects } from '../core/sideEffects';
 import { getModeratorAccess, type ModeratorAccess } from './permissions';
 
 export const api = new Hono();
@@ -42,7 +37,7 @@ type ApiAccess = {
 
 type UserViewContext = {
   subredditName: string;
-  userKey: string;
+  userKey?: string;
   targetId?: string;
   targetKind?: ViewContextRecord['targetKind'];
   authorName?: string;
@@ -143,17 +138,6 @@ const serializeRedditRuleImport = (
   enabled: true,
 });
 
-const resolveProfileUsername = (
-  context: UserViewContext,
-  entries: LedgerEntry[]
-): string | null => {
-  const username =
-    context.authorName ??
-    entries.find((entry) => entry.username.trim())?.username;
-
-  return username ? trimUsernamePrefix(username) : null;
-};
-
 const getUserLookupContext = (
   subredditName: string,
   rawUserKey: string | null,
@@ -176,6 +160,10 @@ const getUserLookupContext = (
 };
 
 const getContextUserKeys = (context: UserViewContext): string[] => {
+  if (!context.userKey) {
+    return [];
+  }
+
   const userKeys = [context.userKey];
   if (context.userKey.startsWith('id:') && context.authorName) {
     const fallbackUserKey = getUserKey({ username: context.authorName });
@@ -185,31 +173,6 @@ const getContextUserKeys = (context: UserViewContext): string[] => {
   }
 
   return userKeys;
-};
-
-const getEntryUserKeys = (entry: LedgerEntry): string[] =>
-  getContextUserKeys({
-    subredditName: entry.subredditName,
-    userKey: entry.userKey,
-    ...(entry.username !== '[unknown]' ? { authorName: entry.username } : {}),
-  });
-
-const fetchSideEffectTarget = async (
-  entry: LedgerEntry
-): Promise<SideEffectTarget> =>
-  entry.targetKind === 'post'
-    ? ((await reddit.getPostById(entry.targetId as never)) as SideEffectTarget)
-    : ((await reddit.getCommentById(
-        entry.targetId as never
-      )) as SideEffectTarget);
-
-const targetMatchesEntry = (target: SideEffectTarget, entry: LedgerEntry): boolean => {
-  const targetRecord = target as { id?: string; subredditName?: string };
-  return (
-    targetRecord.id === entry.targetId &&
-    targetRecord.subredditName?.toLowerCase() ===
-      entry.subredditName.toLowerCase()
-  );
 };
 
 const getAuthorizedViewContext = async (
@@ -377,19 +340,32 @@ api.get('/history', async (c) => {
   const nowMs = Date.now();
   const offset = parseOffset(c.req.query('offset'));
   const userKeys = getContextUserKeys(context);
-  const entries = await ledgerRepository.getUserLedgerPageForKeys(
-    userKeys,
-    offset,
-    HISTORY_PAGE_SIZE,
-    apiAccess.subredditName
-  );
-  const activeTotal = await ledgerRepository.recalculateActiveTotalForKeys(
-    userKeys,
-    context.userKey,
-    config,
-    nowMs,
-    apiAccess.subredditName
-  );
+  const entries =
+    userKeys.length > 0
+      ? await ledgerRepository.getUserLedgerPageForKeys(
+          userKeys,
+          offset,
+          HISTORY_PAGE_SIZE,
+          apiAccess.subredditName
+        )
+      : context.targetId
+        ? await ledgerRepository.getTargetLedgerPage(
+            context.targetId,
+            offset,
+            HISTORY_PAGE_SIZE,
+            apiAccess.subredditName
+          )
+        : [];
+  const activeTotal =
+    userKeys.length > 0 && context.userKey
+      ? await ledgerRepository.recalculateActiveTotalForKeys(
+          userKeys,
+          context.userKey,
+          config,
+          nowMs,
+          apiAccess.subredditName
+        )
+      : 0;
   logInfo('api.history.ok', {
     subredditName: apiAccess.subredditName,
     moderatorUsername: apiAccess.access.username,
@@ -419,7 +395,7 @@ api.get('/profile', async (c) => {
     return c.json({ error: 'moderator_required' }, 403);
   }
 
-  const { store, configRepository, dashboardRepository, ledgerRepository } =
+  const { configRepository, dashboardRepository, ledgerRepository } =
     getRepositories();
   const config = await configRepository.getConfig();
   const contextResult = await getAuthorizedUserViewContext(
@@ -439,7 +415,7 @@ api.get('/profile', async (c) => {
   }
 
   const context = contextResult.context;
-  if (!context) {
+  if (!context?.userKey) {
     logWarn('api.profile.invalid_context', {
       subredditName: apiAccess.subredditName,
       moderatorUsername: apiAccess.access.username,
@@ -464,21 +440,6 @@ api.get('/profile', async (c) => {
     nowMs,
     apiAccess.subredditName
   );
-  const postScoreSummary = await getCachedOrLivePostScoreSummary({
-    store,
-    client: reddit,
-    userKey: context.userKey,
-    username: resolveProfileUsername(context, entries),
-    subredditName: apiAccess.subredditName,
-    windowDays: config.postScoreWindowDays,
-    nowMs,
-    onLookupFailure: (error) =>
-      logWarn('api.profile.post_score_lookup_failed', {
-        subredditName: apiAccess.subredditName,
-        userKey: context.userKey,
-        message: error instanceof Error ? error.message : String(error),
-      }),
-  });
   const activeOriginalPoints = entries
     .filter((entry) => entry.status !== 'reversed')
     .reduce((total, entry) => total + entry.originalPoints, 0);
@@ -501,8 +462,6 @@ api.get('/profile', async (c) => {
     targetKind: context.targetKind,
     entryCount: entries.length,
     activeTotal,
-    postScorePostCount: postScoreSummary.postScorePostCount,
-    postScoreWindowDays: postScoreSummary.postScoreWindowDays,
     reversedEntries: entries.filter((entry) => entry.status === 'reversed')
       .length,
   });
@@ -518,7 +477,6 @@ api.get('/profile', async (c) => {
       reversedEntries: entries.filter((entry) => entry.status === 'reversed')
         .length,
       removalsByRule,
-      ...postScoreSummary,
     },
     recentEntries: entries
       .slice(0, HISTORY_PAGE_SIZE)
@@ -794,105 +752,6 @@ api.post('/cleanup-ledger', async (c) => {
   });
 
   return c.json(result);
-});
-
-api.post('/retry-side-effects', async (c) => {
-  const apiAccess = await getApiAccess('retry-side-effects');
-  if (!apiAccess) {
-    return c.json({ error: 'moderator_required' }, 403);
-  }
-
-  if (!apiAccess.access.canEnforce) {
-    logWarn('api.retry_side_effects.denied', {
-      subredditName: apiAccess.subredditName,
-      moderatorUsername: apiAccess.access.username,
-    });
-    return c.json({ error: 'posts_permission_required' }, 403);
-  }
-
-  let payload: Record<string, unknown>;
-  try {
-    payload = await c.req.json<Record<string, unknown>>();
-  } catch {
-    logWarn('api.retry_side_effects.invalid_json', {
-      subredditName: apiAccess.subredditName,
-      moderatorUsername: apiAccess.access.username,
-    });
-    return c.json({ error: 'invalid_json' }, 400);
-  }
-
-  const entryId = trimString(payload.entryId);
-  if (!entryId) {
-    return c.json({ error: 'missing_entry_id' }, 400);
-  }
-
-  const { configRepository, ledgerRepository } = getRepositories();
-  const entry = await ledgerRepository.getLedgerEntry(entryId);
-  if (
-    !entry ||
-    entry.subredditName.toLowerCase() !== apiAccess.subredditName.toLowerCase()
-  ) {
-    logWarn('api.retry_side_effects.not_found', {
-      subredditName: apiAccess.subredditName,
-      moderatorUsername: apiAccess.access.username,
-      entryId,
-    });
-    return c.json({ error: 'not_found' }, 404);
-  }
-
-  if (entry.status === 'reversed' || entry.status === 'succeeded') {
-    return c.json({
-      status: 'not_retryable',
-      entry: serializeEntry(entry, Date.now(), await configRepository.getConfig()),
-    });
-  }
-
-  const target = await fetchSideEffectTarget(entry);
-  if (!targetMatchesEntry(target, entry)) {
-    logWarn('api.retry_side_effects.target_mismatch', {
-      subredditName: apiAccess.subredditName,
-      moderatorUsername: apiAccess.access.username,
-      entryId,
-      targetId: entry.targetId,
-    });
-    return c.json({ error: 'target_mismatch' }, 409);
-  }
-
-  const config = await configRepository.getConfig();
-  const nowMs = Date.now();
-  const userKeys = getEntryUserKeys(entry);
-  const activeTotal = await ledgerRepository.recalculateActiveTotalForKeys(
-    userKeys,
-    entry.userKey,
-    config,
-    nowMs,
-    apiAccess.subredditName
-  );
-  const updatedEntry = await executeSideEffects({
-    entry,
-    activeTotal,
-    target,
-    reddit,
-    config,
-    persistEntry: async (checkpointEntry) => {
-      await ledgerRepository.updateLedgerEntrySideEffects(checkpointEntry);
-    },
-  });
-  await ledgerRepository.updateLedgerEntrySideEffects(updatedEntry);
-  logInfo('api.retry_side_effects.ok', {
-    subredditName: apiAccess.subredditName,
-    moderatorUsername: apiAccess.access.username,
-    entryId,
-    status: updatedEntry.status,
-    activeTotal,
-  });
-
-  return c.json({
-    status: 'retried',
-    activeTotal,
-    entry: serializeEntry(updatedEntry, nowMs, config),
-    sideEffects: updatedEntry.sideEffects,
-  });
 });
 
 api.post('/reverse', async (c) => {

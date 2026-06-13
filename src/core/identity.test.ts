@@ -20,8 +20,9 @@ describe('identity helpers', () => {
     expect(getUserKey({ username: 'u/SomeUser' })).toBe('name:someuser');
   });
 
-  it('blocks deleted or missing usernames without a user ID', () => {
+  it('blocks deleted, unknown, or missing usernames without a user ID', () => {
     expect(getUserKey({ username: '[deleted]' })).toBeNull();
+    expect(getUserKey({ username: '[unknown]' })).toBeNull();
     expect(getUserKey({})).toBeNull();
   });
 

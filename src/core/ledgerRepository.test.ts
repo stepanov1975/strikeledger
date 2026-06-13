@@ -784,6 +784,42 @@ describe('LedgerRepository', () => {
     expect(await repo.getLedgerEntry('old-inactive')).toBeNull();
   });
 
+  it('keeps the cleanup cursor on the same rank after deleting scanned entries', async () => {
+    const { repo, store } = createRepo();
+    const old = nowMs - 400 * MS_PER_DAY;
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'old-inactive-1',
+        targetId: 't3_old_inactive_1',
+        createdAtMs: old,
+      })
+    );
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'old-inactive-2',
+        targetId: 't3_old_inactive_2',
+        createdAtMs: old + 1,
+      })
+    );
+
+    const result = await repo.cleanupLedger({
+      config: DEFAULT_CONFIG,
+      maxEntries: 2,
+      nowMs,
+      retentionDays: 365,
+      subredditName: 'testsub',
+    });
+
+    expect(result).toEqual({ scanned: 2, deleted: 2 });
+    await expect(store.get('ledger:testsub:cleanup_cursor')).resolves.toBe('0');
+    expect(store.transactionWatchKeys).toContainEqual([
+      'ledger_entry:old-inactive-1',
+      'duplicate:t3_old_inactive_1:warn:rule-general',
+    ]);
+  });
+
   it('reads and recalculates across primary and fallback user keys', async () => {
     const { repo, store } = createRepo();
     await seedEntry(

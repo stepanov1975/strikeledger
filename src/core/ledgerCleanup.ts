@@ -2,7 +2,7 @@ import type { ConfigRepository } from './configRepository';
 import type { LedgerRepository } from './ledgerRepository';
 
 export const DEFAULT_LEDGER_CLEANUP_RETENTION_DAYS = 365;
-export const DEFAULT_LEDGER_CLEANUP_BATCH_SIZE = 100;
+export const DEFAULT_LEDGER_CLEANUP_BATCH_SIZE = 500;
 export const MAX_LEDGER_CLEANUP_BATCH_SIZE = 500;
 
 export type LedgerCleanupOptions = {

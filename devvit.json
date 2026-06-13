@@ -132,13 +132,6 @@
         "defaultValue": 30,
         "validationEndpoint": "/internal/settings/validate-days"
       },
-      "postScoreWindowDays": {
-        "type": "number",
-        "label": "Post score window days",
-        "helpText": "Recent post window used by the profile summary.",
-        "defaultValue": 30,
-        "validationEndpoint": "/internal/settings/validate-days"
-      },
       "defaultPublicCommentTemplate": {
         "type": "paragraph",
         "label": "Default public comment template",
@@ -230,7 +223,7 @@
     "tasks": {
       "ledgerCleanup": {
         "endpoint": "/internal/scheduler/ledger-cleanup",
-        "cron": "17 3 * * *"
+        "cron": "17 * * * *"
       }
     }
   },

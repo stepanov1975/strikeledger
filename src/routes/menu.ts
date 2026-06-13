@@ -346,10 +346,11 @@ const openEnforcementForm = async (
 const buildViewContext = (
   target: Post | Comment,
   targetKind: TargetKind,
-  nowMs: number
+  nowMs: number,
+  allowTargetOnly: boolean
 ) => {
   const author = snapshotAuthor(target.authorId, target.authorName);
-  if (!author) {
+  if (!author && !allowTargetOnly) {
     return null;
   }
 
@@ -358,7 +359,7 @@ const buildViewContext = (
     targetId: target.id,
     targetKind,
     subredditName: target.subredditName,
-    ...author,
+    ...(author ?? {}),
     ...createExpiringTimes(nowMs),
   };
 };
@@ -396,7 +397,12 @@ const openTargetDashboardView = async (
     return resolution.response;
   }
 
-  const viewContext = buildViewContext(target, targetKind, nowMs);
+  const viewContext = buildViewContext(
+    target,
+    targetKind,
+    nowMs,
+    view === 'history'
+  );
   if (!viewContext) {
     logWarn('menu.dashboard.no_author', {
       view,
@@ -405,7 +411,7 @@ const openTargetDashboardView = async (
       subredditName: target.subredditName,
       moderatorUsername: access.username,
     });
-    return { showToast: 'StrikeLedger cannot open a view without an author.' };
+    return { showToast: 'StrikeLedger cannot open a profile without an author.' };
   }
 
   await getDashboardRepository().saveViewContext(viewContext);

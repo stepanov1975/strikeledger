@@ -310,6 +310,37 @@ export class LedgerRepository {
     return entries.filter((entry): entry is LedgerEntry => entry !== null);
   }
 
+  async getTargetLedgerPage(
+    targetId: string,
+    offset: number,
+    limit: number,
+    subredditName?: string
+  ): Promise<LedgerEntry[]> {
+    if (limit === 0) {
+      return [];
+    }
+
+    const stop = limit < 0 ? -1 : offset + limit - 1;
+    const entryIds = await this.store.zRange(
+      targetEntriesKey(targetId),
+      offset,
+      stop,
+      { reverse: true }
+    );
+    const entries = await Promise.all(
+      entryIds.map((entryId) => this.getLedgerEntry(entryId))
+    );
+    const existingEntries = entries.filter(
+      (entry): entry is LedgerEntry => entry !== null
+    );
+
+    return subredditName === undefined
+      ? existingEntries
+      : existingEntries.filter((entry) =>
+          isEntryForSubreddit(entry, subredditName)
+        );
+  }
+
   async getUserLedgerPageForKeys(
     userKeys: string[],
     offset: number,
@@ -530,12 +561,14 @@ export class LedgerRepository {
 
     let scanned = 0;
     let deleted = 0;
+    let removedFromPage = 0;
 
     for (const entryId of entryIds) {
       scanned += 1;
       const entry = await this.getLedgerEntry(entryId);
       if (!entry) {
         await this.store.zRem(ledgerIndexKey, [entryId]);
+        removedFromPage += 1;
         continue;
       }
 
@@ -557,9 +590,13 @@ export class LedgerRepository {
 
       await this.deleteLedgerEntry(entry);
       deleted += 1;
+      removedFromPage += 1;
     }
 
-    const nextCursor = entryIds.length < maxEntries ? 0 : cursor + scanned;
+    const nextCursor =
+      entryIds.length < maxEntries
+        ? 0
+        : Math.max(0, cursor + scanned - removedFromPage);
     await this.store.set(cursorKey, String(nextCursor));
 
     return { scanned, deleted };
@@ -839,15 +876,29 @@ export class LedgerRepository {
       action: entry.action,
       ruleId: entry.ruleId,
     });
-    const claimedEntryId = await this.store.get(duplicateClaimKey);
+    const entryKey = ledgerEntryKey(entry.entryId);
 
-    await this.store.del(ledgerEntryKey(entry.entryId));
-    await this.store.zRem(userLedgerKey(entry.userKey), [entry.entryId]);
-    await this.store.zRem(targetEntriesKey(entry.targetId), [entry.entryId]);
-    await this.store.zRem(ledgerEntriesKey(entry.subredditName), [entry.entryId]);
+    await this.store.runTransaction([entryKey, duplicateClaimKey], async () => {
+      const currentEntry = parseLedgerEntry(await this.store.get(entryKey));
+      if (!currentEntry) {
+        return;
+      }
 
-    if (claimedEntryId === entry.entryId) {
-      await this.store.del(duplicateClaimKey);
-    }
+      const claimedEntryId = await this.store.get(duplicateClaimKey);
+      await this.store.del(entryKey);
+      await this.store.zRem(userLedgerKey(currentEntry.userKey), [
+        currentEntry.entryId,
+      ]);
+      await this.store.zRem(targetEntriesKey(currentEntry.targetId), [
+        currentEntry.entryId,
+      ]);
+      await this.store.zRem(ledgerEntriesKey(currentEntry.subredditName), [
+        currentEntry.entryId,
+      ]);
+
+      if (claimedEntryId === currentEntry.entryId) {
+        await this.store.del(duplicateClaimKey);
+      }
+    });
   }
 }

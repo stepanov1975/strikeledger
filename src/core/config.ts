@@ -48,7 +48,6 @@ export const DEFAULT_CONFIG: StrikeLedgerConfig = {
   },
   decayAmount: 1,
   decayIntervalDays: 30,
-  postScoreWindowDays: 30,
   defaultPublicCommentTemplate: DEFAULT_PUBLIC_COMMENT_TEMPLATE,
   defaultPrivateUserNoticeTemplate: DEFAULT_PRIVATE_USER_NOTICE_TEMPLATE,
   defaultZeroPointPrivateUserNoticeTemplate:
@@ -311,16 +310,6 @@ export const validateConfig = (
     issues.push({
       path: 'decayIntervalDays',
       message: 'Decay interval must be an integer from 1 to 3650 days.',
-    });
-  }
-
-  if (
-    typeof config.postScoreWindowDays !== 'number' ||
-    !isIntegerInRange(config.postScoreWindowDays, 1, 3650)
-  ) {
-    issues.push({
-      path: 'postScoreWindowDays',
-      message: 'Post score window must be an integer from 1 to 3650 days.',
     });
   }
 

@@ -32,7 +32,6 @@ export const NATIVE_SETTINGS_KEYS = {
   warnNsfwPoints: 'warnNsfwPoints',
   decayAmount: 'decayAmount',
   decayIntervalDays: 'decayIntervalDays',
-  postScoreWindowDays: 'postScoreWindowDays',
   defaultPublicCommentTemplate: 'defaultPublicCommentTemplate',
   defaultPrivateUserNoticeTemplate: 'defaultPrivateUserNoticeTemplate',
   defaultZeroPointPrivateUserNoticeTemplate:
@@ -135,13 +134,6 @@ export const applyNativeSettings = (
     values,
     NATIVE_SETTINGS_KEYS.decayIntervalDays,
     DEFAULT_CONFIG.decayIntervalDays,
-    1,
-    3650
-  ),
-  postScoreWindowDays: integerSetting(
-    values,
-    NATIVE_SETTINGS_KEYS.postScoreWindowDays,
-    DEFAULT_CONFIG.postScoreWindowDays,
     1,
     3650
   ),

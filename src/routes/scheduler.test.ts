@@ -90,6 +90,32 @@ class SchedulerRedisMock {
 
     return members.slice(start, normalizedStop + 1);
   }
+
+  async watch() {
+    let commandCount = 0;
+    return {
+      multi: vi.fn(async () => undefined),
+      set: vi.fn(async (key: string, value: string) => {
+        commandCount += 1;
+        return this.set(key, value);
+      }),
+      del: vi.fn(async (...keys: string[]) => {
+        commandCount += 1;
+        return this.del(...keys);
+      }),
+      zAdd: vi.fn(async (key: string, member: RedisZMember) => {
+        commandCount += 1;
+        return this.zAdd(key, member);
+      }),
+      zRem: vi.fn(async (key: string, members: string[]) => {
+        commandCount += 1;
+        return this.zRem(key, members);
+      }),
+      exec: vi.fn(async () => Array.from({ length: commandCount }, () => 'OK')),
+      discard: vi.fn(async () => undefined),
+      unwatch: vi.fn(async () => undefined),
+    };
+  }
 }
 
 const buildEntry = (createdAtMs: number): LedgerEntry => ({
@@ -161,7 +187,7 @@ describe('scheduler routes', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: 'ledgerCleanup',
-        data: { retentionDays: 365, maxEntries: 10 },
+        data: { retentionDays: 999999, maxEntries: 1 },
       }),
     });
 
@@ -180,7 +206,7 @@ describe('scheduler routes', () => {
 
     expect(config.scheduler?.tasks?.ledgerCleanup).toEqual({
       endpoint: '/internal/scheduler/ledger-cleanup',
-      cron: '17 3 * * *',
+      cron: '17 * * * *',
     });
   });
 });

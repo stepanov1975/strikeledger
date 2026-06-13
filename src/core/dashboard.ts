@@ -17,7 +17,7 @@ export type ViewContextRecord = {
   targetId: string;
   targetKind: TargetKind;
   subredditName: string;
-  userKey: string;
+  userKey?: string;
   createdAtMs: number;
   expiresAtMs: number;
   authorId?: string;

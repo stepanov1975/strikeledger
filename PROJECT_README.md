@@ -13,7 +13,7 @@ Moderators can access these actions from Reddit menus:
 - `StrikeLedger: Warn and mark NSFW` for posts only
 - `StrikeLedger: History`
 - `StrikeLedger: Profile`
-- `StrikeLedger: Settings` from the subreddit menu
+- `StrikeLedger: Admin` from the subreddit menu
 
 Each enforcement action records a ledger entry, applies configured points, leaves a public explanation comment, sends a private user notice with points and active total when enabled, and writes a neutral native mod note when enabled. Public comments never expose point totals or strike totals.
 

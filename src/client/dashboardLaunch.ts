@@ -16,6 +16,9 @@ export type DashboardLaunch = {
 const isDashboardView = (value: string | null): value is DashboardView =>
   value === 'history' || value === 'profile' || value === 'settings';
 
+export const shouldKeepDashboardContext = (view: DashboardView): boolean =>
+  view === 'history' || view === 'profile';
+
 const trimParam = (value: string | null): string | null => {
   if (value === null) {
     return null;

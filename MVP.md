@@ -457,6 +457,7 @@ Default first-install rule set:
 - Point values: integers from 0 to 100.
 - Decay amount: integer from 1 to 100.
 - Decay interval: integer from 1 to 3650 days.
+- The combined decay settings must let a 100-point entry fully decay within 3650 days.
 - At least one enabled rule is required.
 - Public templates and public comment overrides reject private-only placeholders such as `{pointsAdded}` and `{activeTotal}`.
 - Imported rules JSON must validate fully, use a supported `schemaVersion`, follow the same revision conflict behavior as manual rule edits, and preserve audit history.

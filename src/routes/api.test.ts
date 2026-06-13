@@ -610,7 +610,7 @@ describe('api routes', () => {
     expect(body).toMatchObject({
       summary: {
         activeTotal: 3,
-        lifetimeOriginalPoints: 3,
+        originalPoints: 3,
         reversedEntries: 0,
         removalsByRule: {
           'Community rule violation': 1,
@@ -642,7 +642,7 @@ describe('api routes', () => {
     expect(body).toMatchObject({
       summary: {
         activeTotal: 3,
-        lifetimeOriginalPoints: 3,
+        originalPoints: 3,
       },
       recentEntries: [
         {
@@ -679,7 +679,7 @@ describe('api routes', () => {
     expect(response.status).toBe(200);
     expect(body.summary).toMatchObject({
       activeTotal: 3,
-      lifetimeOriginalPoints: 3,
+      originalPoints: 3,
       removalsByRule: {
         'Community rule violation': 1,
       },
@@ -722,6 +722,35 @@ describe('api routes', () => {
     expect(redis.zRangeCalls.some((call) => call.stop === -1)).toBe(false);
   });
 
+  it('reports profile summary scope without claiming bounded reads are lifetime totals', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await seedViewContext(redis);
+    const baseMs = Date.UTC(2026, 0, 1);
+    for (let index = 0; index < 501; index += 1) {
+      await seedLedger(
+        redis,
+        buildEntry({
+          entryId: `entry-${index}`,
+          targetId: `t3_target_${index}`,
+          createdAtMs: baseMs + index,
+          originalPoints: 1,
+        })
+      );
+    }
+
+    const response = await api.request('/profile?contextToken=token-1');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.summary).toMatchObject({
+      activeTotal: 0,
+      originalPoints: 500,
+      hasMoreEntries: true,
+      summaryEntryLimit: 500,
+    });
+    expect(body.summary).not.toHaveProperty('lifetimeOriginalPoints');
+  });
+
   it('reads profile by user key for moderator dashboard lookup', async () => {
     const { api, redis } = await loadApi(['all']);
     const entry = buildEntry({
@@ -741,7 +770,7 @@ describe('api routes', () => {
       },
       summary: {
         activeTotal: 3,
-        lifetimeOriginalPoints: 3,
+        originalPoints: 3,
       },
     });
   });

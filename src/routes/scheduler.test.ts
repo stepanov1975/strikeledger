@@ -208,6 +208,21 @@ describe('scheduler routes', () => {
     expect(redis.values.has('ledger_entry:old-inactive')).toBe(false);
   });
 
+  it('rejects scheduler requests for the wrong task name', async () => {
+    const { reddit, redis, schedulerRoutes } = await loadScheduler();
+    await redis.set('ledger_entry:old-inactive', JSON.stringify(buildEntry(0)));
+
+    const response = await schedulerRoutes.request('/ledger-cleanup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'otherTask' }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(reddit.getCurrentSubreddit).not.toHaveBeenCalled();
+    expect(redis.values.has('ledger_entry:old-inactive')).toBe(true);
+  });
+
   it('registers the scheduled cleanup task in Devvit config', () => {
     const config = JSON.parse(readFileSync('devvit.json', 'utf8')) as {
       scheduler?: {

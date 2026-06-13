@@ -62,7 +62,7 @@ Import modes:
 | Mode                  | Use when                                                                                                               |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | Add missing rules     | You want to keep existing StrikeLedger rules and add subreddit rules that are not already present.                     |
-| Replace active rules  | You want the active StrikeLedger rule list to match the imported subreddit rules without deleting old rule IDs.        |
+| Replace active rules  | You want the active StrikeLedger rule list to match the imported subreddit rules.                                      |
 | Sync labels and order | You want matching existing rules to use the imported labels and order while preserving their existing custom settings. |
 
 After applying an import preview, click `Save admin changes` to make the changes active.

@@ -71,28 +71,6 @@ const changedTopLevelFields = (
     .sort((left, right) => left.localeCompare(right));
 };
 
-const validateExistingRuleIds = (
-  currentConfig: StrikeLedgerConfig,
-  nextConfig: StrikeLedgerConfig
-): ConfigValidationIssue[] => {
-  if (!Array.isArray(nextConfig.rules)) {
-    return [];
-  }
-
-  const nextRuleIds = new Set(
-    nextConfig.rules
-      .map((rule) => rule?.id)
-      .filter((id): id is string => typeof id === 'string')
-  );
-
-  return currentConfig.rules
-    .filter((rule) => !nextRuleIds.has(rule.id))
-    .map((rule) => ({
-      path: 'rules',
-      message: `Existing rule ID "${rule.id}" cannot be removed or changed; disable it instead.`,
-    }));
-};
-
 export class ConfigRepository {
   constructor(
     private readonly store: RedisStore,
@@ -157,10 +135,7 @@ export class ConfigRepository {
           nextConfig,
           nativeSettings
         );
-        const issues = [
-          ...validateConfig(effectiveNextConfig),
-          ...validateExistingRuleIds(currentConfig, nextConfig),
-        ];
+        const issues = validateConfig(effectiveNextConfig);
         if (issues.length > 0) {
           return { status: 'invalid', issues };
         }

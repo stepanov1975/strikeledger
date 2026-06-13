@@ -80,6 +80,18 @@ describe('config validation', () => {
     );
   });
 
+  it('rejects decay settings that keep maximum-point entries active too long', () => {
+    const config = cloneConfig();
+    config.decayAmount = 1;
+    config.decayIntervalDays = 37;
+
+    expect(validateConfig(config)).toContainEqual({
+      path: 'decayIntervalDays',
+      message:
+        'Decay settings must let maximum-point entries fully decay within 3650 days.',
+    });
+  });
+
   it('reports malformed imported config objects instead of throwing', () => {
     expect(validateConfig({})).toEqual(
       expect.arrayContaining([

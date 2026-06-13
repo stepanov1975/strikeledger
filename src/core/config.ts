@@ -70,6 +70,14 @@ export const DEFAULT_CONFIG: StrikeLedgerConfig = {
 const RULE_ID_PATTERN = /^[a-z0-9-]+$/;
 const MAX_LABEL_LENGTH = 120;
 const MAX_TEMPLATE_LENGTH = 2000;
+export const MAX_POINT_VALUE = 100;
+export const MAX_DECAY_INTERVAL_DAYS = 3650;
+export const MAX_ACTIVE_ENTRY_DAYS = 3650;
+
+export const getMaxDecayIntervalDays = (decayAmount: number): number =>
+  Math.floor(
+    MAX_ACTIVE_ENTRY_DAYS / Math.ceil(MAX_POINT_VALUE / decayAmount)
+  );
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -118,10 +126,13 @@ const validateActionPoints = (
 ) => {
   for (const action of STRIKE_ACTIONS) {
     const value = actionPoints[action];
-    if (typeof value !== 'number' || !isIntegerInRange(value, 0, 100)) {
+    if (
+      typeof value !== 'number' ||
+      !isIntegerInRange(value, 0, MAX_POINT_VALUE)
+    ) {
       issues.push({
         path: `${path}.${action}`,
-        message: 'Point value must be an integer from 0 to 100.',
+        message: `Point value must be an integer from 0 to ${MAX_POINT_VALUE}.`,
       });
     }
   }
@@ -208,11 +219,12 @@ const validateRule = (
       const value = rule.pointOverrides[action];
       if (
         value !== undefined &&
-        (typeof value !== 'number' || !isIntegerInRange(value, 0, 100))
+        (typeof value !== 'number' ||
+          !isIntegerInRange(value, 0, MAX_POINT_VALUE))
       ) {
         issues.push({
           path: `${path}.pointOverrides.${action}`,
-          message: 'Point override must be an integer from 0 to 100.',
+          message: `Point override must be an integer from 0 to ${MAX_POINT_VALUE}.`,
         });
       }
     }
@@ -295,22 +307,39 @@ export const validateConfig = (
 
   if (
     typeof config.decayAmount !== 'number' ||
-    !isIntegerInRange(config.decayAmount, 1, 100)
+    !isIntegerInRange(config.decayAmount, 1, MAX_POINT_VALUE)
   ) {
     issues.push({
       path: 'decayAmount',
-      message: 'Decay amount must be an integer from 1 to 100.',
+      message: `Decay amount must be an integer from 1 to ${MAX_POINT_VALUE}.`,
     });
   }
 
   if (
     typeof config.decayIntervalDays !== 'number' ||
-    !isIntegerInRange(config.decayIntervalDays, 1, 3650)
+    !isIntegerInRange(config.decayIntervalDays, 1, MAX_DECAY_INTERVAL_DAYS)
   ) {
     issues.push({
       path: 'decayIntervalDays',
-      message: 'Decay interval must be an integer from 1 to 3650 days.',
+      message: `Decay interval must be an integer from 1 to ${MAX_DECAY_INTERVAL_DAYS} days.`,
     });
+  }
+  if (
+    typeof config.decayAmount === 'number' &&
+    isIntegerInRange(config.decayAmount, 1, MAX_POINT_VALUE) &&
+    typeof config.decayIntervalDays === 'number' &&
+    isIntegerInRange(config.decayIntervalDays, 1, MAX_DECAY_INTERVAL_DAYS)
+  ) {
+    const maximumActiveDays =
+      Math.ceil(MAX_POINT_VALUE / config.decayAmount) *
+      config.decayIntervalDays;
+    if (maximumActiveDays > MAX_ACTIVE_ENTRY_DAYS) {
+      issues.push({
+        path: 'decayIntervalDays',
+        message:
+          'Decay settings must let maximum-point entries fully decay within 3650 days.',
+      });
+    }
   }
 
   const requiredTemplates = [

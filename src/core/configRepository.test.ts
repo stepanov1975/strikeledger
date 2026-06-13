@@ -41,6 +41,18 @@ describe('ConfigRepository', () => {
     });
   });
 
+  it('ignores native decay intervals that exceed the active lifetime bound', async () => {
+    const { repo } = createRepo({
+      decayAmount: 1,
+      decayIntervalDays: 37,
+    });
+
+    await expect(repo.getConfig()).resolves.toMatchObject({
+      decayAmount: 1,
+      decayIntervalDays: DEFAULT_CONFIG.decayIntervalDays,
+    });
+  });
+
   it('fails instead of falling back to defaults when native settings cannot be read', async () => {
     const store = new FakeRedisStore();
     const repo = new ConfigRepository(store, {
@@ -181,7 +193,7 @@ describe('ConfigRepository', () => {
     });
   });
 
-  it('rejects changes that remove existing rule IDs', async () => {
+  it('allows admins to replace existing rule IDs', async () => {
     const { repo } = createRepo();
 
     await expect(
@@ -200,12 +212,36 @@ describe('ConfigRepository', () => {
         timestampMs: nowMs,
       })
     ).resolves.toMatchObject({
+      status: 'saved',
+      config: {
+        rules: [
+          expect.objectContaining({
+            id: 'rule-renamed',
+          }),
+        ],
+      },
+    });
+  });
+
+  it('still requires at least one enabled rule when replacing rules', async () => {
+    const { repo } = createRepo();
+
+    await expect(
+      repo.saveConfig({
+        expectedRevision: 1,
+        nextConfig: {
+          ...DEFAULT_CONFIG,
+          rules: [],
+        },
+        moderatorUsername: 'mod-a',
+        timestampMs: nowMs,
+      })
+    ).resolves.toMatchObject({
       status: 'invalid',
       issues: expect.arrayContaining([
         {
           path: 'rules',
-          message:
-            'Existing rule ID "rule-general" cannot be removed or changed; disable it instead.',
+          message: 'At least one rule is required.',
         },
       ]),
     });

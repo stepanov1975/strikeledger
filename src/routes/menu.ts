@@ -208,7 +208,7 @@ export const buildEnforcementFields = (
     name: 'confirmation',
     label: 'Confirmation',
     type: 'string',
-    defaultValue: `Action: ${ACTION_LABELS[action]}`,
+    defaultValue: `Action: ${ACTION_LABELS[action]}. Point value is shown in the selected rule.`,
     disabled: true,
   },
   {

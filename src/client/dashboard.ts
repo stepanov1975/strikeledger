@@ -8,6 +8,7 @@ import {
 } from '../core/domain';
 import {
   resolveDashboardLaunch,
+  shouldKeepDashboardContext,
   type BootstrapResponse,
   type DashboardView,
 } from './dashboardLaunch';
@@ -53,7 +54,7 @@ type ProfileResponse = {
   canAddReversalModNote: boolean;
   summary: {
     activeTotal: number;
-    lifetimeOriginalPoints: number;
+    originalPoints: number;
     decayedPoints: number;
     reversedEntries: number;
     removalsByRule: Record<string, number>;
@@ -245,8 +246,10 @@ const dashboardViewLabel = (view: DashboardView): string =>
 
 const setActiveView = async (view: DashboardView) => {
   activeView = view;
-  activeContextToken = null;
-  activeUserLookup = null;
+  if (!shouldKeepDashboardContext(view)) {
+    activeContextToken = null;
+    activeUserLookup = null;
+  }
   renderFrame();
   await loadActiveView();
 };
@@ -636,7 +639,7 @@ const renderProfile = (response: ProfileResponse) => {
     renderToolbar('Profile', formatTargetUser(response.context)),
     renderMetrics([
       ['Active total', response.summary.activeTotal],
-      [pointsLabel, response.summary.lifetimeOriginalPoints],
+      [pointsLabel, response.summary.originalPoints],
       [decayedLabel, response.summary.decayedPoints],
       [reversedLabel, response.summary.reversedEntries],
     ]),
@@ -866,10 +869,6 @@ const getRuleTextarea = (
   return textarea;
 };
 
-type RuleEditorOptions = {
-  isExisting: boolean;
-};
-
 const updateRuleControls = (rulesList: HTMLElement) => {
   const rows = Array.from(
     rulesList.querySelectorAll<HTMLElement>('[data-rule-row]')
@@ -890,8 +889,7 @@ const updateRuleControls = (rulesList: HTMLElement) => {
 const createRuleEditor = (
   rule: RuleConfig,
   config: StrikeLedgerConfig,
-  rulesList: HTMLElement,
-  options: RuleEditorOptions
+  rulesList: HTMLElement
 ): HTMLElement => {
   const item = create('article', 'rule-editor');
   item.dataset.ruleRow = 'true';
@@ -918,15 +916,13 @@ const createRuleEditor = (
     }
   });
   ruleActions.append(moveUp, moveDown);
-  if (!options.isExisting) {
-    const remove = create('button', 'secondary-button rule-remove', 'Remove');
-    remove.type = 'button';
-    remove.addEventListener('click', () => {
-      item.remove();
-      updateRuleControls(rulesList);
-    });
-    ruleActions.append(remove);
-  }
+  const remove = create('button', 'secondary-button rule-remove', 'Remove');
+  remove.type = 'button';
+  remove.addEventListener('click', () => {
+    item.remove();
+    updateRuleControls(rulesList);
+  });
+  ruleActions.append(remove);
   header.append(ruleActions);
 
   const fields = create('div', 'settings-grid');
@@ -936,9 +932,6 @@ const createRuleEditor = (
   });
   const idInput = id.querySelector('input');
   idInput?.setAttribute('data-rule-field', 'id');
-  if (idInput && options.isExisting) {
-    idInput.disabled = true;
-  }
 
   const label = textField('Label', '', rule.label, {
     required: true,
@@ -1140,11 +1133,7 @@ const replaceRuleEditors = (
   config: StrikeLedgerConfig
 ) => {
   rulesList.replaceChildren(
-    ...rules.map((rule) =>
-      createRuleEditor(rule, config, rulesList, {
-        isExisting: config.rules.some((existing) => existing.id === rule.id),
-      })
-    )
+    ...rules.map((rule) => createRuleEditor(rule, config, rulesList))
   );
   updateRuleControls(rulesList);
 };
@@ -1307,9 +1296,7 @@ const buildSettingsForm = (response: SettingsResponse): HTMLFormElement => {
 
   const rulesList = create('div', 'rule-editor-list');
   for (const rule of config.rules) {
-    rulesList.append(
-      createRuleEditor(rule, config, rulesList, { isExisting: true })
-    );
+    rulesList.append(createRuleEditor(rule, config, rulesList));
   }
   updateRuleControls(rulesList);
 
@@ -1321,8 +1308,7 @@ const buildSettingsForm = (response: SettingsResponse): HTMLFormElement => {
       createRuleEditor(
         { id: nextAvailableRuleId(usedIds), label: '', enabled: true },
         config,
-        rulesList,
-        { isExisting: false }
+        rulesList
       )
     );
     updateRuleControls(rulesList);

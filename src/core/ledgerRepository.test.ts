@@ -132,6 +132,21 @@ const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => {
     ...(overrides.publicCommentId !== undefined
       ? { publicCommentId: overrides.publicCommentId }
       : {}),
+    ...(overrides.publicCorrectionCommentId !== undefined
+      ? { publicCorrectionCommentId: overrides.publicCorrectionCommentId }
+      : {}),
+    ...(overrides.modNoteId !== undefined
+      ? { modNoteId: overrides.modNoteId }
+      : {}),
+    ...(overrides.userNoticeId !== undefined
+      ? { userNoticeId: overrides.userNoticeId }
+      : {}),
+    ...(overrides.reversalModNoteId !== undefined
+      ? { reversalModNoteId: overrides.reversalModNoteId }
+      : {}),
+    ...(overrides.reversalUserNoticeId !== undefined
+      ? { reversalUserNoticeId: overrides.reversalUserNoticeId }
+      : {}),
     ...(overrides.reversedAtMs !== undefined
       ? { reversedAtMs: overrides.reversedAtMs }
       : {}),
@@ -480,6 +495,48 @@ describe('LedgerRepository', () => {
     });
   });
 
+  it('returns the existing retry entry across retry bucket boundaries', async () => {
+    const { repo } = createRepo();
+    const firstSubmittedAtMs = nowMs + 10 * 60 * 1000 - 1;
+    const firstEntry = buildEntry({ createdAtMs: firstSubmittedAtMs });
+    await repo.saveFormNonce(buildNonce({ createdAtMs: firstSubmittedAtMs }));
+    await repo.createLedgerEntry({
+      entry: firstEntry,
+      formNonce: firstEntry.formNonce,
+      submittedAtMs: firstSubmittedAtMs,
+      nowMs: firstSubmittedAtMs,
+      config: DEFAULT_CONFIG,
+    });
+
+    const retrySubmittedAtMs = nowMs + 10 * 60 * 1000 + 1;
+    const retryEntry = buildEntry({
+      entryId: 'entry-2',
+      formNonce: 'nonce-2',
+      createdAtMs: retrySubmittedAtMs,
+    });
+    await repo.saveFormNonce(
+      buildNonce({
+        nonce: 'nonce-2',
+        createdAtMs: retrySubmittedAtMs,
+        expiresAtMs: retrySubmittedAtMs + 10 * 60 * 1000,
+      })
+    );
+
+    await expect(
+      repo.createLedgerEntry({
+        entry: retryEntry,
+        formNonce: retryEntry.formNonce,
+        submittedAtMs: retrySubmittedAtMs,
+        nowMs: retrySubmittedAtMs,
+        config: DEFAULT_CONFIG,
+      })
+    ).resolves.toEqual({
+      status: 'idempotent',
+      entry: firstEntry,
+      activeTotal: 1,
+    });
+  });
+
   it('blocks duplicate target/action/rule submissions from another moderator', async () => {
     const { repo } = createRepo();
     const firstEntry = buildEntry();
@@ -804,6 +861,44 @@ describe('LedgerRepository', () => {
     expect(stored?.publicCommentId).toBe('t1_comment');
   });
 
+  it('keeps newer enforcement side effects when a stale reversal checkpoint arrives', async () => {
+    const { repo, store } = createRepo();
+    await seedEntry(
+      store,
+      buildEntry({
+        status: 'partial',
+        sideEffects: { ...EMPTY_SIDE_EFFECTS, publicComment: 'failed' },
+      })
+    );
+    await repo.updateLedgerEntrySideEffects(
+      buildEntry({
+        status: 'succeeded',
+        sideEffects: { ...EMPTY_SIDE_EFFECTS, publicComment: 'succeeded' },
+        publicCommentId: 't1_comment',
+      })
+    );
+
+    await repo.updateLedgerEntrySideEffects(
+      buildEntry({
+        status: 'reversed',
+        sideEffects: {
+          ...EMPTY_SIDE_EFFECTS,
+          publicComment: 'failed',
+          reversalModNote: 'succeeded',
+        },
+        reversalModNoteId: 'mod-note-1',
+      })
+    );
+
+    const stored = await repo.getLedgerEntry('entry-1');
+
+    expect(stored?.status).toBe('reversed');
+    expect(stored?.sideEffects.publicComment).toBe('succeeded');
+    expect(stored?.sideEffects.reversalModNote).toBe('succeeded');
+    expect(stored?.publicCommentId).toBe('t1_comment');
+    expect(stored?.reversalModNoteId).toBe('mod-note-1');
+  });
+
   it('cleans up old inactive ledger entries from all indexes', async () => {
     const { repo, store } = createRepo();
     const old = nowMs - 400 * MS_PER_DAY;
@@ -843,6 +938,32 @@ describe('LedgerRepository', () => {
     await expect(
       store.zRange('ledger:testsub:entries', 0, -1)
     ).resolves.toEqual(['recent-active']);
+  });
+
+  it('deletes per-user ledger metadata when cleanup removes the last user entry', async () => {
+    const { repo, store } = createRepo();
+    const old = nowMs - 400 * MS_PER_DAY;
+    const oldInactive = buildEntry({ entryId: 'old-inactive', createdAtMs: old });
+    await seedEntry(store, oldInactive);
+    await store.set('user:id:t2_user:ledger_version', '7');
+    await store.set('user:id:t2_user:active_total', '1');
+
+    await repo.cleanupLedger({
+      config: DEFAULT_CONFIG,
+      maxEntries: 10,
+      nowMs,
+      retentionDays: 365,
+      subredditName: 'testsub',
+    });
+
+    await expect(store.get('user:id:t2_user:ledger_version')).resolves.toBeNull();
+    await expect(store.get('user:id:t2_user:active_total')).resolves.toBeNull();
+    await expect(store.zRange('user:id:t2_user:ledger', 0, -1)).resolves.toEqual(
+      []
+    );
+    await expect(store.zRange('target:t3_target:entries', 0, -1)).resolves.toEqual(
+      []
+    );
   });
 
   it('advances cleanup past old active entries', async () => {
@@ -920,6 +1041,10 @@ describe('LedgerRepository', () => {
     expect(store.transactionWatchKeys).toContainEqual([
       'ledger_entry:old-inactive-1',
       'duplicate:t3_old_inactive_1:warn:rule-general',
+      'user:id:t2_user:ledger',
+      'user:name:target-user:ledger',
+      'target:t3_old_inactive_1:entries',
+      'ledger:testsub:entries',
     ]);
   });
 

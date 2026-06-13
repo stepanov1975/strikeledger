@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { resolveDashboardLaunch } from './dashboardLaunch';
+import {
+  resolveDashboardLaunch,
+  shouldKeepDashboardContext,
+} from './dashboardLaunch';
 
 const bootstrap = {
   view: 'settings' as const,
@@ -46,5 +49,11 @@ describe('resolveDashboardLaunch', () => {
     ).toEqual({
       view: 'settings',
     });
+  });
+
+  it('keeps selected target context only for history and profile tabs', () => {
+    expect(shouldKeepDashboardContext('history')).toBe(true);
+    expect(shouldKeepDashboardContext('profile')).toBe(true);
+    expect(shouldKeepDashboardContext('settings')).toBe(false);
   });
 });

@@ -5,6 +5,9 @@ import {
   DEFAULT_PUBLIC_COMMENT_TEMPLATE,
   DEFAULT_ZERO_POINT_NATIVE_MOD_NOTE_TEMPLATE,
   DEFAULT_ZERO_POINT_PRIVATE_USER_NOTICE_TEMPLATE,
+  MAX_DECAY_INTERVAL_DAYS,
+  MAX_POINT_VALUE,
+  getMaxDecayIntervalDays,
 } from './config';
 import type { StrikeLedgerConfig } from './domain';
 import {
@@ -98,118 +101,122 @@ const templateSetting = (
 export const applyNativeSettings = (
   config: StrikeLedgerConfig,
   values: NativeSettingsValues
-): StrikeLedgerConfig => ({
-  ...config,
-  actionPoints: {
-    warn: integerSetting(
-      values,
-      NATIVE_SETTINGS_KEYS.warnPoints,
-      DEFAULT_CONFIG.actionPoints.warn,
-      0,
-      100
-    ),
-    warn_remove: integerSetting(
-      values,
-      NATIVE_SETTINGS_KEYS.warnRemovePoints,
-      DEFAULT_CONFIG.actionPoints.warn_remove,
-      0,
-      100
-    ),
-    warn_nsfw: integerSetting(
-      values,
-      NATIVE_SETTINGS_KEYS.warnNsfwPoints,
-      DEFAULT_CONFIG.actionPoints.warn_nsfw,
-      0,
-      100
-    ),
-  },
-  decayAmount: integerSetting(
+): StrikeLedgerConfig => {
+  const decayAmount = integerSetting(
     values,
     NATIVE_SETTINGS_KEYS.decayAmount,
     DEFAULT_CONFIG.decayAmount,
     1,
-    100
-  ),
-  decayIntervalDays: integerSetting(
-    values,
-    NATIVE_SETTINGS_KEYS.decayIntervalDays,
-    DEFAULT_CONFIG.decayIntervalDays,
-    1,
-    3650
-  ),
-  defaultPublicCommentTemplate: templateSetting(
-    values,
-    NATIVE_SETTINGS_KEYS.defaultPublicCommentTemplate,
-    DEFAULT_PUBLIC_COMMENT_TEMPLATE,
-    PUBLIC_PLACEHOLDERS
-  ),
-  defaultPrivateUserNoticeTemplate: templateSetting(
-    values,
-    NATIVE_SETTINGS_KEYS.defaultPrivateUserNoticeTemplate,
-    DEFAULT_PRIVATE_USER_NOTICE_TEMPLATE,
-    PRIVATE_PLACEHOLDERS
-  ),
-  defaultZeroPointPrivateUserNoticeTemplate: templateSetting(
-    values,
-    NATIVE_SETTINGS_KEYS.defaultZeroPointPrivateUserNoticeTemplate,
-    DEFAULT_ZERO_POINT_PRIVATE_USER_NOTICE_TEMPLATE,
-    PRIVATE_PLACEHOLDERS
-  ),
-  defaultNativeModNoteTemplate: templateSetting(
-    values,
-    NATIVE_SETTINGS_KEYS.defaultNativeModNoteTemplate,
-    DEFAULT_NATIVE_MOD_NOTE_TEMPLATE,
-    PRIVATE_PLACEHOLDERS
-  ),
-  defaultZeroPointNativeModNoteTemplate: templateSetting(
-    values,
-    NATIVE_SETTINGS_KEYS.defaultZeroPointNativeModNoteTemplate,
-    DEFAULT_ZERO_POINT_NATIVE_MOD_NOTE_TEMPLATE,
-    PRIVATE_PLACEHOLDERS
-  ),
-  userNoticesEnabled: booleanSetting(
-    values,
-    NATIVE_SETTINGS_KEYS.userNoticesEnabled,
-    DEFAULT_CONFIG.userNoticesEnabled
-  ),
-  distinguishAppComments: booleanSetting(
-    values,
-    NATIVE_SETTINGS_KEYS.distinguishAppComments,
-    DEFAULT_CONFIG.distinguishAppComments
-  ),
-  stickyAppComments: {
-    warn: booleanSetting(
+    MAX_POINT_VALUE
+  );
+
+  return {
+    ...config,
+    actionPoints: {
+      warn: integerSetting(
+        values,
+        NATIVE_SETTINGS_KEYS.warnPoints,
+        DEFAULT_CONFIG.actionPoints.warn,
+        0,
+        MAX_POINT_VALUE
+      ),
+      warn_remove: integerSetting(
+        values,
+        NATIVE_SETTINGS_KEYS.warnRemovePoints,
+        DEFAULT_CONFIG.actionPoints.warn_remove,
+        0,
+        MAX_POINT_VALUE
+      ),
+      warn_nsfw: integerSetting(
+        values,
+        NATIVE_SETTINGS_KEYS.warnNsfwPoints,
+        DEFAULT_CONFIG.actionPoints.warn_nsfw,
+        0,
+        MAX_POINT_VALUE
+      ),
+    },
+    decayAmount,
+    decayIntervalDays: integerSetting(
       values,
-      NATIVE_SETTINGS_KEYS.stickyCommentsWarn,
-      DEFAULT_CONFIG.stickyAppComments.warn
+      NATIVE_SETTINGS_KEYS.decayIntervalDays,
+      DEFAULT_CONFIG.decayIntervalDays,
+      1,
+      Math.min(MAX_DECAY_INTERVAL_DAYS, getMaxDecayIntervalDays(decayAmount))
     ),
-    warn_remove: booleanSetting(
+    defaultPublicCommentTemplate: templateSetting(
       values,
-      NATIVE_SETTINGS_KEYS.stickyCommentsWarnRemove,
-      DEFAULT_CONFIG.stickyAppComments.warn_remove
+      NATIVE_SETTINGS_KEYS.defaultPublicCommentTemplate,
+      DEFAULT_PUBLIC_COMMENT_TEMPLATE,
+      PUBLIC_PLACEHOLDERS
     ),
-    warn_nsfw: booleanSetting(
+    defaultPrivateUserNoticeTemplate: templateSetting(
       values,
-      NATIVE_SETTINGS_KEYS.stickyCommentsWarnNsfw,
-      DEFAULT_CONFIG.stickyAppComments.warn_nsfw
+      NATIVE_SETTINGS_KEYS.defaultPrivateUserNoticeTemplate,
+      DEFAULT_PRIVATE_USER_NOTICE_TEMPLATE,
+      PRIVATE_PLACEHOLDERS
     ),
-  },
-  lockAppComments: booleanSetting(
-    values,
-    NATIVE_SETTINGS_KEYS.lockAppComments,
-    DEFAULT_CONFIG.lockAppComments
-  ),
-  nativeModNotesEnabled: booleanSetting(
-    values,
-    NATIVE_SETTINGS_KEYS.nativeModNotesEnabled,
-    DEFAULT_CONFIG.nativeModNotesEnabled
-  ),
-  reversalNativeModNotesEnabled: booleanSetting(
-    values,
-    NATIVE_SETTINGS_KEYS.reversalNativeModNotesEnabled,
-    DEFAULT_CONFIG.reversalNativeModNotesEnabled
-  ),
-});
+    defaultZeroPointPrivateUserNoticeTemplate: templateSetting(
+      values,
+      NATIVE_SETTINGS_KEYS.defaultZeroPointPrivateUserNoticeTemplate,
+      DEFAULT_ZERO_POINT_PRIVATE_USER_NOTICE_TEMPLATE,
+      PRIVATE_PLACEHOLDERS
+    ),
+    defaultNativeModNoteTemplate: templateSetting(
+      values,
+      NATIVE_SETTINGS_KEYS.defaultNativeModNoteTemplate,
+      DEFAULT_NATIVE_MOD_NOTE_TEMPLATE,
+      PRIVATE_PLACEHOLDERS
+    ),
+    defaultZeroPointNativeModNoteTemplate: templateSetting(
+      values,
+      NATIVE_SETTINGS_KEYS.defaultZeroPointNativeModNoteTemplate,
+      DEFAULT_ZERO_POINT_NATIVE_MOD_NOTE_TEMPLATE,
+      PRIVATE_PLACEHOLDERS
+    ),
+    userNoticesEnabled: booleanSetting(
+      values,
+      NATIVE_SETTINGS_KEYS.userNoticesEnabled,
+      DEFAULT_CONFIG.userNoticesEnabled
+    ),
+    distinguishAppComments: booleanSetting(
+      values,
+      NATIVE_SETTINGS_KEYS.distinguishAppComments,
+      DEFAULT_CONFIG.distinguishAppComments
+    ),
+    stickyAppComments: {
+      warn: booleanSetting(
+        values,
+        NATIVE_SETTINGS_KEYS.stickyCommentsWarn,
+        DEFAULT_CONFIG.stickyAppComments.warn
+      ),
+      warn_remove: booleanSetting(
+        values,
+        NATIVE_SETTINGS_KEYS.stickyCommentsWarnRemove,
+        DEFAULT_CONFIG.stickyAppComments.warn_remove
+      ),
+      warn_nsfw: booleanSetting(
+        values,
+        NATIVE_SETTINGS_KEYS.stickyCommentsWarnNsfw,
+        DEFAULT_CONFIG.stickyAppComments.warn_nsfw
+      ),
+    },
+    lockAppComments: booleanSetting(
+      values,
+      NATIVE_SETTINGS_KEYS.lockAppComments,
+      DEFAULT_CONFIG.lockAppComments
+    ),
+    nativeModNotesEnabled: booleanSetting(
+      values,
+      NATIVE_SETTINGS_KEYS.nativeModNotesEnabled,
+      DEFAULT_CONFIG.nativeModNotesEnabled
+    ),
+    reversalNativeModNotesEnabled: booleanSetting(
+      values,
+      NATIVE_SETTINGS_KEYS.reversalNativeModNotesEnabled,
+      DEFAULT_CONFIG.reversalNativeModNotesEnabled
+    ),
+  };
+};
 
 export const toRedisOwnedConfig = (
   config: StrikeLedgerConfig

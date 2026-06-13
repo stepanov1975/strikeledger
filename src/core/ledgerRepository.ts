@@ -1,4 +1,9 @@
-import type { LedgerEntry, StrikeLedgerConfig, TargetKind } from './domain';
+import type {
+  LedgerEntry,
+  SideEffects,
+  StrikeLedgerConfig,
+  TargetKind,
+} from './domain';
 import { SCHEMA_VERSION as CURRENT_SCHEMA_VERSION } from './domain';
 import {
   RETRY_WINDOW_MS,
@@ -203,6 +208,29 @@ const compareEntriesNewestFirst = (
   return right.entryId.localeCompare(left.entryId);
 };
 
+const mergeCheckpointSideEffects = (
+  current: LedgerEntry,
+  checkpoint: LedgerEntry
+): SideEffects => {
+  if (checkpoint.status === 'reversed') {
+    return {
+      ...current.sideEffects,
+      reversalModNote: checkpoint.sideEffects.reversalModNote,
+      reversalUserNotice: checkpoint.sideEffects.reversalUserNotice,
+    };
+  }
+
+  if (current.status === 'reversed') {
+    return {
+      ...checkpoint.sideEffects,
+      reversalModNote: current.sideEffects.reversalModNote,
+      reversalUserNotice: current.sideEffects.reversalUserNotice,
+    };
+  }
+
+  return checkpoint.sideEffects;
+};
+
 const getActiveEntryCutoffMs = (
   config: StrikeLedgerConfig,
   nowMs: number
@@ -256,14 +284,7 @@ export class LedgerRepository {
           return null;
         }
 
-        const sideEffects =
-          current.status === 'reversed' && checkpoint.status !== 'reversed'
-            ? {
-                ...checkpoint.sideEffects,
-                reversalModNote: current.sideEffects.reversalModNote,
-                reversalUserNotice: current.sideEffects.reversalUserNotice,
-              }
-            : checkpoint.sideEffects;
+        const sideEffects = mergeCheckpointSideEffects(current, checkpoint);
         const updated: LedgerEntry = {
           ...current,
           status:
@@ -889,17 +910,27 @@ export class LedgerRepository {
   private async getRetryEntry(
     request: CreateLedgerEntryRequest
   ): Promise<LedgerEntry | null> {
-    const entryId = await this.store.get(
-      getRetryClaimKey({
-        targetId: request.entry.targetId,
-        action: request.entry.action,
-        ruleId: request.entry.ruleId,
-        moderatorUsername: request.entry.moderatorUsername,
-        submittedAtMs: request.submittedAtMs,
-      })
-    );
+    const submittedAtCandidates = new Set([
+      request.submittedAtMs,
+      request.submittedAtMs - RETRY_WINDOW_MS,
+    ]);
 
-    return entryId ? this.getLedgerEntry(entryId) : null;
+    for (const submittedAtMs of submittedAtCandidates) {
+      const entryId = await this.store.get(
+        getRetryClaimKey({
+          targetId: request.entry.targetId,
+          action: request.entry.action,
+          ruleId: request.entry.ruleId,
+          moderatorUsername: request.entry.moderatorUsername,
+          submittedAtMs,
+        })
+      );
+      if (entryId) {
+        return this.getLedgerEntry(entryId);
+      }
+    }
+
+    return null;
   }
 
   private async getDuplicateEntry(
@@ -985,30 +1016,83 @@ export class LedgerRepository {
       ruleId: entry.ruleId,
     });
     const entryKey = ledgerEntryKey(entry.entryId);
+    const userKeys = getLedgerEntryUserKeys(entry);
+    const targetKey = targetEntriesKey(entry.targetId);
+    const subredditLedgerKey = ledgerEntriesKey(entry.subredditName);
 
-    await this.store.runTransaction([entryKey, duplicateClaimKey], async () => {
-      const currentEntry = parseLedgerEntry(await this.store.get(entryKey));
-      if (!currentEntry) {
-        return;
-      }
+    await this.store.runTransaction(
+      [
+        entryKey,
+        duplicateClaimKey,
+        ...userKeys.map(userLedgerKey),
+        targetKey,
+        subredditLedgerKey,
+      ],
+      async () => {
+        const currentEntry = parseLedgerEntry(await this.store.get(entryKey));
+        if (!currentEntry) {
+          return;
+        }
 
-      const claimedEntryId = await this.store.get(duplicateClaimKey);
-      await this.store.del(entryKey);
-      const userKeys = getLedgerEntryUserKeys(currentEntry);
-      for (const userKey of userKeys) {
-        await this.store.zRem(userLedgerKey(userKey), [currentEntry.entryId]);
-      }
-      await this.store.zRem(targetEntriesKey(currentEntry.targetId), [
-        currentEntry.entryId,
-      ]);
-      await this.store.zRem(ledgerEntriesKey(currentEntry.subredditName), [
-        currentEntry.entryId,
-      ]);
+        const currentUserKeys = getLedgerEntryUserKeys(currentEntry);
+        const lastUserKeys = new Set<string>();
+        for (const userKey of currentUserKeys) {
+          const members = await this.store.zRange(userLedgerKey(userKey), 0, 1);
+          if (members.length === 1 && members[0] === currentEntry.entryId) {
+            lastUserKeys.add(userKey);
+          }
+        }
+        const targetMembers = await this.store.zRange(
+          targetEntriesKey(currentEntry.targetId),
+          0,
+          1
+        );
+        const isLastTargetEntry =
+          targetMembers.length === 1 && targetMembers[0] === currentEntry.entryId;
+        const subredditMembers = await this.store.zRange(
+          ledgerEntriesKey(currentEntry.subredditName),
+          0,
+          1
+        );
+        const isLastSubredditEntry =
+          subredditMembers.length === 1 &&
+          subredditMembers[0] === currentEntry.entryId;
 
-      if (claimedEntryId === currentEntry.entryId) {
-        await this.store.del(duplicateClaimKey);
+        const claimedEntryId = await this.store.get(duplicateClaimKey);
+        await this.store.del(entryKey);
+        for (const userKey of currentUserKeys) {
+          if (lastUserKeys.has(userKey)) {
+            await this.store.del(
+              userLedgerKey(userKey),
+              activeTotalKey(userKey),
+              userLedgerVersionKey(userKey)
+            );
+          } else {
+            await this.store.zRem(userLedgerKey(userKey), [currentEntry.entryId]);
+          }
+        }
+        if (isLastTargetEntry) {
+          await this.store.del(targetEntriesKey(currentEntry.targetId));
+        } else {
+          await this.store.zRem(targetEntriesKey(currentEntry.targetId), [
+            currentEntry.entryId,
+          ]);
+        }
+        if (isLastSubredditEntry) {
+          await this.store.del(ledgerEntriesKey(currentEntry.subredditName));
+        } else {
+          await this.store.zRem(ledgerEntriesKey(currentEntry.subredditName), [
+            currentEntry.entryId,
+          ]);
+        }
+
+        if (claimedEntryId === currentEntry.entryId) {
+          await this.store.del(duplicateClaimKey);
+        }
+        await this.bumpUserLedgerVersions(
+          currentUserKeys.filter((userKey) => !lastUserKeys.has(userKey))
+        );
       }
-      await this.bumpUserLedgerVersions(userKeys);
-    });
+    );
   }
 }

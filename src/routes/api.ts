@@ -487,7 +487,7 @@ api.get('/profile', async (c) => {
     (total, entry) => total + calculateActivePoints(entry, config, nowMs),
     0
   );
-  const lifetimeOriginalPoints = entries.reduce(
+  const originalPoints = entries.reduce(
     (total, entry) => total + entry.originalPoints,
     0
   );
@@ -517,7 +517,7 @@ api.get('/profile', async (c) => {
       config.nativeModNotesEnabled && config.reversalNativeModNotesEnabled,
     summary: {
       activeTotal,
-      lifetimeOriginalPoints,
+      originalPoints,
       decayedPoints: Math.max(0, activeOriginalPoints - activePointsInSummary),
       reversedEntries: entries.filter((entry) => entry.status === 'reversed')
         .length,

@@ -55,6 +55,21 @@ const buildReddit = () => ({
 
 const logErrorMock = vi.mocked(logError);
 
+const publicCommentText = (target: {
+  addComment: ReturnType<typeof vi.fn>;
+}): string => {
+  const [[commentOptions]] = target.addComment.mock.calls as unknown as [
+    [{ text: string }],
+  ];
+  return commentOptions.text;
+};
+
+const privateNoticeBody = (reddit: ReturnType<typeof buildReddit>): string => {
+  const [[noticeOptions]] = reddit.modMail.createConversation.mock
+    .calls as unknown as [[{ body: string }]];
+  return noticeOptions.body;
+};
+
 describe('executeSideEffects', () => {
   beforeEach(() => {
     logErrorMock.mockClear();
@@ -377,6 +392,99 @@ describe('executeSideEffects', () => {
         body: expect.stringContaining('without adding warning points'),
       })
     );
+  });
+
+  it('keeps default removal public comments neutral and private notices outcome-specific', async () => {
+    const publicComment = {
+      id: 'comment-1',
+      distinguish: vi.fn(async () => undefined),
+      lock: vi.fn(async () => undefined),
+    };
+    const target = {
+      addComment: vi.fn(async () => publicComment),
+      remove: vi.fn(async () => undefined),
+    };
+    const reddit = buildReddit();
+
+    await executeSideEffects({
+      entry: buildEntry(),
+      activeTotal: 3,
+      target,
+      reddit,
+      config: DEFAULT_CONFIG,
+    });
+
+    expect(publicCommentText(target)).not.toContain('was removed');
+    expect(publicCommentText(target)).toContain(
+      '/r/testsub/comments/target'
+    );
+    expect(privateNoticeBody(reddit)).toContain('The post was removed');
+  });
+
+  it('tells the user when removal could not be confirmed', async () => {
+    const publicComment = {
+      id: 'comment-1',
+      distinguish: vi.fn(async () => undefined),
+      lock: vi.fn(async () => undefined),
+    };
+    const target = {
+      addComment: vi.fn(async () => publicComment),
+      remove: vi.fn(async () => {
+        throw new Error('remove failed');
+      }),
+    };
+    const reddit = buildReddit();
+
+    await executeSideEffects({
+      entry: buildEntry(),
+      activeTotal: 3,
+      target,
+      reddit,
+      config: DEFAULT_CONFIG,
+    });
+
+    expect(publicCommentText(target)).not.toContain('was removed');
+    expect(privateNoticeBody(reddit)).toContain(
+      'could not confirm that the post was removed'
+    );
+  });
+
+  it('keeps default NSFW public comments neutral and private notices outcome-specific', async () => {
+    const publicComment = {
+      id: 'comment-1',
+      distinguish: vi.fn(async () => undefined),
+      lock: vi.fn(async () => undefined),
+    };
+    const target = {
+      addComment: vi.fn(async () => publicComment),
+      remove: vi.fn(async () => undefined),
+      markAsNsfw: vi.fn(async () => undefined),
+    };
+    const reddit = buildReddit();
+
+    await executeSideEffects({
+      entry: buildEntry({
+        action: 'warn_nsfw',
+        originalPoints: 1,
+        sideEffects: {
+          ...EMPTY_SIDE_EFFECTS,
+          publicComment: 'pending',
+          markNsfw: 'pending',
+          modNote: 'pending',
+          userNotice: 'pending',
+        },
+      }),
+      activeTotal: 1,
+      target,
+      reddit,
+      config: DEFAULT_CONFIG,
+    });
+
+    expect(publicCommentText(target)).not.toContain('marked NSFW');
+    expect(publicCommentText(target)).toContain(
+      '/r/testsub/comments/target'
+    );
+    expect(privateNoticeBody(reddit)).toContain('The post was marked NSFW');
   });
 
   it('uses selected rule templates before global defaults', async () => {

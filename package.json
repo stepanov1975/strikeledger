@@ -5,13 +5,15 @@
   "license": "BSD-3-Clause",
   "type": "module",
   "scripts": {
-    "build": "vite build",
-    "deploy": "npm run type-check && npm run lint && npm test && devvit upload",
+    "build": "npm run check-devvit-settings && vite build",
+    "check-devvit-settings": "node scripts/sync-devvit-settings.mjs --check",
+    "deploy": "npm run check-devvit-settings && npm run type-check && npm run lint && npm test && devvit upload",
     "dev": "devvit playtest",
     "launch": "npm run deploy && devvit publish",
     "lint": "eslint src",
     "login": "devvit login",
     "prettier": "prettier --write .",
+    "sync-devvit-settings": "node scripts/sync-devvit-settings.mjs",
     "test": "vitest run --dir src",
     "type-check": "tsc --build"
   },

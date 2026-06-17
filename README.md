@@ -4,7 +4,7 @@ App version: `0.2.0`
 
 StrikeLedger helps moderators record rule violations in a durable warning ledger. It adds moderator menu actions for warnings, removal warnings, NSFW warnings, history, profile, and settings. The app records what happened, calculates active warning totals with decay, and keeps a reversible audit trail for future moderator review.
 
-StrikeLedger is for moderator use only. Public comments explain the rule violation but do not expose warning points or a user's active total. Private user notices and native moderator notes can include point totals when those options are enabled.
+StrikeLedger moderation tools are for moderators only. Logged-in non-moderators who open the dashboard can see only their own active warning total and compact warning history. Public comments explain the rule violation but do not expose warning points or a user's active total. Private user notices, the limited user dashboard, and native moderator notes can include point totals when those options are enabled or available.
 
 ## What StrikeLedger Records
 
@@ -27,7 +27,7 @@ Moderators can use these Reddit menu actions:
 
 ## First Setup
 
-Configure stable subreddit settings on the standard Devvit app settings page. Then open the subreddit menu and choose `StrikeLedger: Admin`. A moderator with full `all` permissions can create or open the StrikeLedger dashboard surface for the subreddit.
+Configure stable subreddit settings on the standard Devvit app settings page. Boolean side-effect settings include help text that explains what each toggle does. Then open the subreddit menu and choose `StrikeLedger: Admin`. A moderator with full `all` permissions can create or open the StrikeLedger dashboard surface for the subreddit.
 
 Before using enforcement actions, review native app settings:
 
@@ -101,7 +101,9 @@ Template types:
 | Rule public comment template   | Optional public template for a specific rule.               |
 | Rule native mod note template  | Optional native mod note template for a specific rule.      |
 
-Public templates may use `{ruleLabel}`, `{action}`, and `{targetPermalink}`. Private notices and native mod notes may use `{subredditName}`, `{ruleLabel}`, `{action}`, `{pointsAdded}`, `{activeTotal}`, and `{targetPermalink}`.
+Public templates may use `{ruleLabel}`, `{action}`, `{actionEffect}`, and `{targetPermalink}`. Private notices and native mod notes may use `{subredditName}`, `{ruleLabel}`, `{action}`, `{actionOutcome}`, `{pointsAdded}`, `{activeTotal}`, and `{targetPermalink}`.
+
+The default public comment, private notice, zero-point private notice, and native mod note templates include the target permalink when the placeholder is available. The default public comment uses outcome-neutral action text. The default private notices tell the user whether removal or NSFW marking was confirmed when those actions are used.
 
 ## Recording A Warning
 
@@ -132,7 +134,7 @@ Use `StrikeLedger: History` from a post or comment to open that author's ledger 
 - Side-effect summary.
 - Reversal controls for entries that can still be reversed.
 
-History is loaded from a short-lived server-issued context token. Open History from a post or comment menu item when you need a selected user's ledger.
+History is loaded from a short-lived server-issued context token. Open History from a post or comment menu item when you need a selected user's ledger. On narrow/mobile screens, History shows the same entries as compact cards instead of a wide table.
 
 ## Profile
 
@@ -145,7 +147,17 @@ Use `StrikeLedger: Profile` from a post or comment to open the author's profile 
 - Removals grouped by rule.
 - Recent ledger entries.
 
-Profile is loaded from a short-lived server-issued context token. Open Profile from a post or comment menu item when you need a selected user's summary. Active total is recalculated from the active ledger window; historical summary metrics are bounded to the latest entries on very large ledgers.
+Profile is loaded from a short-lived server-issued context token. Open Profile from a post or comment menu item when you need a selected user's summary. Active total is recalculated from the active ledger window; historical summary metrics are bounded to the latest entries on very large ledgers. On narrow/mobile screens, recent Profile entries use the compact card layout.
+
+## Limited User Dashboard
+
+If a logged-in non-moderator opens the StrikeLedger dashboard post, the dashboard shows a limited self view instead of an error. The view shows:
+
+- The user's own active warning total for the current subreddit.
+- A compact mobile-friendly history list.
+- Each history row contains only date, rule name, and active points.
+
+The limited view does not show target links, moderator names, side-effect details, reversal controls, Profile metrics, Admin settings, or any other user's ledger data.
 
 ## Reversing A Ledger Entry
 
@@ -168,7 +180,7 @@ Moderators with full settings access can recalculate a user's active total from 
 
 ## Permissions
 
-Moderator access is required to open dashboard data. The `posts` or `all` permission is required for enforcement actions. Full `all` permission is required for Admin rule changes, Reddit rule import, dashboard creation, and manual recalculation.
+Moderator access is required for moderator dashboard data. The `posts` or `all` permission is required for enforcement actions. Full `all` permission is required for Admin rule changes, Reddit rule import, dashboard creation, and manual recalculation. Logged-in non-moderators can open only the limited self dashboard.
 
 If a moderator can open the dashboard but cannot edit Admin settings, the Admin view shows read-only rule information.
 

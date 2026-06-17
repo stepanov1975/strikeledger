@@ -268,6 +268,113 @@ tr:last-child td {
   gap: 8px;
 }
 
+.entry-list {
+  display: grid;
+  gap: 12px;
+}
+
+.compact-entry-list {
+  display: none;
+}
+
+.compact-entry-card {
+  display: grid;
+  gap: 7px;
+  border: 1px solid #d8dde3;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #ffffff;
+}
+
+.compact-entry-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.compact-entry-date,
+.compact-entry-meta,
+.compact-entry-details,
+.compact-entry-note {
+  color: #5f6b7a;
+  font-size: 12px;
+}
+
+.compact-entry-rule {
+  min-width: 0;
+  color: #102a43;
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.compact-entry-points {
+  color: #102a43;
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.compact-entry-meta,
+.compact-entry-note {
+  overflow-wrap: anywhere;
+}
+
+.compact-entry-details {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.compact-entry-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.limited-history {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid #d8dde3;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.limited-history-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #edf0f3;
+}
+
+.limited-history-row:last-child {
+  border-bottom: 0;
+}
+
+.limited-history-date {
+  color: #5f6b7a;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.limited-history-rule {
+  min-width: 0;
+  color: #102a43;
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.limited-history-points {
+  justify-self: end;
+  color: #102a43;
+  font-size: 14px;
+  font-weight: 700;
+}
+
 .modal {
   width: min(520px, calc(100vw - 32px));
   border: 1px solid #d8dde3;
@@ -445,6 +552,15 @@ tr:last-child td {
 
   .content {
     padding: 14px;
+  }
+
+  .entry-list > .panel {
+    display: none;
+  }
+
+  .compact-entry-list {
+    display: grid;
+    gap: 10px;
   }
 
   .rule-editor-header {

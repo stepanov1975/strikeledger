@@ -1,9 +1,10 @@
-export type DashboardView = 'history' | 'profile' | 'settings';
+export type DashboardView = 'history' | 'profile' | 'settings' | 'limited';
 
 export type BootstrapResponse = {
   view: DashboardView;
   subredditName: string;
-  moderatorUsername: string;
+  currentUsername?: string;
+  moderatorUsername?: string;
   hasPendingBootstrap: boolean;
   contextToken?: string;
 };
@@ -13,7 +14,9 @@ export type DashboardLaunch = {
   contextToken?: string;
 };
 
-const isDashboardView = (value: string | null): value is DashboardView =>
+const isDashboardView = (
+  value: string | null
+): value is Exclude<DashboardView, 'limited'> =>
   value === 'history' || value === 'profile' || value === 'settings';
 
 export const shouldKeepDashboardContext = (view: DashboardView): boolean =>
@@ -32,6 +35,10 @@ export const resolveDashboardLaunch = (
   bootstrap: BootstrapResponse,
   params: URLSearchParams
 ): DashboardLaunch => {
+  if (bootstrap.view === 'limited') {
+    return { view: 'limited' };
+  }
+
   if (bootstrap.hasPendingBootstrap) {
     return {
       view: bootstrap.view,

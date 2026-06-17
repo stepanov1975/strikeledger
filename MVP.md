@@ -4,7 +4,7 @@ This file is the authoritative MVP specification for StrikeLedger, a Devvit mode
 
 ## Goal
 
-Moderators can apply a rule-specific warning action to a post or comment. The app records a durable ledger entry, updates the user's active warning total with configurable step decay, performs configured Reddit side effects, and exposes history, profile, reversal, and Admin workflows in an in-app web UI.
+Moderators can apply a rule-specific warning action to a post or comment. The app records a durable ledger entry, updates the user's active warning total with configurable step decay, performs configured Reddit side effects, and exposes history, profile, reversal, and Admin workflows in an in-app web UI. Logged-in non-moderators who open the dashboard can see only their own active total and compact warning history.
 
 ## Scope
 
@@ -29,6 +29,7 @@ The MVP includes these in-app web UI views:
 - Profile for the selected author.
 - Reversal launched from an individual history entry.
 - Admin tools for rules, Reddit rule import, rules JSON import/export, and manual user-total recalculation.
+- Limited user view for logged-in non-moderators, showing only the viewer's own active total and compact warning history.
 
 History and profile menu handlers create short-lived Redis view context records and open the configured StrikeLedger web UI with the requested view and context token. The MVP must not assume that a bare relative URL such as `/app?view=history&context={token}` is directly navigable from a Reddit menu response.
 
@@ -39,13 +40,13 @@ Implementation decision:
 - `devvit.json` must define a `post.dir` and a `dashboard` entrypoint.
 - The subreddit-level `StrikeLedger: Admin` menu handler checks for a stored dashboard post ID. If one exists and is readable, it navigates to that post. If none exists, a moderator with `all` permission can create it with `reddit.submitCustomPost({ subredditName, title, entry: 'dashboard' })`; the returned post ID is stored in Redis.
 - History and profile menu handlers store a pending view request in Redis keyed by subreddit and moderator username, then navigate to the dashboard post. The dashboard client calls `/api/bootstrap` to resolve the current moderator's pending view request. Query parameters are optional hints only.
-- The dashboard post is a launch surface, not an authorization boundary. Do not store ledger data, user identities, or target context in custom-post `postData`. Non-moderators who open the dashboard see no moderation data because every API route re-checks access server-side.
+- The dashboard post is a launch surface, not an authorization boundary. Do not store ledger data, user identities, or target context in custom-post `postData`. Non-moderators who open the dashboard get a limited view. Moderator-only data remains hidden because protected API routes re-check access server-side.
 
 ### Non-Goals
 
 - Auto-ban thresholds.
 - Automatic side-effect undo after reversal.
-- Public user self-check.
+- Public lookup of arbitrary users.
 - Bulk ledger export.
 - External services or databases.
 - AI moderation or automatic detection.
@@ -304,14 +305,15 @@ Use a small Vite client app for the in-app web UI, backed by Hono JSON endpoints
 Proposed routes:
 
 - Web UI entrypoint: use the Devvit Web custom post/webview entrypoint configured in `devvit.json`. The client may render a route-like `/app` view internally, but menu handlers must navigate through a supported Devvit target rather than assuming a relative server route is user-openable.
-- `/api/bootstrap` resolves the dashboard view for the current moderator, using pending view request records or explicit settings mode.
+- `/api/bootstrap` resolves the dashboard view for the current user. Moderators get pending view request records or explicit settings mode. Logged-in non-moderators get `view = limited`.
+- `/api/self-summary` reads the logged-in viewer's own active total and compact warning history for the current subreddit.
 - `/api/history` reads paginated ledger history.
 - `/api/profile` reads the selected user's moderation profile.
 - `/api/settings` reads effective runtime configuration and writes audited admin rule configuration.
 - `/api/reverse` reverses a ledger entry.
 - `/api/recalculate-user-total` recalculates a selected user's cached active total.
 
-Every `/api/*` route re-checks Devvit context and moderator permissions server-side. The server must not trust target IDs, user IDs, or subreddit identity passed from the client without checking current subreddit context. Enforcement still runs through Devvit menu and form handlers, not arbitrary client POSTs, in MVP.
+Every protected moderation `/api/*` route re-checks Devvit context and moderator permissions server-side. `/api/self-summary` is the only non-moderator dashboard data route; it derives the user from `reddit.getCurrentUser()` and never accepts a client-submitted username, user key, target ID, or subreddit identity. Enforcement still runs through Devvit menu and form handlers, not arbitrary client POSTs, in MVP.
 
 Devvit select fields return arrays in form submissions. All form handlers normalize select values with `Array.isArray(value) ? value[0] : value` before validation.
 
@@ -345,7 +347,7 @@ History is moderator-only and shows:
 - Side-effect status summary.
 - Reverse action for active entries.
 
-History shows the latest `25` entries by default and supports load-more pagination from the Redis sorted-set index.
+History shows the latest `25` entries by default and supports load-more pagination from the Redis sorted-set index. On narrow/mobile layouts, History renders the same moderator entry data as compact cards with date, rule, action/status, points, target link, moderator, side-effect summary, and available reverse action.
 
 ### Profile View
 
@@ -358,15 +360,30 @@ The profile is moderator-only and shows:
 - Recent rule violations.
 - Recent removals by rule.
 
-Profile summaries calculate totals from all ledger entries for the user. Visible recent violations and removals show the latest `25` entries by default, with pagination where useful. If a user has a large ledger, totals may be calculated from entry IDs in batches.
+Profile summaries calculate totals from all ledger entries for the user. Visible recent violations and removals show the latest `25` entries by default, with pagination where useful. On narrow/mobile layouts, recent Profile entries use the same compact moderator entry cards as History. If a user has a large ledger, totals may be calculated from entry IDs in batches.
 
 Post-rate counts and severe violation summaries can be added when those accepted extensions are implemented.
+
+### Limited User View
+
+The limited user view is for logged-in non-moderators who open the dashboard post. It shows:
+
+- The viewer's Reddit username.
+- Current active warning total for the current subreddit.
+- Up to the latest `25` compact warning history rows.
+- Each compact row contains date, rule label, and active points only.
+
+The limited view is read-only and mobile-oriented. It does not show target links, moderator usernames, side-effect statuses, reversal controls, Profile metrics, Admin tools, or any other user's ledger data.
+
+`/api/self-summary` derives identity from `reddit.getCurrentUser()`, checks both `id:{userId}` and `name:{normalizedUsername}` ledger keys when available, filters results to the current subreddit, recalculates active total from the ledger, and returns only `subredditName`, `username`, `activeTotal`, and compact history rows.
 
 ## Configuration And Settings
 
 ### Source Of Truth
 
 Runtime configuration is split by ownership. Native Devvit subreddit install settings are the source of truth for stable scalar settings: action point defaults, decay, profile metric window, default templates, and side-effect toggles. Redis remains the source of truth for admin-owned rule configuration, the numeric config `revision`, and settings audit records. Runtime reads combine Redis rule configuration with native Devvit settings.
+
+The TypeScript defaults and placeholder lists are the source for the generated `devvit.json` native settings block. Edit `src/core/config.ts` or `src/core/templates.ts`, then run `npm run sync-devvit-settings`; `npm run build` and deploy checks must fail if `devvit.json` drifts from those TypeScript sources.
 
 Config contains a numeric `schemaVersion` and Redis-owned `revision`. The default `schemaVersion` is `1`, and the starting `revision` is `1`. The Admin UI sends the revision it loaded. Save fails with a conflict if the current Redis revision differs, and the moderator must reload and reapply changes. Each successful Admin save increments revision by `1`.
 
@@ -383,6 +400,8 @@ The standard Devvit subreddit app settings page supports editing:
 - Native mod note templates.
 - User notices on/off.
 - App comment distinguish/sticky/lock options.
+
+Boolean native settings must include moderator-facing labels and help text so first-time installers can understand each side-effect toggle from Reddit's app settings page.
 
 The in-app Admin UI supports editing:
 
@@ -476,31 +495,37 @@ Allowed public placeholders:
 
 - `{ruleLabel}`
 - `{action}`
+- `{actionEffect}`
 - `{targetPermalink}`
+
+`{actionEffect}` is derived server-side from the trusted action and is outcome-neutral for public comments. It must not claim that removal, NSFW marking, or another Reddit side effect succeeded because the public comment is posted before later Reddit side effects may be attempted.
 
 Default text:
 
 ```text
-Moderator notice: this content violates {ruleLabel}. This action has been recorded in your subreddit warning history.
+Moderator notice: this content violates {ruleLabel}. {actionEffect} Target: {targetPermalink}
 ```
 
 ### Private User Notice Template
 
-Private notices are sent when user notices are enabled. They include the points added and current active total so the user understands their standing without exposing it publicly.
+Private notices are sent when user notices are enabled. They include the action outcome, points added, and current active total so the user understands what happened and their standing without exposing it publicly.
 
 Allowed private notice placeholders:
 
 - `{subredditName}`
 - `{ruleLabel}`
 - `{action}`
+- `{actionOutcome}`
 - `{pointsAdded}`
 - `{activeTotal}`
 - `{targetPermalink}`
 
+`{actionOutcome}` is derived server-side after action-specific side effects are attempted. For `warn_remove` and `warn_nsfw`, it says whether the app confirmed the removal or NSFW marking. If the Reddit side effect failed, it says the warning was recorded but the app could not confirm that side effect.
+
 Default text:
 
 ```text
-Your content in r/{subredditName} violated {ruleLabel}. This action added {pointsAdded} warning point(s). Your current active warning total is {activeTotal}. Please review the community rules before participating again.
+Your content in r/{subredditName} violated {ruleLabel}. {actionOutcome} This action added {pointsAdded} warning point(s). Your current active warning total is {activeTotal}. Target: {targetPermalink}. Please review the community rules before participating again.
 ```
 
 For `0` point entries, use a separate configurable zero-point private notice template.
@@ -508,7 +533,7 @@ For `0` point entries, use a separate configurable zero-point private notice tem
 Default zero-point text:
 
 ```text
-Your content in r/{subredditName} violated {ruleLabel}. This action was recorded as a warning without adding warning points. Your current active warning total is {activeTotal}. Please review the community rules before participating again.
+Your content in r/{subredditName} violated {ruleLabel}. {actionOutcome} This action was recorded without adding warning points. Your current active warning total is {activeTotal}. Target: {targetPermalink}. Please review the community rules before participating again.
 ```
 
 Private notices should be sent with `reddit.modMail.createConversation({ isAuthorHidden: true, subredditName, to: username, subject, body })`. Store the modmail conversation ID when available. Do not use deprecated subreddit private-message APIs. If sending fails, enforcement or reversal still succeeds when the ledger write succeeds, and the relevant side-effect status records the failure.
@@ -524,9 +549,12 @@ Allowed native mod note placeholders:
 - `{subredditName}`
 - `{ruleLabel}`
 - `{action}`
+- `{actionOutcome}`
 - `{pointsAdded}`
 - `{activeTotal}`
 - `{targetPermalink}`
+
+`{actionOutcome}` uses the same server-derived outcome text as private user notices.
 
 Default text:
 
@@ -606,6 +634,7 @@ All actions are enforced server-side even though menu items are moderator-only.
 - Admin reads require moderator access with any permission.
 - Admin rule writes, rules JSON import, and user-total recalculation require `all`.
 - Reversal requires `posts` or `all`, regardless of whether native mod notes are enabled.
+- Logged-in non-moderators may open the dashboard limited view and call `/api/self-summary` for their own current-subreddit active total and compact history only.
 
 If permissions are insufficient, the app shows a moderator-facing failure message and creates no ledger entry.
 
@@ -765,7 +794,8 @@ Use `vitest` for unit, repository, and route tests.
 - Moderators can edit rules in the in-app Admin UI.
 - Admin saves write audit records.
 - Moderators can recalculate cached active totals for a selected user.
-- No non-moderator can use enforcement, history, profile, reversal, or Admin actions.
+- Logged-in non-moderators can view their own limited dashboard with active total and compact history.
+- No non-moderator can use enforcement, moderator History, Profile, reversal, Admin, rule import, cleanup, or manual recalculation actions.
 
 ## Product Decisions
 

@@ -17,13 +17,13 @@ export type ConfigValidationIssue = {
 };
 
 export const DEFAULT_PUBLIC_COMMENT_TEMPLATE =
-  'Moderator notice: this content violates {ruleLabel}. This action has been recorded in your subreddit warning history.';
+  'Moderator notice: this content violates {ruleLabel}. {actionEffect} Target: {targetPermalink}';
 
 export const DEFAULT_PRIVATE_USER_NOTICE_TEMPLATE =
-  'Your content in r/{subredditName} violated {ruleLabel}. This action added {pointsAdded} warning point(s). Your current active warning total is {activeTotal}. Please review the community rules before participating again.';
+  'Your content in r/{subredditName} violated {ruleLabel}. {actionOutcome} This action added {pointsAdded} warning point(s). Your current active warning total is {activeTotal}. Target: {targetPermalink}. Please review the community rules before participating again.';
 
 export const DEFAULT_ZERO_POINT_PRIVATE_USER_NOTICE_TEMPLATE =
-  'Your content in r/{subredditName} violated {ruleLabel}. This action was recorded as a warning without adding warning points. Your current active warning total is {activeTotal}. Please review the community rules before participating again.';
+  'Your content in r/{subredditName} violated {ruleLabel}. {actionOutcome} This action was recorded without adding warning points. Your current active warning total is {activeTotal}. Target: {targetPermalink}. Please review the community rules before participating again.';
 
 export const DEFAULT_NATIVE_MOD_NOTE_TEMPLATE =
   'StrikeLedger: {action} for {ruleLabel}. Points: {pointsAdded}. Active total: {activeTotal}. Target: {targetPermalink}';

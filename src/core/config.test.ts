@@ -113,6 +113,24 @@ describe('config validation', () => {
     });
   });
 
+  it('includes the target permalink in default message templates', () => {
+    expect(DEFAULT_CONFIG.defaultPublicCommentTemplate).toContain(
+      '{targetPermalink}'
+    );
+    expect(DEFAULT_CONFIG.defaultPrivateUserNoticeTemplate).toContain(
+      '{targetPermalink}'
+    );
+    expect(DEFAULT_CONFIG.defaultZeroPointPrivateUserNoticeTemplate).toContain(
+      '{targetPermalink}'
+    );
+    expect(DEFAULT_CONFIG.defaultNativeModNoteTemplate).toContain(
+      '{targetPermalink}'
+    );
+    expect(DEFAULT_CONFIG.defaultZeroPointNativeModNoteTemplate).toContain(
+      '{targetPermalink}'
+    );
+  });
+
   it('uses rule point overrides before action defaults', () => {
     const config = cloneConfig();
     const rule = {

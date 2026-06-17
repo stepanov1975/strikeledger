@@ -404,25 +404,59 @@ export class LedgerRepository {
     const uniqueKeys = uniqueUserKeys(userKeys);
     const entriesById = new Map<string, LedgerEntry>();
     if (limit >= 0) {
-      const perKeyLimit = Math.max(0, offset) + limit;
+      if (subredditName === undefined) {
+        const perKeyLimit = Math.max(0, offset) + limit;
+        for (const userKey of uniqueKeys) {
+          for (const entry of await this.getUserLedgerPage(
+            userKey,
+            0,
+            perKeyLimit
+          )) {
+            entriesById.set(entry.entryId, entry);
+          }
+        }
+
+        const entries = Array.from(entriesById.values()).sort(
+          compareEntriesNewestFirst
+        );
+        return entries.slice(offset, offset + limit);
+      }
+
+      const scopedSubredditName = subredditName;
+      const perKeyScopedLimit = Math.max(0, offset) + limit;
+      const pageSize = Math.max(25, perKeyScopedLimit);
       for (const userKey of uniqueKeys) {
-        for (const entry of await this.getUserLedgerPage(
-          userKey,
-          0,
-          perKeyLimit
-        )) {
-          entriesById.set(entry.entryId, entry);
+        let readOffset = 0;
+        let scopedEntryCount = 0;
+        while (scopedEntryCount < perKeyScopedLimit) {
+          const page = await this.getUserLedgerPage(
+            userKey,
+            readOffset,
+            pageSize
+          );
+          if (page.length === 0) {
+            break;
+          }
+
+          for (const entry of page) {
+            if (isEntryForSubreddit(entry, scopedSubredditName)) {
+              scopedEntryCount += 1;
+              entriesById.set(entry.entryId, entry);
+            }
+          }
+
+          if (page.length < pageSize) {
+            break;
+          }
+
+          readOffset += pageSize;
         }
       }
 
       const entries = Array.from(entriesById.values()).sort(
         compareEntriesNewestFirst
       );
-      const scopedEntries =
-        subredditName === undefined
-          ? entries
-          : entries.filter((entry) => isEntryForSubreddit(entry, subredditName));
-      return scopedEntries.slice(offset, offset + limit);
+      return entries.slice(offset, offset + limit);
     }
 
     for (const userKey of uniqueKeys) {

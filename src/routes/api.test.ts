@@ -182,6 +182,7 @@ const loadApi = async (
     permissions === null
       ? null
       : {
+          id: 't2_mod_a',
           username: 'mod-a',
           getModPermissionsForSubreddit: vi.fn(async () => permissions),
         };
@@ -335,6 +336,21 @@ describe('api routes', () => {
     });
   });
 
+  it('returns limited bootstrap information for logged-in non-moderators', async () => {
+    const { api } = await loadApi([]);
+
+    const response = await api.request('/bootstrap');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      view: 'limited',
+      subredditName: 'testsub',
+      currentUsername: 'mod-a',
+      hasPendingBootstrap: false,
+    });
+  });
+
   it('marks bootstrap responses that consume pending menu launches', async () => {
     const { api, redis } = await loadApi(['posts']);
     await redis.set(
@@ -354,6 +370,33 @@ describe('api routes', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       view: 'profile',
+      contextToken: 'view-token',
+      hasPendingBootstrap: true,
+    });
+    expect(redis.values.has('dashboard_bootstrap:testsub:mod-a')).toBe(false);
+  });
+
+  it('keeps listed moderators with no explicit permissions on moderator bootstrap', async () => {
+    const { api, redis } = await loadApi([], { listedModerator: true });
+    await redis.set(
+      'dashboard_bootstrap:testsub:mod-a',
+      JSON.stringify({
+        view: 'profile',
+        subredditName: 'testsub',
+        moderatorUsername: 'mod-a',
+        contextToken: 'view-token',
+        createdAtMs: Date.UTC(2026, 0, 1),
+        expiresAtMs: Date.UTC(2026, 0, 1) + 15 * 60 * 1000,
+      })
+    );
+
+    const response = await api.request('/bootstrap');
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      view: 'profile',
+      moderatorUsername: 'mod-a',
+      currentUsername: 'mod-a',
       contextToken: 'view-token',
       hasPendingBootstrap: true,
     });
@@ -453,6 +496,101 @@ describe('api routes', () => {
     await expect(response.json()).resolves.toEqual({
       error: 'all_permission_required',
     });
+  });
+
+  it('reads compact self summary for logged-in non-moderators', async () => {
+    const { api, redis } = await loadApi([]);
+    const createdAtMs = Date.now();
+    await seedLedger(
+      redis,
+      buildEntry({
+        entryId: 'self-entry',
+        userKey: 'id:t2_mod_a',
+        username: 'mod-a',
+        ruleLabel: 'Rule 1 - Spam',
+        originalPoints: 3,
+        createdAtMs,
+      })
+    );
+    await seedLedger(
+      redis,
+      buildEntry({
+        entryId: 'other-subreddit-entry',
+        subredditName: 'othersub',
+        userKey: 'id:t2_mod_a',
+        username: 'mod-a',
+        originalPoints: 99,
+        createdAtMs: createdAtMs + 1,
+      })
+    );
+    await seedLedger(
+      redis,
+      buildEntry({
+        entryId: 'other-user-entry',
+        userKey: 'id:t2_other',
+        username: 'other-user',
+        originalPoints: 99,
+        createdAtMs: createdAtMs + 2,
+      })
+    );
+
+    const response = await api.request('/self-summary');
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({
+      subredditName: 'testsub',
+      username: 'mod-a',
+      activeTotal: 3,
+      entries: [
+        {
+          createdAtMs,
+          ruleLabel: 'Rule 1 - Spam',
+          activePoints: 3,
+        },
+      ],
+    });
+  });
+
+  it('reads current-subreddit self history past newer entries from another subreddit', async () => {
+    const { api, redis } = await loadApi([]);
+    const createdAtMs = Date.now();
+    await seedLedger(
+      redis,
+      buildEntry({
+        entryId: 'self-entry',
+        userKey: 'id:t2_mod_a',
+        username: 'mod-a',
+        ruleLabel: 'Rule 1 - Spam',
+        originalPoints: 3,
+        createdAtMs,
+      })
+    );
+    for (let index = 0; index < 25; index += 1) {
+      await seedLedger(
+        redis,
+        buildEntry({
+          entryId: `other-subreddit-entry-${index}`,
+          subredditName: 'othersub',
+          userKey: 'id:t2_mod_a',
+          username: 'mod-a',
+          targetId: `t3_other_${index}`,
+          originalPoints: 99,
+          createdAtMs: createdAtMs + index + 1,
+        })
+      );
+    }
+
+    const response = await api.request('/self-summary');
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.activeTotal).toBe(3);
+    expect(body.entries).toEqual([
+      {
+        createdAtMs,
+        ruleLabel: 'Rule 1 - Spam',
+        activePoints: 3,
+      },
+    ]);
   });
 
   it('reads history from a server-side view context token', async () => {

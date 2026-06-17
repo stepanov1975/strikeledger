@@ -51,6 +51,22 @@ describe('resolveDashboardLaunch', () => {
     });
   });
 
+  it('keeps limited bootstrap responses out of protected views', () => {
+    expect(
+      resolveDashboardLaunch(
+        {
+          ...bootstrap,
+          view: 'limited',
+          currentUsername: 'viewer-a',
+          hasPendingBootstrap: false,
+        },
+        new URLSearchParams('view=history&contextToken=view-token')
+      )
+    ).toEqual({
+      view: 'limited',
+    });
+  });
+
   it('keeps selected target context only for history and profile tabs', () => {
     expect(shouldKeepDashboardContext('history')).toBe(true);
     expect(shouldKeepDashboardContext('profile')).toBe(true);

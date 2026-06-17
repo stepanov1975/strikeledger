@@ -22,6 +22,7 @@ const HISTORY_PAGE_SIZE = 25;
 const MAX_HISTORY_OFFSET = 500;
 const PROFILE_RECENT_ENTRY_LIMIT = 25;
 const PROFILE_SUMMARY_ENTRY_LIMIT = 500;
+const SELF_HISTORY_LIMIT = 25;
 
 const getRepositories = () => {
   const store = new DevvitRedisStore(redis);
@@ -289,6 +290,16 @@ const serializeEntry = (
   reversalNote: entry.reversalNote,
 });
 
+const serializeSelfSummaryEntry = (
+  entry: LedgerEntry,
+  nowMs: number,
+  config: StrikeLedgerConfig
+): Record<string, unknown> => ({
+  createdAtMs: entry.createdAtMs,
+  ruleLabel: entry.ruleLabel,
+  activePoints: calculateActivePoints(entry, config, nowMs),
+});
+
 const buildReversalLogDetails = (
   entry: LedgerEntry,
   activeTotal: number
@@ -309,32 +320,97 @@ const buildReversalLogDetails = (
 });
 
 api.get('/bootstrap', async (c) => {
-  const apiAccess = await getApiAccess('bootstrap');
-  if (!apiAccess) {
-    return c.json({ error: 'moderator_required' }, 403);
+  const subreddit = await reddit.getCurrentSubreddit();
+  const access = await getModeratorAccess(subreddit.name);
+  if (!access?.canRead) {
+    logInfo('api.bootstrap.limited', {
+      subredditName: subreddit.name,
+      username: access?.username,
+    });
+    return c.json({
+      view: 'limited',
+      subredditName: subreddit.name,
+      currentUsername: access?.username ?? null,
+      hasPendingBootstrap: false,
+    });
   }
 
   const { dashboardRepository } = getRepositories();
   const bootstrap = await dashboardRepository.consumeDashboardBootstrap(
-    apiAccess.subredditName,
-    apiAccess.access.username
+    subreddit.name,
+    access.username
   );
   const view = bootstrap?.view ?? 'settings';
   logInfo('api.bootstrap.ok', {
     view,
-    subredditName: apiAccess.subredditName,
-    moderatorUsername: apiAccess.access.username,
+    subredditName: subreddit.name,
+    moderatorUsername: access.username,
     hasContextToken: bootstrap?.contextToken !== undefined,
   });
 
   return c.json({
     view,
-    subredditName: apiAccess.subredditName,
-    moderatorUsername: apiAccess.access.username,
+    subredditName: subreddit.name,
+    currentUsername: access.username,
+    moderatorUsername: access.username,
     hasPendingBootstrap: bootstrap !== null,
     ...(bootstrap?.contextToken !== undefined
       ? { contextToken: bootstrap.contextToken }
       : {}),
+  });
+});
+
+api.get('/self-summary', async (c) => {
+  const subreddit = await reddit.getCurrentSubreddit();
+  const user = await reddit.getCurrentUser();
+  if (!user) {
+    return c.json({ error: 'login_required' }, 401);
+  }
+
+  const primaryUserKey = getUserKey({
+    userId: user.id,
+    username: user.username,
+  });
+  const fallbackUserKey = getUserKey({ username: user.username });
+  const userKeys = uniqueStrings([
+    ...(primaryUserKey ? [primaryUserKey] : []),
+    ...(fallbackUserKey ? [fallbackUserKey] : []),
+  ]);
+  if (!primaryUserKey || userKeys.length === 0) {
+    return c.json({ error: 'unsupported_user' }, 400);
+  }
+
+  const { configRepository, ledgerRepository } = getRepositories();
+  const config = await configRepository.getConfig();
+  const nowMs = Date.now();
+  const activeTotal = await ledgerRepository.recalculateActiveTotalForKeys(
+    userKeys,
+    primaryUserKey,
+    config,
+    nowMs,
+    subreddit.name
+  );
+  const entries = await ledgerRepository.getUserLedgerPageForKeys(
+    userKeys,
+    0,
+    SELF_HISTORY_LIMIT,
+    subreddit.name
+  );
+
+  logInfo('api.self_summary.ok', {
+    subredditName: subreddit.name,
+    username: user.username,
+    entryCount: entries.length,
+    activeTotal,
+  });
+
+  return c.json({
+    subredditName: subreddit.name,
+    username: user.username,
+    activeTotal,
+    entries: entries.map((entry) =>
+      serializeSelfSummaryEntry(entry, nowMs, config)
+    ),
   });
 });
 

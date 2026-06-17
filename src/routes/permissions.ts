@@ -9,12 +9,17 @@ export type ModeratorAccess = {
   canManage: boolean;
 };
 
+type ModeratorAccessOptions = {
+  checkListedModerator?: boolean;
+};
+
 export const canEnforceWithPermissions = (
   permissions: readonly string[]
 ): boolean => permissions.includes('all') || permissions.includes('posts');
 
 export const getModeratorAccess = async (
-  subredditName: string
+  subredditName: string,
+  options: ModeratorAccessOptions = {}
 ): Promise<ModeratorAccess | null> => {
   const user = await reddit.getCurrentUser();
   if (!user) {
@@ -23,8 +28,10 @@ export const getModeratorAccess = async (
 
   const permissions = await user.getModPermissionsForSubreddit(subredditName);
   const canManage = permissions.includes('all');
+  const checkListedModerator = options.checkListedModerator ?? true;
   const isModerator =
-    permissions.length > 0 || (await isListedModerator(subredditName, user));
+    permissions.length > 0 ||
+    (checkListedModerator && (await isListedModerator(subredditName, user)));
 
   return {
     username: user.username,

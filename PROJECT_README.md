@@ -15,9 +15,11 @@ Moderators can access these actions from Reddit menus:
 - `StrikeLedger: Profile`
 - `StrikeLedger: Admin` from the subreddit menu
 
-Each enforcement action records a ledger entry, applies configured points, leaves a public explanation comment, sends a private user notice with points and active total when enabled, and writes a neutral native mod note when enabled. Public comments never expose point totals or strike totals.
+Each enforcement action records a ledger entry, applies configured points, leaves a public explanation comment, sends a private user notice with points and active total when enabled, and writes a neutral native mod note when enabled. Public comments never expose point totals or strike totals and use outcome-neutral action text. Default public, private notice, and native mod note templates include the target permalink placeholder where supported. The default private notices state removal and NSFW outcomes for those actions.
 
 The ledger is the source of truth. Cached active totals are rebuildable, decay is calculated from ledger entries, and reversals remove an entry's contribution without deleting the audit trail or undoing Reddit side effects.
+
+Logged-in non-moderators who open the dashboard get a limited self view. It uses a server-derived current user identity, shows only that user's active total and compact current-subreddit history, and does not expose moderator History, Profile, Admin, side-effect, target, or reversal data.
 
 ## Core Defaults
 
@@ -33,9 +35,13 @@ Default decay subtracts `1` active point every `30` days, clamped at zero. Decay
 
 - Devvit menu actions and forms handle enforcement.
 - Redis stores config, ledger entries, indexes, active-total cache, settings audit, form nonces, and view context tokens.
-- A small Vite app with plain TypeScript renders history, profile, reversal, and settings UI.
-- Hono JSON endpoints back the web UI.
+- A small Vite app with plain TypeScript renders moderator history, profile, reversal, settings UI, and the limited user self view.
+- Hono JSON endpoints back the web UI, including `/api/self-summary` for the logged-in user's own limited dashboard data.
 - `vitest` covers unit, repository, and route tests.
+
+Native Devvit boolean settings include help text so first-time installers can understand side-effect toggles from the app settings page.
+
+Native Devvit setting defaults in `devvit.json` are generated from the TypeScript defaults and placeholder lists in `src/core/config.ts` and `src/core/templates.ts`. After editing those defaults, run `npm run sync-devvit-settings`; `npm run build` and `npm run deploy` check that the generated manifest has not drifted.
 
 ## Reserved Devvit Triggers
 
@@ -46,6 +52,8 @@ Default decay subtracts `1` active point every `30` days, clamped at zero. Decay
 Useful commands:
 
 ```sh
+npm run sync-devvit-settings
+npm run check-devvit-settings
 npm run type-check
 npm test
 npm run lint

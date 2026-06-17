@@ -15,6 +15,7 @@ npm run build
 - Use a moderator account with `all` permission for Admin tools and dashboard creation.
 - Use a separate test account or known test author for enforcement.
 - Review the standard Devvit app settings page and confirm the native setting defaults are present.
+- Confirm boolean native settings have readable help text for side-effect toggles such as private notices, native mod notes, distinguish, sticky, and lock.
 - Open `StrikeLedger: Admin` from the subreddit menu first and confirm the dashboard post opens.
 
 ## Devvit Platform Validation
@@ -60,7 +61,12 @@ npx devvit logs strikeledger_dev strikeledger --connect --show-timestamps --log-
 ## Side Effects
 
 - Confirm public comments do not show point totals or active totals.
+- Confirm default public comments include the target permalink.
+- Confirm default `Warn and remove` public comments do not claim the post or comment was removed.
+- Confirm default `Warn and mark NSFW` public comments do not claim the post was marked NSFW.
 - Confirm private notices include point details and active total when enabled.
+- Confirm default private notices include the target permalink.
+- Confirm default private notices for `Warn and remove` and `Warn and mark NSFW` state whether the action-specific side effect was confirmed.
 - Confirm native mod notes are neutral and unlabeled when enabled.
 - Temporarily disable user notices in native app settings; confirm new actions skip private notices.
 
@@ -68,8 +74,12 @@ npx devvit logs strikeledger_dev strikeledger --connect --show-timestamps --log-
 
 - Open `StrikeLedger: History` from a post and a comment; confirm the selected author's entries load.
 - Open `StrikeLedger: Profile`; confirm active total, lifetime points, reversals, and removal counts are coherent.
+- On a narrow/mobile viewport, confirm moderator History and Profile entries render as compact cards with date, rule, action/status, points, target link, moderator, and side-effect summary.
 - Reverse an active entry with a required reason; confirm the active total updates and the entry remains visible as reversed.
 - Use Admin to recalculate a selected user's active total; confirm the displayed result matches history/profile.
+- Open the dashboard post as a logged-in non-moderator with prior test entries; confirm it shows only that user's active total and a narrow history list with date, rule name, and points.
+- Open the dashboard post as a logged-in non-moderator with no entries; confirm it shows total points as `0` and an empty history state instead of `Request failed with 403`.
+- As a non-moderator, confirm moderator History, Profile, Admin, reversal, cleanup, rule import, and manual recalculation APIs remain blocked.
 
 ## Settings And Admin
 
@@ -80,4 +90,4 @@ npx devvit logs strikeledger_dev strikeledger --connect --show-timestamps --log-
 
 ## Known Build Warnings
 
-`npm run build` currently completes with Devvit/Vite warnings about `sourcemapFileNames` and deprecated `inlineDynamicImports`. Treat new build failures or new warning classes as issues before upload.
+`npm run build` should complete successfully before upload. Treat build failures or new warning classes as issues before upload.

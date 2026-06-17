@@ -113,15 +113,41 @@ const getDistinguishOptionName = (
 
 const buildTemplateValues = (
   entry: LedgerEntry,
-  activeTotal: number
+  activeTotal: number,
+  sideEffects: SideEffects = entry.sideEffects
 ): TemplateValues => ({
   subredditName: entry.subredditName,
   ruleLabel: entry.ruleLabel,
   action: ACTION_LABELS[entry.action],
+  actionEffect: buildPublicActionEffect(),
+  actionOutcome: buildPrivateActionOutcome(entry, sideEffects),
   pointsAdded: entry.originalPoints,
   activeTotal,
   targetPermalink: entry.targetPermalink,
 });
+
+const buildPublicActionEffect = (): string =>
+  'This moderator action has been recorded in subreddit warning history.';
+
+const buildPrivateActionOutcome = (
+  entry: LedgerEntry,
+  sideEffects: SideEffects
+): string => {
+  if (entry.action === 'warn_remove') {
+    const targetLabel = entry.targetKind === 'comment' ? 'comment' : 'post';
+    return sideEffects.remove === 'succeeded'
+      ? `The ${targetLabel} was removed, and this warning was recorded in your subreddit warning history.`
+      : `This warning was recorded in your subreddit warning history, but the app could not confirm that the ${targetLabel} was removed.`;
+  }
+
+  if (entry.action === 'warn_nsfw') {
+    return sideEffects.markNsfw === 'succeeded'
+      ? 'The post was marked NSFW, and this warning was recorded in your subreddit warning history.'
+      : 'This warning was recorded in your subreddit warning history, but the app could not confirm that the post was marked NSFW.';
+  }
+
+  return 'This warning was recorded in your subreddit warning history.';
+};
 
 const choosePrivateTemplate = (
   entry: LedgerEntry,
@@ -405,7 +431,7 @@ export const executeSideEffects = async (
         note: truncateNativeModNote(
           renderTemplate(
             chooseNativeModNoteTemplate(input.entry, input.config),
-            values
+            buildTemplateValues(input.entry, input.activeTotal, sideEffects)
           )
         ),
       });
@@ -449,7 +475,7 @@ export const executeSideEffects = async (
         ),
         body: renderTemplate(
           choosePrivateTemplate(input.entry, input.config),
-          values
+          buildTemplateValues(input.entry, input.activeTotal, sideEffects)
         ),
       });
       userNoticeId = response.conversation.id;

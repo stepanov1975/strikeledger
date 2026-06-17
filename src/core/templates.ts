@@ -1,6 +1,7 @@
 export const PUBLIC_PLACEHOLDERS = [
   'ruleLabel',
   'action',
+  'actionEffect',
   'targetPermalink',
 ] as const;
 
@@ -8,6 +9,7 @@ export const PRIVATE_PLACEHOLDERS = [
   'subredditName',
   'ruleLabel',
   'action',
+  'actionOutcome',
   'pointsAdded',
   'activeTotal',
   'targetPermalink',

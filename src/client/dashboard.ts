@@ -1,4 +1,5 @@
 import './dashboard.css';
+import { buildCompactEntryRow } from './compactEntryRows';
 import {
   ACTION_LABELS,
   STRIKE_ACTIONS,
@@ -126,6 +127,19 @@ type RedditRulesResponse = {
   rules: ImportedRedditRule[];
 };
 
+type SelfSummaryEntry = {
+  createdAtMs: number;
+  ruleLabel: string;
+  activePoints: number;
+};
+
+type SelfSummaryResponse = {
+  subredditName: string;
+  username: string;
+  activeTotal: number;
+  entries: SelfSummaryEntry[];
+};
+
 type RuleImportMode = 'add-missing' | 'replace' | 'sync-labels-order';
 
 const app = document.querySelector<HTMLDivElement>('#app');
@@ -179,6 +193,11 @@ const formatDate = (value: number): string =>
     timeStyle: 'short',
   }).format(new Date(value));
 
+const formatCompactDate = (value: number): string =>
+  new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'short',
+  }).format(new Date(value));
+
 const formatTargetUser = (context: ViewContext): string =>
   context.authorName
     ? `u/${context.authorName}`
@@ -206,32 +225,36 @@ const renderFrame = () => {
   const shell = create('div', 'shell');
   const topbar = create('header', 'topbar');
   const brand = create('div', 'brand');
+  const actorLabel =
+    bootstrap.moderatorUsername ??
+    (bootstrap.currentUsername
+      ? `u/${bootstrap.currentUsername}`
+      : 'not signed in');
   brand.append(
     create('h1', 'brand-title', 'StrikeLedger'),
-    create(
-      'p',
-      'brand-meta',
-      `r/${bootstrap.subredditName} · ${bootstrap.moderatorUsername}`
-    )
+    create('p', 'brand-meta', `r/${bootstrap.subredditName} · ${actorLabel}`)
   );
 
-  const tabs = create('div', 'tabs');
-  for (const view of [
-    'history',
-    'profile',
-    'settings',
-  ] satisfies DashboardView[]) {
-    const button = create('button', 'tab', dashboardViewLabel(view));
-    button.type = 'button';
-    button.setAttribute('role', 'tab');
-    button.setAttribute('aria-selected', String(view === activeView));
-    button.addEventListener('click', () => {
-      void setActiveView(view);
-    });
-    tabs.append(button);
+  topbar.append(brand);
+  if (bootstrap.view !== 'limited') {
+    const tabs = create('div', 'tabs');
+    for (const view of [
+      'history',
+      'profile',
+      'settings',
+    ] satisfies Exclude<DashboardView, 'limited'>[]) {
+      const button = create('button', 'tab', dashboardViewLabel(view));
+      button.type = 'button';
+      button.setAttribute('role', 'tab');
+      button.setAttribute('aria-selected', String(view === activeView));
+      button.addEventListener('click', () => {
+        void setActiveView(view);
+      });
+      tabs.append(button);
+    }
+    topbar.append(tabs);
   }
 
-  topbar.append(brand, tabs);
   main = create('main', 'content');
   shell.append(topbar, main);
   app.replaceChildren(shell);
@@ -333,10 +356,82 @@ type EntryTableOptions = {
   onReverse?: (entry: LedgerEntryRow) => void;
 };
 
+const renderCompactEntryList = (
+  entries: LedgerEntryRow[],
+  options: EntryTableOptions
+): HTMLElement => {
+  const list = create('div', 'compact-entry-list');
+
+  for (const entry of entries) {
+    const compactEntry = buildCompactEntryRow({
+      createdAtMs: entry.createdAtMs,
+      ruleLabel: entry.ruleLabel,
+      actionLabel: entry.actionLabel,
+      activePoints: entry.activePoints,
+      originalPoints: entry.originalPoints,
+      status: entry.status,
+      targetPermalink: entry.targetPermalink,
+      moderatorUsername: entry.moderatorUsername,
+      sideEffectSummary: sideEffectSummary(entry.sideEffects),
+    });
+
+    const card = create('article', 'compact-entry-card');
+    const header = create('div', 'compact-entry-header');
+    header.append(
+      create(
+        'div',
+        'compact-entry-date',
+        formatCompactDate(compactEntry.createdAtMs)
+      ),
+      create('div', 'compact-entry-points', compactEntry.pointsLabel)
+    );
+
+    const targetLink = create('a', 'link', 'Open target');
+    targetLink.href = compactEntry.targetPermalink;
+    targetLink.target = '_blank';
+    targetLink.rel = 'noreferrer';
+
+    const details = create('div', 'compact-entry-details');
+    details.append(
+      targetLink,
+      create('span', undefined, compactEntry.moderatorLabel),
+      create('span', undefined, compactEntry.sideEffectSummary)
+    );
+
+    card.append(
+      header,
+      create('div', 'compact-entry-rule', compactEntry.ruleLabel),
+      create('div', 'compact-entry-meta', compactEntry.meta),
+      details
+    );
+
+    const reversalSummary = formatReversalSummary(entry);
+    if (reversalSummary) {
+      card.append(create('div', 'compact-entry-note', reversalSummary));
+    }
+
+    if (options.onReverse && entry.status !== 'reversed') {
+      const actions = create('div', 'compact-entry-actions');
+      const reverseButton = create('button', 'secondary-button', 'Reverse');
+      reverseButton.type = 'button';
+      reverseButton.addEventListener('click', () => {
+        options.onReverse?.(entry);
+      });
+      actions.append(reverseButton);
+      card.append(actions);
+    }
+
+    list.append(card);
+  }
+
+  return list;
+};
+
 const renderEntryTable = (
   entries: LedgerEntryRow[],
   options: EntryTableOptions = {}
 ): HTMLElement => {
+  const wrapper = create('div', 'entry-list');
   const panel = create('div', 'panel');
   const table = create('table');
   const thead = create('thead');
@@ -412,7 +507,8 @@ const renderEntryTable = (
 
   table.append(thead, tbody);
   panel.append(table);
-  return panel;
+  wrapper.append(panel, renderCompactEntryList(entries, options));
+  return wrapper;
 };
 
 const renderHistory = () => {
@@ -462,6 +558,56 @@ const renderContextRequired = (
     renderToolbar(titleCase(view), 'No selected author'),
     create('div', 'empty', 'Open this view from a post or comment menu item.')
   );
+};
+
+const renderSelfHistory = (entries: SelfSummaryEntry[]): HTMLElement => {
+  if (entries.length === 0) {
+    return create('div', 'empty', 'No history.');
+  }
+
+  const list = create('div', 'limited-history');
+  for (const entry of entries) {
+    const row = create('div', 'limited-history-row');
+    row.append(
+      create(
+        'div',
+        'limited-history-date',
+        formatCompactDate(entry.createdAtMs)
+      ),
+      create('div', 'limited-history-rule', entry.ruleLabel),
+      create('div', 'limited-history-points', String(entry.activePoints))
+    );
+    list.append(row);
+  }
+  return list;
+};
+
+const renderLimitedAccess = (summary: SelfSummaryResponse | null) => {
+  if (!main || !bootstrap) {
+    return;
+  }
+
+  const username =
+    summary?.username ??
+    bootstrap.currentUsername ??
+    bootstrap.moderatorUsername ??
+    null;
+  main.replaceChildren(
+    renderToolbar(
+      username ? `u/${username}` : 'Limited access',
+      `r/${summary?.subredditName ?? bootstrap.subredditName}`
+    ),
+    renderMetrics([['Total points', summary?.activeTotal ?? 0]]),
+    settingsSection(
+      'History',
+      'Only your own compact StrikeLedger history is shown.',
+      renderSelfHistory(summary?.entries ?? [])
+    )
+  );
+};
+
+const loadLimitedAccess = async () => {
+  renderLimitedAccess(await fetchJson<SelfSummaryResponse>('/api/self-summary'));
 };
 
 const loadHistory = async (offset: number) => {
@@ -1591,7 +1737,9 @@ const saveSettings = async (revision: number, config: AdminConfig) => {
 
 const loadActiveView = async () => {
   try {
-    if (activeView === 'history') {
+    if (activeView === 'limited') {
+      await loadLimitedAccess();
+    } else if (activeView === 'history') {
       await loadHistory(0);
     } else if (activeView === 'profile') {
       await loadProfile();

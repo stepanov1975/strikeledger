@@ -747,6 +747,32 @@ api.post('/settings', async (c) => {
     return c.json({ error: 'invalid_settings_payload' }, 400);
   }
 
+  const configRevision = (nextConfig as { revision?: unknown }).revision;
+  if (
+    typeof configRevision !== 'number' ||
+    !Number.isInteger(configRevision) ||
+    configRevision !== expectedRevision
+  ) {
+    logWarn('api.settings.save.revision_mismatch', {
+      subredditName: apiAccess.subredditName,
+      moderatorUsername: apiAccess.access.username,
+      expectedRevision,
+      hasConfigRevision: configRevision !== undefined,
+    });
+    return c.json(
+      {
+        status: 'invalid',
+        issues: [
+          {
+            path: 'revision',
+            message: 'Config revision must match request revision.',
+          },
+        ],
+      },
+      400
+    );
+  }
+
   const { configRepository } = getRepositories();
   const result = await configRepository.saveConfig({
     expectedRevision,

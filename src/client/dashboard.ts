@@ -1410,7 +1410,14 @@ const buildRulesJsonSection = (
         throw new Error('Rules JSON must be an object.');
       }
 
-      void saveSettings(revision, parsed as AdminConfig);
+      const importedRevision = (parsed as { revision?: unknown }).revision;
+      void saveSettings(
+        typeof importedRevision === 'number' &&
+          Number.isInteger(importedRevision)
+          ? importedRevision
+          : revision,
+        parsed as AdminConfig
+      );
     } catch (error) {
       status.replaceChildren(
         create(

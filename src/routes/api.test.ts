@@ -3,6 +3,7 @@ import {
   EMPTY_SIDE_EFFECTS,
   SCHEMA_VERSION,
   type LedgerEntry,
+  type StrikeLedgerConfig,
 } from '../core/domain';
 
 type RedisZMember = {
@@ -1009,6 +1010,60 @@ describe('api routes', () => {
       }),
     ]);
     expect(body.records[0]).not.toHaveProperty('beforeConfig');
+  });
+
+  it('rejects settings saves when the config revision differs from the request revision', async () => {
+    const { api } = await loadApi(['all']);
+
+    const settingsResponse = await api.request('/settings');
+    const settingsBody = await settingsResponse.json();
+    const staleConfig = settingsBody.config as StrikeLedgerConfig;
+    const currentRevision = staleConfig.revision;
+    const updatedConfig: StrikeLedgerConfig = {
+      ...staleConfig,
+      rules: staleConfig.rules.map((rule) =>
+        rule.id === 'rule-general'
+          ? { ...rule, label: 'Rule 1 Playtest' }
+          : rule
+      ),
+    };
+    const saveResponse = await api.request('/settings', {
+      method: 'POST',
+      body: JSON.stringify({
+        revision: currentRevision,
+        config: updatedConfig,
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(saveResponse.status).toBe(200);
+
+    const staleSaveResponse = await api.request('/settings', {
+      method: 'POST',
+      body: JSON.stringify({
+        revision: currentRevision + 1,
+        config: staleConfig,
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const staleSaveBody = await staleSaveResponse.json();
+
+    expect(staleSaveResponse.status).toBe(400);
+    expect(staleSaveBody).toEqual({
+      status: 'invalid',
+      issues: [
+        {
+          path: 'revision',
+          message: 'Config revision must match request revision.',
+        },
+      ],
+    });
+
+    const latestResponse = await api.request('/settings');
+    const latestBody = await latestResponse.json();
+    expect(latestBody.config).toMatchObject({
+      revision: currentRevision + 1,
+      rules: [expect.objectContaining({ label: 'Rule 1 Playtest' })],
+    });
   });
 
   it('runs bounded cleanup for old inactive ledger entries', async () => {

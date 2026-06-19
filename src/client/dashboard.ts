@@ -157,6 +157,7 @@ let historyEntries: LedgerEntryRow[] = [];
 let historyNextOffset: number | null = null;
 let historyContext: ViewContext | null = null;
 let historyActiveTotal = 0;
+let historyCanAddReversalModNote = false;
 let historyNotice: string | null = null;
 let settingsNotice: string | null = null;
 
@@ -627,6 +628,7 @@ const loadHistory = async (offset: number) => {
 
   historyContext = response.context;
   historyActiveTotal = response.activeTotal;
+  historyCanAddReversalModNote = response.canAddReversalModNote;
   historyEntries = [...historyEntries, ...response.entries];
   historyNextOffset = response.nextOffset;
   renderHistory();
@@ -635,10 +637,12 @@ const loadHistory = async (offset: number) => {
 type ReverseDialogResult = {
   reversalReason: string;
   reversalNote?: string;
+  addNativeModNote: boolean;
 };
 
 const showReverseDialog = (
-  entry: LedgerEntryRow
+  entry: LedgerEntryRow,
+  canAddNativeModNote: boolean
 ): Promise<ReverseDialogResult | null> =>
   new Promise((resolve) => {
     const dialog = create('dialog', 'modal');
@@ -658,9 +662,18 @@ const showReverseDialog = (
     const noteLabel = create('label', 'field-label', 'Internal note');
     const note = create('textarea', 'field-control') as HTMLTextAreaElement;
     note.rows = 3;
+    const nativeModNoteLabel = create(
+      'label',
+      'checkbox-label',
+      'Add native mod note'
+    );
+    const nativeModNote = create('input') as HTMLInputElement;
+    nativeModNote.type = 'checkbox';
+    nativeModNote.checked = true;
 
     reasonLabel.append(reason);
     noteLabel.append(note);
+    nativeModNoteLabel.prepend(nativeModNote);
 
     const actions = create('div', 'modal-actions');
     const cancel = create('button', 'secondary-button', 'Cancel');
@@ -674,6 +687,7 @@ const showReverseDialog = (
       subtitle,
       reasonLabel,
       noteLabel,
+      ...(canAddNativeModNote ? [nativeModNoteLabel] : []),
       actions
     );
     dialog.append(form);
@@ -698,6 +712,7 @@ const showReverseDialog = (
       cleanup({
         reversalReason,
         ...(reversalNote ? { reversalNote } : {}),
+        addNativeModNote: canAddNativeModNote && nativeModNote.checked,
       });
     });
     dialog.addEventListener('cancel', () => cleanup(null));
@@ -710,7 +725,7 @@ const showReverseDialog = (
   });
 
 const reverseEntry = async (entry: LedgerEntryRow) => {
-  const reversal = await showReverseDialog(entry);
+  const reversal = await showReverseDialog(entry, historyCanAddReversalModNote);
   if (!reversal) {
     return;
   }

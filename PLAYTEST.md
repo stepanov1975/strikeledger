@@ -22,6 +22,18 @@ npm run build
 
 - Confirm moderation actions run under the app's explicit Reddit moderator permission scope by completing at least one `Warn and remove` action on a test post.
 - Repeat the ordinary-call attempt for `/internal/triggers/on-app-install`. Expected result: unreachable, blocked, or no install-side Redis mutation.
+- From the dashboard webview console, probe scheduler route isolation with the wrong task name:
+
+```js
+fetch('/internal/scheduler/ledger-cleanup', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ name: 'probe' }),
+}).then((response) => response.status);
+```
+
+Expected result: unreachable, blocked, `403`, or `404`. A `400` response means the webview reached the app's scheduler route and the route rejected only the task name; treat that as a pre-production finding and harden the route before launch. Do not probe this route with `{ name: 'ledgerCleanup' }` on real data.
+- Confirm the real scheduled cleanup still runs by watching logs for `StrikeLedger scheduler.cleanup.ok` after install/playtest. The scheduled cleanup task is expected to use `/internal/scheduler/ledger-cleanup`; the webview probe above must not be the source of that log.
 
 ## Logs
 
@@ -73,7 +85,7 @@ npx devvit logs strikeledger_dev strikeledger --connect --show-timestamps --log-
 ## Dashboard
 
 - Open `StrikeLedger: History` from a post and a comment; confirm the selected author's entries load.
-- Open `StrikeLedger: Profile`; confirm active total, lifetime points, reversals, and removal counts are coherent.
+- Open `StrikeLedger: Profile`; confirm active total, summary-window points, reversals, and removal counts are coherent.
 - On a narrow/mobile viewport, confirm moderator History and Profile entries render as compact cards with date, rule, action/status, points, target link, moderator, and side-effect summary.
 - Reverse an active entry with a required reason; confirm the active total updates and the entry remains visible as reversed.
 - Use Admin to recalculate a selected user's active total; confirm the displayed result matches history/profile.

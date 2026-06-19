@@ -920,11 +920,14 @@ api.post('/reverse', async (c) => {
   const entryId = trimString(payload.entryId);
   const reversalReason = trimString(payload.reversalReason);
   const reversalNote = trimString(payload.reversalNote);
+  const wantsNativeModNote = payload.addNativeModNote !== false;
   const { configRepository, dashboardRepository, ledgerRepository } =
     getRepositories();
   const config = await configRepository.getConfig();
   const addNativeModNote =
-    config.nativeModNotesEnabled && config.reversalNativeModNotesEnabled;
+    config.nativeModNotesEnabled &&
+    config.reversalNativeModNotesEnabled &&
+    wantsNativeModNote;
 
   if (!entryId || !reversalReason) {
     logWarn('api.reverse.missing_fields', {

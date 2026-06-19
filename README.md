@@ -79,11 +79,11 @@ Default action points:
 
 Rules can override these values per action. A zero-point warning is allowed; it still records a ledger entry and can still run configured notices and mod notes.
 
-Default decay subtracts `1` active point every `30` days from each non-reversed entry, clamped at zero. For example, a 3-point warning is worth 3 active points for days 0-29, 2 active points for days 30-59, 1 active point for days 60-89, and 0 active points after 90 days.
+Default decay subtracts `1` active point every `30` days from each non-reversed entry, clamped at zero. The native settings page accepts decay intervals from 1 to 36 days. For example, a 3-point warning is worth 3 active points for days 0-29, 2 active points for days 30-59, 1 active point for days 60-89, and 0 active points after 90 days.
 
 ## Profile Metrics
 
-The Profile view shows ledger totals for the selected user: active points, lifetime points, decayed points, reversed entries, and removals by rule.
+The Profile view shows ledger totals for the selected user: active points, original points in the summary window, decayed points, reversed entries, and removals by rule.
 
 ## Templates
 
@@ -141,7 +141,7 @@ History is loaded from a short-lived server-issued context token. Open History f
 Use `StrikeLedger: Profile` from a post or comment to open the author's profile summary. The Profile tab shows:
 
 - Active total.
-- Original points.
+- Original points in the summary window.
 - Decayed points.
 - Reversed entry count.
 - Removals grouped by rule.

@@ -1176,7 +1176,7 @@ describe('api routes', () => {
     });
   });
 
-  it('uses reversal context to recalculate totals across ID and username keys', async () => {
+  it('uses reversal context and honors per-request native mod-note opt-out', async () => {
     const { api, reddit, redis } = await loadApi(['posts']);
     await seedViewContext(redis);
     await seedLedger(
@@ -1218,12 +1218,8 @@ describe('api routes', () => {
       activeTotal: 2,
     });
     expect(redis.values.get('user:id:t2_user:active_total')).toBe('2');
-    expect(reddit.addModNote).toHaveBeenCalledWith(
-      expect.objectContaining({
-        redditId: 't3_legacy',
-        user: 'target-user',
-      })
-    );
+    expect(reddit.addModNote).not.toHaveBeenCalled();
+    expect(body.sideEffects.reversalModNote).toBe('skipped');
   });
 
   it('checkpoints reversal side effects before the final ledger update', async () => {

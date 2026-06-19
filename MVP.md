@@ -354,13 +354,13 @@ History shows the latest `25` entries by default and supports load-more paginati
 The profile is moderator-only and shows:
 
 - Current active strike total.
-- Original lifetime points.
+- Original points in the summary window.
 - Decayed points.
 - Reversed entries.
 - Recent rule violations.
 - Recent removals by rule.
 
-Profile summaries calculate totals from all ledger entries for the user. Visible recent violations and removals show the latest `25` entries by default, with pagination where useful. On narrow/mobile layouts, recent Profile entries use the same compact moderator entry cards as History. If a user has a large ledger, totals may be calculated from entry IDs in batches.
+Profile active total is recalculated from the active ledger window. Historical Profile metrics such as original points, decayed points, reversed entries, and removals by rule are bounded to the latest `500` ledger entries; the UI labels those metrics as latest-entry metrics when more entries exist. Visible recent violations show the latest `25` entries. On narrow/mobile layouts, recent Profile entries use the same compact moderator entry cards as History.
 
 Post-rate counts and severe violation summaries can be added when those accepted extensions are implemented.
 
@@ -381,7 +381,7 @@ The limited view is read-only and mobile-oriented. It does not show target links
 
 ### Source Of Truth
 
-Runtime configuration is split by ownership. Native Devvit subreddit install settings are the source of truth for stable scalar settings: action point defaults, decay, profile metric window, default templates, and side-effect toggles. Redis remains the source of truth for admin-owned rule configuration, the numeric config `revision`, and settings audit records. Runtime reads combine Redis rule configuration with native Devvit settings.
+Runtime configuration is split by ownership. Native Devvit subreddit install settings are the source of truth for stable scalar settings: action point defaults, decay, default templates, and side-effect toggles. Redis remains the source of truth for admin-owned rule configuration, the numeric config `revision`, and settings audit records. Runtime reads combine Redis rule configuration with native Devvit settings.
 
 The TypeScript defaults and placeholder lists are the source for the generated `devvit.json` native settings block. Edit `src/core/config.ts` or `src/core/templates.ts`, then run `npm run sync-devvit-settings`; `npm run build` and deploy checks must fail if `devvit.json` drifts from those TypeScript sources.
 
@@ -475,7 +475,7 @@ Default first-install rule set:
 - Templates: required global public and private templates; optional rule templates; max 2000 characters.
 - Point values: integers from 0 to 100.
 - Decay amount: integer from 1 to 100.
-- Decay interval: integer from 1 to 3650 days.
+- Native Devvit decay interval: integer from 1 to 36 days.
 - The combined decay settings must let a 100-point entry fully decay within 3650 days.
 - At least one enabled rule is required.
 - Public templates and public comment overrides reject private-only placeholders such as `{pointsAdded}` and `{activeTotal}`.

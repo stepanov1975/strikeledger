@@ -5,6 +5,7 @@ Environment:
 - Browser: logged-in Chrome profile through Codex browser extension
 - Moderator account observed: `AlexSt1975`
 - Existing test target observed: `u/FeelingAd9932`
+- Non-moderator account observed: `FeelingAd9932`
 - Dashboard post observed: `https://www.reddit.com/r/strikeledger_dev/comments/1u4t1h2/strikeledger_dashboard/`
 
 ## Automated Checks
@@ -27,7 +28,7 @@ Environment:
 
 - [x] `Warn and remove` completed live to confirm explicit Reddit moderator permission scope.
 - [ ] Ordinary-call attempt for `/internal/triggers/on-app-install` repeated.
-- [~] Scheduler route isolation probe attempted. Direct webview URL returned `401`, and the controlled browser context could not issue the documented fetch from inside the embedded dashboard iframe.
+- [~] Scheduler route isolation probe attempted. Direct webview URL returned `401`, and the controlled browser context could not issue the documented fetch from inside the embedded dashboard iframe. Follow-up dashboard-webview attempts were blocked before reaching the app: direct network access failed, controlled page evaluation exposed neither `fetch` nor `XMLHttpRequest`, and the browser security policy blocked the form-based fallback.
 - [x] Real scheduled cleanup confirmed from logs.
 
 ## Logs
@@ -41,7 +42,7 @@ Environment:
 - [x] Post `Warn and remove` submitted and verified.
 - [x] Comment `Warn and remove` submitted and verified.
 - [x] Post `Warn and mark NSFW` submitted and verified.
-- [ ] Same moderator retry/idempotency checked.
+- [~] Same moderator retry/idempotency checked. Reopening the same post/action/rule with the same moderator blocked the duplicate without creating a second entry, but the exact same-form retry path was not reproduced through Reddit's form UI.
 - [ ] Cross-moderator duplicate handling checked.
 
 ## Preconditions
@@ -49,7 +50,7 @@ Environment:
 - [x] Locked content enforcement rejection checked.
 - [x] Already removed content rejection checked.
 - [x] Already NSFW content rejection checked.
-- [ ] Non-moderator enforcement rejection checked.
+- [x] Non-moderator enforcement rejection checked. As `u/FeelingAd9932`, post `https://www.reddit.com/r/strikeledger_dev/comments/1u4rwrp/my_first_post/` showed no moderation actions menu and no `StrikeLedger:` actions.
 
 ## Side Effects
 
@@ -57,11 +58,11 @@ Environment:
 - [x] Public comments checked for target permalink.
 - [x] `Warn and remove` public comment wording checked.
 - [x] `Warn and mark NSFW` public comment wording checked.
-- [~] Private notices checked. Live logs showed `userNotice:"succeeded"` for post Warn, post Warn and remove, post Warn and mark NSFW, comment Warn, and comment Warn and remove, plus `reversalUserNotice:"succeeded"` for Reverse; Reddit inbox/private-message content was not inspected.
-- [ ] Private notice permalink checked.
-- [ ] Action-specific private notice wording checked.
+- [x] Private notices checked. Live logs showed `userNotice:"succeeded"` for post Warn, post Warn and remove, post Warn and mark NSFW, comment Warn, and comment Warn and remove, plus `reversalUserNotice:"succeeded"` for Reverse. As `u/FeelingAd9932`, Reddit surfaced private notice conversations under `/chat/requests`, not the old message inbox.
+- [x] Private notice permalink checked. The visible private notices included target permalinks, including `/r/strikeledger_dev/comments/1u4tmuy/my_next_post/`.
+- [~] Action-specific private notice wording checked. The visible `Warn and mark NSFW` private notice, correlated with log entry `455e2456-f5c3-4341-9a2e-607c7c9ec1eb`, included points, active total, and target permalink, but did not state that the post was marked NSFW. A visible `Warn and remove` private notice was not found in chat requests.
 - [~] Native mod notes checked. Live logs showed `modNote:"succeeded"` for post Warn, post Warn and remove, post Warn and mark NSFW, comment Warn, and comment Warn and remove, plus `reversalModNote:"succeeded"` for Reverse; native mod-note UI content was not inspected.
-- [ ] User-notice opt-out checked through native app settings.
+- [x] User-notice opt-out checked through native app settings.
 
 ## Dashboard
 
@@ -70,12 +71,12 @@ Environment:
 - [x] Reversal dialog opened, required reason was submitted, and the native mod-note checkbox was visible.
 - [x] History opened from a comment menu.
 - [x] Profile opened from a comment menu.
-- [ ] Narrow/mobile rendering checked.
+- [~] Narrow/mobile rendering checked. Desktop History rendered the wide table and hidden compact cards; Chrome zoom did not trigger the app's `max-width: 720px` layout, so a real narrow/mobile viewport still needs manual or tool-assisted verification.
 - [x] Active entry reversed with a required reason.
 - [x] Admin recalculate checked for a selected user.
-- [ ] Non-moderator dashboard view checked for a user with entries.
+- [x] Non-moderator dashboard view checked for a user with entries.
 - [ ] Non-moderator dashboard empty state checked.
-- [ ] Non-moderator protected API blocking checked.
+- [~] Non-moderator protected API blocking checked. The non-moderator dashboard exposed only the compact self-history view and no Admin, Profile, Reverse, Recalculate, Run cleanup, or Rules JSON controls. Recent logs showed `api.bootstrap.limited` and `api.self_summary.ok` for `FeelingAd9932`; direct protected GET route probes were blocked by the browser before reaching Devvit, so live POST-route blocking is still not directly observed.
 
 ## Settings And Admin
 
@@ -132,3 +133,18 @@ Environment:
   - Recent non-connected Devvit logs confirmed `enforcement.submit.created` for entry `68af88b6-bff6-488b-9472-8d75c481e68b`, target `t3_1u4tmuy`, action `warn`, `ruleId:"rule-2"`, status `succeeded`, and `activeTotal:8`, consistent with the previous active total `6` plus the temporary 2-point Warn value.
   - Native Warn point value was restored to `1`; after reload, the settings page showed Warn point value `1`, and the dashboard summary returned to `Warn: 1, Warn and remove: 3, Warn and mark NSFW: 1`.
   - Locked content rejection was checked against locked app comment `t1_osk95mk`. Submitting `StrikeLedger: Warn` showed `Locked content cannot be warned.` and no success toast. Recent non-connected Devvit logs confirmed `enforcement.submit.precondition_failed` for `targetId:"t1_osk95mk"`, `targetKind:"comment"`, and reason `Locked content cannot be warned.`
+  - Same-moderator duplicate retry was checked by reopening `StrikeLedger: Warn` for post `t3_1u4tmuy`, selecting `Rule 2`, and submitting after the prior successful Rule 2 Warn entry `68af88b6-bff6-488b-9472-8d75c481e68b`. Recent non-connected Devvit logs showed `enforcement.submit.duplicate` with `existingEntryId:"68af88b6-bff6-488b-9472-8d75c481e68b"` and no new `enforcement.submit.created` for that retry. This confirms duplicate blocking for a new form by the same moderator, but not the exact same consumed-form idempotent retry path.
+  - Narrow/mobile rendering was partially checked from the live dashboard History view for `u/FeelingAd9932`. At the desktop viewport, History showed the wide table, `.compact-entry-card` elements existed in the DOM, and `.compact-entry-list` was hidden. Increasing Chrome zoom did not trigger the `max-width: 720px` media query, so the compact mobile card layout was not directly observed live.
+  - User notices opt-out was checked by disabling native `Send private user notices`, submitting Rule 2 `Warn` on post `t3_1u4rwrp` with moderator note `Live playtest user notice opt-out 2026-06-19`, and confirming logs entry `2317867b-d741-4188-9aff-e985d8b000ed` had `userNotice:"skipped"` while `publicComment` and `modNote` succeeded.
+  - Native `Send private user notices` was restored to enabled and confirmed checked after reloading the Reddit for Developers settings page.
+  - Non-moderator session was confirmed as `u/FeelingAd9932`; the account menu showed no `Mod Mode` entry.
+  - Opening the dashboard post as `u/FeelingAd9932` loaded the limited non-moderator view: `Total points` was `9`, and History showed only compact rows with dates, rule labels, and point values (`Rule 2` `1`, `Rule 2` `2`, `Rule 1` `1`, `Rule 1` `3`, `Rule 1` `1`, and `Rule 1` `1`). The dashboard did not show Admin, Profile, Reverse, Recalculate, Run cleanup, or Rules JSON controls, and it did not show `Request failed with 403`.
+  - Recent non-connected Devvit logs confirmed the non-moderator dashboard path: `api.bootstrap.limited` and `api.self_summary.ok` for `username:"FeelingAd9932"`, `entryCount:6`, and `activeTotal:9`.
+  - Non-moderator enforcement rejection was checked on `https://www.reddit.com/r/strikeledger_dev/comments/1u4rwrp/my_first_post/`. As `u/FeelingAd9932`, the page showed no moderation actions menu and no `StrikeLedger:` post actions.
+  - Direct protected GET route probes from the non-moderator webview URL were blocked by the browser with `net::ERR_BLOCKED_BY_CLIENT` before reaching Devvit, so they were not counted as app-level protected API evidence.
+  - The affected user's Reddit inbox showed public `from strikeledger[M]` app replies with target permalinks for recent test posts, but private notice messages were not visible on `/message/messages/`, `/message/inbox/`, `/message/unread/`, or `/notifications`; `/message/messages/` reported that private messages are archived and showed `No messages found`.
+  - Follow-up private notice inspection found the missing notices under Reddit Chat requests at `https://www.reddit.com/chat/requests`.
+  - The Jun 19 3:07 PM private notice said `Your content in r/strikeledger_dev violated Rule 1. This action added 1 warning point(s). Your current active warning total is 2. Target: /r/strikeledger_dev/comments/1u4tmuy/my_next_post/. Please review the community rules before participating again.`
+  - The Jun 19 6:08 PM private notice said `Your content in r/strikeledger_dev violated Rule 1. This action added 1 warning point(s). Your current active warning total is 6. Target: /r/strikeledger_dev/comments/1u4tmuy/my_next_post/. Please review the community rules before participating again.`
+  - Recent logs correlate the Jun 19 6:08 PM notice with `Warn and mark NSFW` entry `455e2456-f5c3-4341-9a2e-607c7c9ec1eb` (`activeTotal:6`, `markNsfw:"succeeded"`, `userNotice:"succeeded"`). The private notice did not include the expected action outcome text such as `The post was marked NSFW.`
+  - Follow-up Chrome control could list the open Reddit Chat room tab, but tab claiming/page reads and screenshots timed out, so no additional private-notice result was marked from that browser-control attempt.

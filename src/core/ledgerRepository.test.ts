@@ -129,6 +129,12 @@ const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => {
     formNonce: overrides.formNonce ?? 'nonce-1',
     sideEffects: overrides.sideEffects ?? { ...EMPTY_SIDE_EFFECTS },
     ...(overrides.userId !== undefined ? { userId: overrides.userId } : {}),
+    ...(overrides.targetPostId !== undefined
+      ? { targetPostId: overrides.targetPostId }
+      : {}),
+    ...(overrides.targetDeletedAtMs !== undefined
+      ? { targetDeletedAtMs: overrides.targetDeletedAtMs }
+      : {}),
     ...(overrides.publicCommentId !== undefined
       ? { publicCommentId: overrides.publicCommentId }
       : {}),
@@ -193,6 +199,12 @@ const seedEntry = async (
     member: entry.entryId,
     score: entry.createdAtMs,
   });
+  if (entry.targetPostId) {
+    await store.zAdd(`post:${entry.targetPostId}:entries`, {
+      member: entry.entryId,
+      score: entry.createdAtMs,
+    });
+  }
   await store.zAdd(`ledger:${entry.subredditName.toLowerCase()}:entries`, {
     member: entry.entryId,
     score: entry.createdAtMs,
@@ -200,6 +212,96 @@ const seedEntry = async (
 };
 
 describe('LedgerRepository', () => {
+  it('scrubs deleted comment target permalinks without deleting the ledger entry', async () => {
+    const { repo, store } = createRepo();
+    const deletedAtMs = Date.UTC(2026, 0, 2);
+    const entry = buildEntry({
+      entryId: 'comment-entry',
+      targetId: 't1_comment',
+      targetKind: 'comment',
+      targetPostId: 't3_parent',
+      targetPermalink: '/r/testsub/comments/post_title/_/comment',
+      status: 'succeeded',
+    });
+    await seedEntry(store, entry);
+
+    const result = await repo.markTargetDeleted({
+      targetId: 't1_comment',
+      targetKind: 'comment',
+      subredditName: 'testsub',
+      deletedAtMs,
+    });
+
+    const updated = await repo.getLedgerEntry(entry.entryId);
+    expect(result).toEqual({ scanned: 1, updated: 1 });
+    expect(updated).toMatchObject({
+      entryId: entry.entryId,
+      targetId: 't1_comment',
+      targetKind: 'comment',
+      targetPermalink: '',
+      targetDeletedAtMs: deletedAtMs,
+      status: 'succeeded',
+      originalPoints: 1,
+    });
+    await expect(repo.getUserLedger(entry.userKey)).resolves.toHaveLength(1);
+  });
+
+  it('scrubs deleted post target permalinks for the post and indexed comments', async () => {
+    const { repo, store } = createRepo();
+    const deletedAtMs = Date.UTC(2026, 0, 2);
+    const postEntry = buildEntry({
+      entryId: 'post-entry',
+      targetId: 't3_post',
+      targetKind: 'post',
+      targetPostId: 't3_post',
+      targetPermalink: '/r/testsub/comments/post_title',
+      status: 'succeeded',
+    });
+    const commentEntry = buildEntry({
+      entryId: 'comment-entry',
+      targetId: 't1_comment',
+      targetKind: 'comment',
+      targetPostId: 't3_post',
+      targetPermalink: '/r/testsub/comments/post_title/_/comment',
+      status: 'succeeded',
+    });
+    const otherPostEntry = buildEntry({
+      entryId: 'other-post-entry',
+      targetId: 't3_other',
+      targetKind: 'post',
+      targetPostId: 't3_other',
+      targetPermalink: '/r/testsub/comments/other_title',
+      status: 'succeeded',
+    });
+    await seedEntry(store, postEntry);
+    await seedEntry(store, commentEntry);
+    await seedEntry(store, otherPostEntry);
+
+    const result = await repo.markTargetDeleted({
+      targetId: 't3_post',
+      targetKind: 'post',
+      subredditName: 'testsub',
+      deletedAtMs,
+    });
+
+    await expect(repo.getLedgerEntry(postEntry.entryId)).resolves.toMatchObject({
+      targetPermalink: '',
+      targetDeletedAtMs: deletedAtMs,
+    });
+    await expect(
+      repo.getLedgerEntry(commentEntry.entryId)
+    ).resolves.toMatchObject({
+      targetPermalink: '',
+      targetDeletedAtMs: deletedAtMs,
+    });
+    await expect(
+      repo.getLedgerEntry(otherPostEntry.entryId)
+    ).resolves.toMatchObject({
+      targetPermalink: '/r/testsub/comments/other_title',
+    });
+    expect(result).toEqual({ scanned: 2, updated: 2 });
+  });
+
   it('creates a pending ledger entry, consumes nonce, indexes, and caches total', async () => {
     const { repo, store } = createRepo();
     const entry = buildEntry();
@@ -1070,6 +1172,7 @@ describe('LedgerRepository', () => {
       'duplicate:t3_old_inactive_1:warn:rule-general',
       'user:id:t2_user:ledger',
       'user:name:target-user:ledger',
+      'post:t3_old_inactive_1:entries',
       'target:t3_old_inactive_1:entries',
       'ledger:testsub:entries',
     ]);

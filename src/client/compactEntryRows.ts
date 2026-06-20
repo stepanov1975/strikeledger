@@ -6,6 +6,7 @@ export type CompactEntryInput = {
   originalPoints: number;
   status: string;
   targetPermalink: string;
+  targetDeletedAtMs?: number;
   moderatorUsername: string;
   sideEffectSummary: string;
 };
@@ -16,6 +17,7 @@ export type CompactEntryRow = {
   meta: string;
   pointsLabel: string;
   targetPermalink: string;
+  targetDeleted: boolean;
   moderatorLabel: string;
   sideEffectSummary: string;
 };
@@ -31,6 +33,7 @@ export const buildCompactEntryRow = (
   meta: `${entry.actionLabel} · ${titleCase(entry.status)}`,
   pointsLabel: `${entry.activePoints}/${entry.originalPoints}`,
   targetPermalink: entry.targetPermalink,
+  targetDeleted: entry.targetDeletedAtMs !== undefined,
   moderatorLabel: `u/${entry.moderatorUsername}`,
   sideEffectSummary: entry.sideEffectSummary,
 });

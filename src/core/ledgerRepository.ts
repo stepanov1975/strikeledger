@@ -111,6 +111,24 @@ export type CleanupLedgerResult = {
   deleted: number;
 };
 
+export type MarkTargetDeletedRequest = {
+  targetId: string;
+  targetKind: TargetKind;
+  subredditName?: string;
+  deletedAtMs: number;
+};
+
+export type MarkTargetDeletedResult = {
+  scanned: number;
+  updated: number;
+};
+
+type MarkTargetDeletedEntryResult =
+  | 'missing'
+  | 'unrelated'
+  | 'unchanged'
+  | 'updated';
+
 type ReverseLedgerEntryTransactionResult =
   | {
       status: 'reversed';
@@ -145,6 +163,7 @@ const formNonceKey = (nonce: string): string => `form_nonce:${nonce}`;
 const userLedgerKey = (userKey: string): string => `user:${userKey}:ledger`;
 const targetEntriesKey = (targetId: string): string =>
   `target:${targetId}:entries`;
+const postEntriesKey = (postId: string): string => `post:${postId}:entries`;
 const activeTotalKey = (userKey: string): string =>
   `user:${userKey}:active_total`;
 const userLedgerVersionKey = (userKey: string): string =>
@@ -168,6 +187,12 @@ const getLedgerEntryUserKeys = (entry: LedgerEntry): string[] => {
     ...(fallbackUserKey ? [fallbackUserKey] : []),
   ]);
 };
+
+const getLedgerEntryPostIds = (entry: LedgerEntry): string[] =>
+  uniqueUserKeys([
+    ...(entry.targetPostId ? [entry.targetPostId] : []),
+    ...(entry.targetKind === 'post' ? [entry.targetId] : []),
+  ]);
 
 const parseLedgerVersion = (raw: string | null): number => {
   const version = Number(raw);
@@ -196,6 +221,27 @@ const isEntryForSubreddit = (
   subredditName: string
 ): boolean =>
   entry.subredditName.toLowerCase() === subredditName.trim().toLowerCase();
+
+const isEntryRelatedToDeletedTarget = (
+  entry: LedgerEntry,
+  request: MarkTargetDeletedRequest
+): boolean => {
+  if (
+    request.subredditName !== undefined &&
+    !isEntryForSubreddit(entry, request.subredditName)
+  ) {
+    return false;
+  }
+
+  if (request.targetKind === 'comment') {
+    return entry.targetKind === 'comment' && entry.targetId === request.targetId;
+  }
+
+  return (
+    (entry.targetKind === 'post' && entry.targetId === request.targetId) ||
+    entry.targetPostId === request.targetId
+  );
+};
 
 const compareEntriesNewestFirst = (
   left: LedgerEntry,
@@ -694,6 +740,31 @@ export class LedgerRepository {
     return { scanned, deleted };
   }
 
+  async markTargetDeleted(
+    request: MarkTargetDeletedRequest
+  ): Promise<MarkTargetDeletedResult> {
+    const entryIds = uniqueUserKeys([
+      ...(await this.store.zRange(targetEntriesKey(request.targetId), 0, -1)),
+      ...(request.targetKind === 'post'
+        ? await this.store.zRange(postEntriesKey(request.targetId), 0, -1)
+        : []),
+    ]);
+    let scanned = 0;
+    let updated = 0;
+
+    for (const entryId of entryIds) {
+      const result = await this.markTargetDeletedEntry(entryId, request);
+      if (result !== 'missing' && result !== 'unrelated') {
+        scanned += 1;
+      }
+      if (result === 'updated') {
+        updated += 1;
+      }
+    }
+
+    return { scanned, updated };
+  }
+
   async recalculateActiveTotal(
     userKey: string,
     config: StrikeLedgerConfig,
@@ -1021,6 +1092,12 @@ export class LedgerRepository {
       member: request.entry.entryId,
       score: request.entry.createdAtMs,
     });
+    for (const postId of getLedgerEntryPostIds(request.entry)) {
+      await this.store.zAdd(postEntriesKey(postId), {
+        member: request.entry.entryId,
+        score: request.entry.createdAtMs,
+      });
+    }
     await this.store.zAdd(ledgerEntriesKey(request.entry.subredditName), {
       member: request.entry.entryId,
       score: request.entry.createdAtMs,
@@ -1056,6 +1133,7 @@ export class LedgerRepository {
     });
     const entryKey = ledgerEntryKey(entry.entryId);
     const userKeys = getLedgerEntryUserKeys(entry);
+    const postIds = getLedgerEntryPostIds(entry);
     const targetKey = targetEntriesKey(entry.targetId);
     const subredditLedgerKey = ledgerEntriesKey(entry.subredditName);
 
@@ -1064,6 +1142,7 @@ export class LedgerRepository {
         entryKey,
         duplicateClaimKey,
         ...userKeys.map(userLedgerKey),
+        ...postIds.map(postEntriesKey),
         targetKey,
         subredditLedgerKey,
       ],
@@ -1088,6 +1167,14 @@ export class LedgerRepository {
         );
         const isLastTargetEntry =
           targetMembers.length === 1 && targetMembers[0] === currentEntry.entryId;
+        const currentPostIds = getLedgerEntryPostIds(currentEntry);
+        const lastPostIds = new Set<string>();
+        for (const postId of currentPostIds) {
+          const members = await this.store.zRange(postEntriesKey(postId), 0, 1);
+          if (members.length === 1 && members[0] === currentEntry.entryId) {
+            lastPostIds.add(postId);
+          }
+        }
         const subredditMembers = await this.store.zRange(
           ledgerEntriesKey(currentEntry.subredditName),
           0,
@@ -1117,6 +1204,15 @@ export class LedgerRepository {
             currentEntry.entryId,
           ]);
         }
+        for (const postId of currentPostIds) {
+          if (lastPostIds.has(postId)) {
+            await this.store.del(postEntriesKey(postId));
+          } else {
+            await this.store.zRem(postEntriesKey(postId), [
+              currentEntry.entryId,
+            ]);
+          }
+        }
         if (isLastSubredditEntry) {
           await this.store.del(ledgerEntriesKey(currentEntry.subredditName));
         } else {
@@ -1131,6 +1227,42 @@ export class LedgerRepository {
         await this.bumpUserLedgerVersions(
           currentUserKeys.filter((userKey) => !lastUserKeys.has(userKey))
         );
+      }
+    );
+  }
+
+  private async markTargetDeletedEntry(
+    entryId: string,
+    request: MarkTargetDeletedRequest
+  ): Promise<MarkTargetDeletedEntryResult> {
+    return this.store.runTransaction(
+      [ledgerEntryKey(entryId)],
+      async (): Promise<MarkTargetDeletedEntryResult> => {
+        const entry = await this.getLedgerEntry(entryId);
+        if (!entry) {
+          return 'missing';
+        }
+
+        if (!isEntryRelatedToDeletedTarget(entry, request)) {
+          return 'unrelated';
+        }
+
+        if (
+          entry.targetPermalink === '' &&
+          entry.targetDeletedAtMs === request.deletedAtMs
+        ) {
+          return 'unchanged';
+        }
+
+        await this.store.set(
+          ledgerEntryKey(entry.entryId),
+          JSON.stringify({
+            ...entry,
+            targetPermalink: '',
+            targetDeletedAtMs: request.deletedAtMs,
+          } satisfies LedgerEntry)
+        );
+        return 'updated';
       }
     );
   }

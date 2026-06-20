@@ -211,6 +211,10 @@ tr:last-child td {
   text-decoration: underline;
 }
 
+.muted {
+  color: #5f6b7a;
+}
+
 .empty,
 .error,
 .notice {

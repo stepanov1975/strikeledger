@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
+import {
+  EMPTY_SIDE_EFFECTS,
+  SCHEMA_VERSION,
+  type LedgerEntry,
+} from '../core/domain';
 
 type RedisZMember = {
   member: string;
@@ -85,7 +90,95 @@ class TriggerRedisMock {
 
     return members.slice(start, normalizedStop + 1);
   }
+
+  async watch() {
+    let commandCount = 0;
+    return {
+      multi: vi.fn(async () => undefined),
+      set: vi.fn(async (key: string, value: string) => {
+        commandCount += 1;
+        return this.set(key, value);
+      }),
+      del: vi.fn(async (...keys: string[]) => {
+        commandCount += 1;
+        return this.del(...keys);
+      }),
+      incrBy: vi.fn(async (key: string, value: number) => {
+        commandCount += 1;
+        const current = Number(this.values.get(key) ?? '0');
+        const next = Number.isFinite(current) ? current + value : value;
+        this.values.set(key, String(next));
+        return next;
+      }),
+      zAdd: vi.fn(async (key: string, member: RedisZMember) => {
+        commandCount += 1;
+        return this.zAdd(key, member);
+      }),
+      zRem: vi.fn(async (key: string, members: string[]) => {
+        commandCount += 1;
+        return this.zRem(key, members);
+      }),
+      exec: vi.fn(async () => Array.from({ length: commandCount }, () => 'OK')),
+      discard: vi.fn(async () => undefined),
+      unwatch: vi.fn(async () => undefined),
+    };
+  }
 }
+
+const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => ({
+  schemaVersion: SCHEMA_VERSION,
+  entryId: overrides.entryId ?? 'entry-1',
+  subredditName: overrides.subredditName ?? 'testsub',
+  username: overrides.username ?? 'target-user',
+  userKey: overrides.userKey ?? 'id:t2_user',
+  targetId: overrides.targetId ?? 't3_target',
+  targetKind: overrides.targetKind ?? 'post',
+  targetPermalink: overrides.targetPermalink ?? '/r/testsub/comments/target',
+  action: overrides.action ?? 'warn',
+  ruleId: overrides.ruleId ?? 'rule-general',
+  ruleLabel: overrides.ruleLabel ?? 'Community rule violation',
+  publicCommentOverrideUsed: overrides.publicCommentOverrideUsed ?? false,
+  originalPoints: overrides.originalPoints ?? 1,
+  moderatorUsername: overrides.moderatorUsername ?? 'mod-a',
+  createdAtMs: overrides.createdAtMs ?? Date.UTC(2026, 0, 1),
+  status: overrides.status ?? 'succeeded',
+  duplicateKey: overrides.duplicateKey ?? 'duplicate',
+  moderatorRetryKey: overrides.moderatorRetryKey ?? 'retry',
+  idempotencyInputs: overrides.idempotencyInputs ?? {},
+  formNonce: overrides.formNonce ?? 'nonce-1',
+  sideEffects: overrides.sideEffects ?? { ...EMPTY_SIDE_EFFECTS },
+  ...(overrides.targetPostId !== undefined
+    ? { targetPostId: overrides.targetPostId }
+    : {}),
+  ...(overrides.targetDeletedAtMs !== undefined
+    ? { targetDeletedAtMs: overrides.targetDeletedAtMs }
+    : {}),
+});
+
+const seedEntry = async (
+  redis: TriggerRedisMock,
+  entry: LedgerEntry
+): Promise<void> => {
+  await redis.set(`ledger_entry:${entry.entryId}`, JSON.stringify(entry));
+  await redis.zAdd(`user:${entry.userKey}:ledger`, {
+    member: entry.entryId,
+    score: entry.createdAtMs,
+  });
+  await redis.zAdd(`target:${entry.targetId}:entries`, {
+    member: entry.entryId,
+    score: entry.createdAtMs,
+  });
+  if (entry.targetPostId) {
+    await redis.zAdd(`post:${entry.targetPostId}:entries`, {
+      member: entry.entryId,
+      score: entry.createdAtMs,
+    });
+  }
+  await redis.zAdd(`ledger:${entry.subredditName.toLowerCase()}:entries`, {
+    member: entry.entryId,
+    score: entry.createdAtMs,
+  });
+};
 
 const buildAsyncListing = <T>(items: T[]) => ({
   all: vi.fn(async () => items),
@@ -163,6 +256,87 @@ describe('trigger routes', () => {
     expect(redis.values.size).toBe(0);
   });
 
+  it('scrubs deleted post targets and indexed comment targets', async () => {
+    const { redis, triggers } = await loadTriggers();
+    const deletedAtMs = Date.UTC(2026, 0, 31);
+    const postEntry = buildEntry({
+      entryId: 'post-entry',
+      targetId: 't3_post',
+      targetKind: 'post',
+      targetPostId: 't3_post',
+      targetPermalink: '/r/testsub/comments/post_title',
+    });
+    const commentEntry = buildEntry({
+      entryId: 'comment-entry',
+      targetId: 't1_comment',
+      targetKind: 'comment',
+      targetPostId: 't3_post',
+      targetPermalink: '/r/testsub/comments/post_title/_/comment',
+    });
+    await seedEntry(redis, postEntry);
+    await seedEntry(redis, commentEntry);
+
+    const response = await triggers.request('/on-post-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'PostDelete',
+        postId: 't3_post',
+        deletedAt: new Date(deletedAtMs).toISOString(),
+        subreddit: { name: 'testsub' },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ status: 'success' });
+    expect(
+      JSON.parse(redis.values.get('ledger_entry:post-entry') ?? '{}')
+    ).toMatchObject({
+      targetPermalink: '',
+      targetDeletedAtMs: deletedAtMs,
+    });
+    expect(
+      JSON.parse(redis.values.get('ledger_entry:comment-entry') ?? '{}')
+    ).toMatchObject({
+      targetPermalink: '',
+      targetDeletedAtMs: deletedAtMs,
+    });
+  });
+
+  it('scrubs deleted comment targets', async () => {
+    const { redis, triggers } = await loadTriggers();
+    const deletedAtMs = Date.UTC(2026, 0, 31);
+    const entry = buildEntry({
+      entryId: 'comment-entry',
+      targetId: 't1_comment',
+      targetKind: 'comment',
+      targetPostId: 't3_post',
+      targetPermalink: '/r/testsub/comments/post_title/_/comment',
+    });
+    await seedEntry(redis, entry);
+
+    const response = await triggers.request('/on-comment-delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'CommentDelete',
+        commentId: 't1_comment',
+        postId: 't3_post',
+        deletedAt: new Date(deletedAtMs).toISOString(),
+        subreddit: { name: 'testsub' },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ status: 'success' });
+    expect(
+      JSON.parse(redis.values.get('ledger_entry:comment-entry') ?? '{}')
+    ).toMatchObject({
+      targetPermalink: '',
+      targetDeletedAtMs: deletedAtMs,
+    });
+  });
+
   it('registers placeholder triggers in Devvit config', () => {
     const config = JSON.parse(readFileSync('devvit.json', 'utf8')) as {
       triggers?: Record<string, string>;
@@ -170,8 +344,10 @@ describe('trigger routes', () => {
 
     expect(config.triggers).toEqual({
       onAppInstall: '/internal/triggers/on-app-install',
+      onCommentDelete: '/internal/triggers/on-comment-delete',
       onModAction: '/internal/triggers/on-mod-action',
       onPostCreate: '/internal/triggers/on-post-create',
+      onPostDelete: '/internal/triggers/on-post-delete',
       onPostFlairUpdate: '/internal/triggers/on-post-flair-update',
       onPostNsfwUpdate: '/internal/triggers/on-post-nsfw-update',
       onPostSpoilerUpdate: '/internal/triggers/on-post-spoiler-update',

@@ -28,6 +28,7 @@ type LedgerEntryRow = {
   entryId: string;
   username: string;
   targetPermalink: string;
+  targetDeletedAtMs?: number;
   actionLabel: string;
   ruleLabel: string;
   originalPoints: number;
@@ -372,6 +373,9 @@ const renderCompactEntryList = (
       originalPoints: entry.originalPoints,
       status: entry.status,
       targetPermalink: entry.targetPermalink,
+      ...(entry.targetDeletedAtMs !== undefined
+        ? { targetDeletedAtMs: entry.targetDeletedAtMs }
+        : {}),
       moderatorUsername: entry.moderatorUsername,
       sideEffectSummary: sideEffectSummary(entry.sideEffects),
     });
@@ -387,14 +391,18 @@ const renderCompactEntryList = (
       create('div', 'compact-entry-points', compactEntry.pointsLabel)
     );
 
-    const targetLink = create('a', 'link', 'Open target');
-    targetLink.href = compactEntry.targetPermalink;
-    targetLink.target = '_blank';
-    targetLink.rel = 'noreferrer';
+    const targetElement = compactEntry.targetDeleted
+      ? create('span', 'muted', 'Deleted target')
+      : create('a', 'link', 'Open target');
+    if (targetElement instanceof HTMLAnchorElement) {
+      targetElement.href = compactEntry.targetPermalink;
+      targetElement.target = '_blank';
+      targetElement.rel = 'noreferrer';
+    }
 
     const details = create('div', 'compact-entry-details');
     details.append(
-      targetLink,
+      targetElement,
       create('span', undefined, compactEntry.moderatorLabel),
       create('span', undefined, compactEntry.sideEffectSummary)
     );
@@ -476,11 +484,15 @@ const renderEntryTable = (
     row.append(statusCell);
 
     const targetCell = create('td');
-    const targetLink = create('a', 'link', 'Open');
-    targetLink.href = entry.targetPermalink;
-    targetLink.target = '_blank';
-    targetLink.rel = 'noreferrer';
-    targetCell.append(targetLink);
+    if (entry.targetDeletedAtMs !== undefined) {
+      targetCell.append(create('span', 'muted', 'Deleted target'));
+    } else {
+      const targetLink = create('a', 'link', 'Open');
+      targetLink.href = entry.targetPermalink;
+      targetLink.target = '_blank';
+      targetLink.rel = 'noreferrer';
+      targetCell.append(targetLink);
+    }
 
     row.append(
       targetCell,

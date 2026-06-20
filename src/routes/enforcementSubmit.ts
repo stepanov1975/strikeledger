@@ -207,16 +207,22 @@ const validateRefetchedTarget = (
 
 const buildTargetSnapshot = (
   nonce: FormNonceRecord,
-  target: Post | Comment
+  state: TargetState
 ): TargetSnapshot | null => {
   const userKey = getTargetAuthorUserKey(nonce);
   if (!userKey) {
     return null;
   }
+  const target = state.target;
 
   return {
     targetId: nonce.targetId,
     targetKind: nonce.targetKind as TargetKind,
+    ...(nonce.targetKind === 'post'
+      ? { targetPostId: nonce.targetId }
+      : state.parentPost?.id
+        ? { targetPostId: state.parentPost.id }
+        : {}),
     targetPermalink: target.permalink,
     subredditName: nonce.subredditName,
     author: {
@@ -446,7 +452,7 @@ export const handleEnforcementSubmit = async (
 
   const nowMs = getNowMs();
   const moderatorNote = trimOptional(values.moderatorNote);
-  const targetSnapshot = buildTargetSnapshot(nonce, targetState.target);
+  const targetSnapshot = buildTargetSnapshot(nonce, targetState);
   if (!targetSnapshot) {
     logWarn('enforcement.submit.no_author', {
       action: nonce.action,

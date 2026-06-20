@@ -43,9 +43,13 @@ Native Devvit boolean settings include help text so first-time installers can un
 
 Native Devvit setting defaults in `devvit.json` are generated from the TypeScript defaults and placeholder lists in `src/core/config.ts` and `src/core/templates.ts`. After editing those defaults, run `npm run sync-devvit-settings`; `npm run build` and `npm run deploy` check that the generated manifest has not drifted.
 
-## Reserved Devvit Triggers
+## Devvit Triggers
 
-`devvit.json` intentionally registers no-op placeholders for `onPostSubmit`, `onPostCreate`, `onPostUpdate`, `onPostFlairUpdate`, `onPostNsfwUpdate`, `onPostSpoilerUpdate`, and `onModAction`. They currently return success without reading Reddit data or writing Redis. Keep these placeholders unless the Devvit platform no longer supports them; registering them now avoids requiring moderators to reinstall the app when future trigger-backed functionality is added.
+`onPostDelete` and `onCommentDelete` are registered because StrikeLedger stores target permalinks in ledger entries. The app does not intentionally store post or comment body text, but Reddit permalinks can include post-title slugs, so they are content-derived data. When Reddit reports a deleted post or comment, the trigger marks the related ledger entries as deleted and clears `targetPermalink` while preserving the audit record: target ID, user/moderator IDs, timestamps, rule/action, point values, side-effect status, and reversal state remain available for moderation accountability.
+
+Post deletion also scrubs indexed comment ledger entries under the deleted post. This is why new entries carry `targetPostId` and why the repository keeps a `post:{postId}:entries` index in addition to the exact `target:{targetId}:entries` index. Without that parent-post index, a deleted post could leave warned comment permalinks containing the deleted post title.
+
+`devvit.json` still intentionally registers no-op placeholders for `onPostSubmit`, `onPostCreate`, `onPostUpdate`, `onPostFlairUpdate`, `onPostNsfwUpdate`, `onPostSpoilerUpdate`, and `onModAction`. They return success without reading Reddit data or writing Redis. Keep these placeholders unless the Devvit platform no longer supports them; registering them now avoids requiring moderators to reinstall the app when future trigger-backed functionality is added.
 
 ## Development
 

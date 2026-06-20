@@ -271,6 +271,7 @@ const serializeEntry = (
   targetId: entry.targetId,
   targetKind: entry.targetKind,
   targetPermalink: entry.targetPermalink,
+  targetDeletedAtMs: entry.targetDeletedAtMs,
   action: entry.action,
   actionLabel: ACTION_LABELS[entry.action],
   ruleId: entry.ruleId,

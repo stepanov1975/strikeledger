@@ -71,7 +71,9 @@ export type LedgerEntry = {
   userKey: string;
   targetId: string;
   targetKind: TargetKind;
+  targetPostId?: string;
   targetPermalink: string;
+  targetDeletedAtMs?: number;
   action: StrikeAction;
   ruleId: string;
   ruleLabel: string;

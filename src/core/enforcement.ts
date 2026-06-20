@@ -30,6 +30,7 @@ export type TargetAuthorSnapshot = {
 export type TargetSnapshot = {
   targetId: string;
   targetKind: TargetKind;
+  targetPostId?: string;
   targetPermalink: string;
   subredditName: string;
   author: TargetAuthorSnapshot;
@@ -124,6 +125,9 @@ export const buildLedgerEntry = (input: BuildLedgerEntryInput): LedgerEntry => {
     userKey: input.target.author.userKey,
     targetId: input.target.targetId,
     targetKind: input.target.targetKind,
+    ...(input.target.targetPostId !== undefined
+      ? { targetPostId: input.target.targetPostId }
+      : {}),
     targetPermalink: input.target.targetPermalink,
     action: input.action,
     ruleId: input.rule.id,

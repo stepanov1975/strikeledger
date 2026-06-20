@@ -36,7 +36,7 @@ Before using enforcement actions, review native app settings:
 3. Choose side effects such as private user notices, native mod notes, comment distinguish, sticky, and lock behavior.
 4. Review public, private, and native mod note templates.
 
-Then use `StrikeLedger: Admin` to configure rules, import Reddit rules, and run repair tools.
+Then use `StrikeLedger: Admin` to configure rules, import Reddit rules, import or export Rules JSON, and run repair and maintenance tools.
 
 Settings changes affect future calculations. Decay settings apply retroactively when active totals are recalculated.
 
@@ -66,6 +66,12 @@ Import modes:
 | Sync labels and order | You want matching existing rules to use the imported labels and order while preserving their existing custom settings. |
 
 After applying an import preview, click `Save admin changes` to make the changes active.
+
+### Rules JSON Import And Export
+
+Admin includes a `Rules JSON` editor for advanced rule transfer and backup. Click `Refresh export` to copy the current admin-owned rule configuration into the editor. Click `Save imported JSON` to validate and save edited or pasted Rules JSON.
+
+Rules JSON saves use the same revision checks, validation, and audit trail as ordinary Admin rule edits. Use this editor for rules only; stable subreddit settings such as point defaults, decay, side-effect toggles, and default templates are still controlled by the standard Devvit app settings page.
 
 ## Points And Decay
 
@@ -118,6 +124,8 @@ To record a warning:
 
 StrikeLedger checks the target before creating a ledger entry. It blocks actions when the author cannot be identified, the target is locked, the action is not valid for the target type, or the target has already reached a state that makes the selected action invalid.
 
+StrikeLedger also prevents accidental duplicate warnings. A repeat submit by the same moderator for the same target, action, and rule within the retry window returns the existing ledger entry. A duplicate submit by another moderator is blocked while the existing entry is still active or partial. To record a separate issue on the same target, choose a different rule or action. To reissue the same rule and action after a mistake, reverse the existing entry first, then submit a new warning.
+
 After a successful submission, the ledger entry counts toward the user's active total even if a configured side effect, such as a private notice or mod note, fails. History and Profile show side-effect status so moderators can see what happened.
 
 ## History
@@ -136,6 +144,8 @@ Use `StrikeLedger: History` from a post or comment to open that author's ledger 
 
 History is loaded from a short-lived server-issued context token. Open History from a post or comment menu item when you need a selected user's ledger. On narrow/mobile screens, History shows the same entries as compact cards instead of a wide table.
 
+Moderators with full `all` permission can also open History from Admin by entering a username or user key in User lookup and clicking `History`. Use direct lookup for repair or review when no current post or comment menu context is available.
+
 ## Profile
 
 Use `StrikeLedger: Profile` from a post or comment to open the author's profile summary. The Profile tab shows:
@@ -148,6 +158,8 @@ Use `StrikeLedger: Profile` from a post or comment to open the author's profile 
 - Recent ledger entries.
 
 Profile is loaded from a short-lived server-issued context token. Open Profile from a post or comment menu item when you need a selected user's summary. Active total is recalculated from the active ledger window; historical summary metrics are bounded to the latest entries on very large ledgers. On narrow/mobile screens, recent Profile entries use the compact card layout.
+
+Moderators with full `all` permission can also open Profile from Admin by entering a username or user key in User lookup and clicking `Profile`.
 
 ## Limited User Dashboard
 
@@ -178,9 +190,15 @@ If reversal mod notes are enabled, StrikeLedger records a native mod note for th
 
 Moderators with full settings access can recalculate a user's active total from Admin. Enter a username or user key, then click `Recalculate`. This rebuilds the cached active total from the ledger and current decay settings.
 
+## Admin Maintenance
+
+Moderators with full settings access can run ledger cleanup from Admin by clicking `Run cleanup`. This uses the same retention policy as the hourly cleanup job and reports how many entries were scanned and deleted.
+
+Click `Load audit` in Admin to view recent settings audit records. Audit rows show when Admin settings changed, which moderator saved the change, the changed top-level fields, and compact before/after hashes.
+
 ## Permissions
 
-Moderator access is required for moderator dashboard data. The `posts` or `all` permission is required for enforcement actions. Full `all` permission is required for Admin rule changes, Reddit rule import, dashboard creation, and manual recalculation. Logged-in non-moderators can open only the limited self dashboard.
+Moderator access is required for moderator dashboard data. The `posts` or `all` permission is required for enforcement actions and reversals. Full `all` permission is required for Admin rule changes, Reddit rule import, Rules JSON import, dashboard creation, direct user lookup, settings audit, ledger cleanup, and manual recalculation. Logged-in non-moderators can open only the limited self dashboard.
 
 If a moderator can open the dashboard but cannot edit Admin settings, the Admin view shows read-only rule information.
 

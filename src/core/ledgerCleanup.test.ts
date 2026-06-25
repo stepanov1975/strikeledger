@@ -6,6 +6,7 @@ describe('ledger cleanup options', () => {
     expect(normalizeLedgerCleanupOptions()).toEqual({
       retentionDays: 365,
       maxEntries: 2000,
+      maxRuntimeMs: 10_000,
     });
   });
 
@@ -14,10 +15,12 @@ describe('ledger cleanup options', () => {
       normalizeLedgerCleanupOptions({
         retentionDays: 90,
         maxEntries: 999_999,
+        maxRuntimeMs: 999_999,
       })
     ).toEqual({
       retentionDays: 90,
       maxEntries: 5000,
+      maxRuntimeMs: 30_000,
     });
   });
 });

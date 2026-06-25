@@ -198,7 +198,7 @@ describe('handleEnforcementSubmit', () => {
     });
   });
 
-  it('uses the nonce author snapshot when the submit-time author disappeared', async () => {
+  it('blocks when the refetched target author no longer has a Reddit user ID', async () => {
     const publicComment = buildPublicComment();
     const post = buildPost(publicComment, {
       authorId: undefined,
@@ -207,15 +207,16 @@ describe('handleEnforcementSubmit', () => {
     const harness = createHarness({ post });
     await harness.repository.saveFormNonce(buildNonce());
 
-    await handleEnforcementSubmit(
+    const response = await handleEnforcementSubmit(
       { formNonce: 'nonce-1', ruleId: 'rule-general' },
       harness.dependencies
     );
 
-    await expect(harness.repository.getLedgerEntry('entry-1')).resolves.toMatchObject({
-      username: 'target-user',
-      userKey: 'id:t2_user',
-    });
+    expect(response.showToast).toBe(
+      'Selected content no longer matches this StrikeLedger form. Reopen the action.'
+    );
+    expect(post.addComment).not.toHaveBeenCalled();
+    await expect(harness.repository.getLedgerEntry('entry-1')).resolves.toBeNull();
   });
 
   it('blocks when the refetched target ID no longer matches the nonce', async () => {

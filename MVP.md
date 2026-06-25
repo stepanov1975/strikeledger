@@ -82,7 +82,7 @@ Devvit Web forms do not provide a true hidden/read-only field in the installed M
 
 Devvit moderator menu forms must be completed within the platform's 10 minute moderator action window. `expiresAtMs` therefore must be no later than `createdAtMs + 10 minutes`; do not let a Redis nonce remain server-valid beyond the platform form window.
 
-At form and menu time, snapshot target author identity from the target object into the form nonce or view context. On submit, re-fetch the target for current state checks, but use the original author snapshot if current author data disappeared and the snapshot is still valid.
+At form and menu time, snapshot the target author's Reddit user ID from the target object into the form nonce or view context. On submit, re-fetch the target for current state checks and require the refetched target to still expose the same author ID before ledger creation.
 
 ### Actions
 
@@ -102,11 +102,11 @@ Moderator-facing action labels are:
 
 All enforcement preconditions are checked before ledger creation. If a precondition fails, the app shows a clear moderator-facing failure message and creates no ledger entry.
 
-- Enforcement requires an identifiable author.
-- Use `authorId` as primary identity when Devvit provides it.
-- If `authorId` is missing but `authorName` is present and not `[deleted]`, use a normalized username fallback.
+- Enforcement requires an identifiable Reddit author ID.
+- Use `authorId` as the durable ledger identity.
+- Do not create username-derived durable user keys.
 - Do not perform extra Reddit API lookups to recover deleted, suspended, or missing authors in MVP.
-- Block if both usable `authorId` and usable `authorName` are unavailable.
+- Block if a usable `authorId` is unavailable at form open or no longer matches at submit time.
 - No enforcement action can apply to locked content.
 - For comments, check both comment locked state and parent post locked state when possible.
 - `Warn` can apply to already removed or already NSFW content if the author is identifiable and the target is not locked.
@@ -151,7 +151,7 @@ Required fields:
 - `schemaVersion`: `1`
 - `entryId`
 - `subredditName`
-- `userId` when available
+- `userId`
 - `username`
 - `userKey`
 - `targetId`
@@ -212,9 +212,9 @@ Precondition failures and failed ledger writes create no ledger entry. If the ap
 
 ### Identity Keys
 
-Primary `userKey` is `id:{userId}` when `userId` is available. If `userId` is unavailable, use username fallback key `name:{normalizedUsername}`.
+`userKey` is always `id:{userId}`. The app must not create `name:*` user ledger keys or store username-derived keys as durable identity.
 
-Normalize fallback usernames to lowercase and remove a leading `u/`. History and profile reads check both `id:{userId}` and `name:{normalizedUsername}` when both identities are available, so entries created while Reddit did not expose a user ID remain visible.
+Moderator-entered usernames in Admin lookup are convenience inputs only. The server resolves them with Reddit at request time and reads or recalculates the resolved `id:{userId}` ledger key. If Reddit cannot resolve the username to a user ID, the lookup fails without creating or reading a username-derived key.
 
 ### Points And Decay
 
@@ -375,7 +375,7 @@ The limited user view is for logged-in non-moderators who open the dashboard pos
 
 The limited view is read-only and mobile-oriented. It does not show target links, moderator usernames, side-effect statuses, reversal controls, Profile metrics, Admin tools, or any other user's ledger data.
 
-`/api/self-summary` derives identity from `reddit.getCurrentUser()`, checks both `id:{userId}` and `name:{normalizedUsername}` ledger keys when available, filters results to the current subreddit, recalculates active total from the ledger, and returns only `subredditName`, `username`, `activeTotal`, and compact history rows.
+`/api/self-summary` derives identity from `reddit.getCurrentUser()`, reads only the viewer's `id:{userId}` ledger key, filters results to the current subreddit, recalculates active total from the ledger, and returns only `subredditName`, `username`, `activeTotal`, and compact history rows.
 
 ## Configuration And Settings
 
@@ -582,6 +582,7 @@ Use Devvit Redis for:
 - Form nonces.
 - View context tokens.
 - Active duplicate and moderator retry claims.
+- Tracked user IDs for scheduled account deletion checks.
 - User post-rate counters in accepted extension phase.
 - Daily digest snapshots in accepted extension phase.
 - Dashboard post ID and per-moderator pending dashboard bootstrap records.
@@ -593,7 +594,11 @@ config
 ledger_entry:{entryId}
 user:{userKey}:active_total
 user:{userKey}:ledger
+users:tracked
 target:{targetId}:entries
+post:{postId}:entries
+user:{userKey}:form_nonces
+user:{userKey}:view_contexts
 user:{userKey}:post_score_summary
 user:{userKey}:post_rate
 digest:{yyyy-mm-dd}
@@ -606,24 +611,26 @@ duplicate:{targetId}:{action}:{ruleId}
 retry:{targetId}:{action}:{ruleId}:{moderatorUsername}:{bucket}
 ```
 
-`ledger_entry:{entryId}` stores the full JSON ledger entry. `user:{userKey}:ledger` is a sorted set where the score is `createdAtMs` and the member is `entryId`. `target:{targetId}:entries` is a sorted set for target lookups. `config` stores Redis-owned rule configuration JSON. `user:{userKey}:active_total` and `user:{userKey}:post_score_summary` are rebuildable caches.
+`ledger_entry:{entryId}` stores the full JSON ledger entry. `user:{userKey}:ledger` is a sorted set where the score is `createdAtMs` and the member is `entryId`. `users:tracked` is a sorted set of `t2_*` user IDs where the score is the last account-deletion check time or first ledger creation time. `target:{targetId}:entries` is a sorted set for target lookups. `post:{postId}:entries` lets post deletion scrub the post entry and indexed comment entries without scanning all ledger entries. `user:{userKey}:form_nonces` and `user:{userKey}:view_contexts` let account deletion cleanup remove short-lived author snapshots without scanning Redis. `config` stores Redis-owned rule configuration JSON. `user:{userKey}:active_total` and `user:{userKey}:post_score_summary` are rebuildable caches.
 
-Ledger creation must be atomic across the durable entry, nonce, duplicate claim, retry claim, and indexes. Use Redis `watch`/transaction semantics around:
+Ledger creation must write the durable entry, consumed nonce, duplicate claim, retry claim, and indexes in one Redis transaction. Use Redis `watch` semantics around the keys that decide whether creation can proceed:
 
 - `form_nonce:{nonce}`
 - `duplicate:{targetId}:{action}:{ruleId}`
 - `retry:{targetId}:{action}:{ruleId}:{moderatorUsername}:{bucket}`
 - `ledger_entry:{entryId}`
-- `user:{userKey}:ledger`
-- `target:{targetId}:entries`
 
-The transaction validates the nonce, duplicate key, and retry key, then writes the pending ledger entry, indexes, consumed nonce, duplicate claim, and retry claim together. Reddit side effects run only after this transaction succeeds.
+The transaction validates the nonce, duplicate key, and retry key, then writes the pending ledger entry, user/target/post/subreddit indexes, `users:tracked`, consumed nonce, duplicate claim, and retry claim together. Reddit side effects run only after this transaction succeeds.
 
 The active-total cache is rebuildable and must not be the reason durable ledger creation fails after the entry and indexes are otherwise safe. Recalculate and overwrite `user:{userKey}:active_total` immediately after the ledger transaction succeeds and before private notices or mod notes are rendered. If cache update fails after the total was calculated, record the error in logs and continue with side effects using the calculated total.
 
 Native Reddit mod notes are a secondary moderation trail, not the source of truth, because the app needs structured data for history, reversal, scoring, and settings audit.
 
-Redis data is app-installation scoped. Cleanup deletes old reversed entries and old entries with no active points after the configured retention window; entries that still contribute active points are retained. Because bulk ledger export is not in MVP, launch documentation must warn moderators that uninstalling or reinstalling the app may remove or orphan ledger history unless Reddit provides a documented retention path.
+The app runs a scheduled account deletion check over `users:tracked`. For each due `t2_*` user ID, it calls Reddit by ID. If Reddit no longer resolves the user, the app deletes that user's ledger entries and related Redis indexes, including author-identifying fields such as user ID, username, profile/avatar/flair-like references if any are later added, active-total cache, consumed form nonces, and duplicate claims tied to those entries. Existing users are marked checked by updating their `users:tracked` score.
+
+The `onPostDelete` and `onCommentDelete` triggers are required Reddit compliance scrub paths. They must clear stored `targetPermalink` values and set `targetDeletedAtMs` for deleted target content while keeping the moderation audit entry. Post deletion must scrub both the post target and comment targets indexed under that post. Do not remove these trigger registrations unless an equivalent compliance scrub path replaces them.
+
+Redis data is app-installation scoped. Cleanup deletes old reversed entries and old entries with no active points after the configured retention window; entries that still contribute active points are retained unless the account deletion check determines that the author account was deleted. Because bulk ledger export is not in MVP, launch documentation must warn moderators that uninstalling or reinstalling the app may remove or orphan ledger history unless Reddit provides a documented retention path.
 
 ## Permissions
 
@@ -720,6 +727,7 @@ Reviewed during this MVP pass:
 
 Use these as reference, not as authority:
 
+- [Beach-Brews/devvit-community-survey](https://github.com/Beach-Brews/devvit-community-survey): account deletion compliance reference. It tracks user IDs in Redis and uses a scheduled task to call Reddit by user ID, deleting stored user data when the account no longer resolves.
 - [manavrenjith/redlex-mod](https://github.com/manavrenjith/redlex-mod): closest product reference. It implements a Devvit strike ledger with post/comment menu launch, Hono routes, Redis storage, and select-value normalization. Reuse the native menu/form ergonomics and select normalization pattern. Do not reuse its trusted username form field, single JSON-array ledger storage, or deprecated private-message pattern.
 - [shiruken/user-scorer](https://github.com/shiruken/user-scorer): useful moderation scoring reference. It documents setup limits, delayed processing, settings, modmail reports, and the limitation that historical data only starts after install. Reuse the explicit limitation wording style and clear settings constraints.
 - [fsvreddit/bot-bouncer](https://github.com/fsvreddit/bot-bouncer): useful policy/workflow reference. It documents staged enforcement modes, exemptions, false-positive appeals, and visible limitations. Reuse the pattern of explaining safety defaults and appeal/reversal expectations; keep exemptions out of MVP because `Do not special-case moderator authors or approved submitters` is already an explicit MVP decision.
@@ -759,8 +767,8 @@ Use these as product references for the accepted Post Rate Ledger extension:
 
 ## Test Scope
 
-- Unit tests for decay math, template rendering, placeholder validation, config validation, identity keying/fallback, duplicate handling, and idempotency logic.
-- Repository tests with a fake Redis adapter for ledger writes, reversal, active-total recalculation, and settings audit.
+- Unit tests for decay math, template rendering, placeholder validation, config validation, identity keying, account deletion checks, duplicate handling, and idempotency logic.
+- Repository tests with a fake Redis adapter for ledger writes, account deletion cleanup, reversal, active-total recalculation, and settings audit.
 - Route tests for API authorization failures and happy-path history/profile/Admin reads.
 - Manual Devvit playtest checklist for actual Reddit side effects.
 
@@ -774,6 +782,7 @@ Use `vitest` for unit, repository, and route tests.
 - A moderator can warn and remove a comment from `StrikeLedger: Warn and remove`.
 - A moderator can warn and mark a post NSFW from `StrikeLedger: Warn and mark NSFW`.
 - Each action creates exactly one ledger entry.
+- Each action requires and stores the affected author's `t2_*` user ID.
 - Each action stores the original point value in the ledger.
 - Enforcement actions are idempotent on retry.
 - Duplicate same-target/same-action/same-rule submissions are blocked or deduplicated.
@@ -795,6 +804,7 @@ Use `vitest` for unit, repository, and route tests.
 - Admin saves write audit records.
 - Moderators can recalculate cached active totals for a selected user.
 - Logged-in non-moderators can view their own limited dashboard with active total and compact history.
+- The scheduled account deletion check removes ledger records and author-identifying Redis indexes for deleted Reddit user IDs.
 - No non-moderator can use enforcement, moderator History, Profile, reversal, Admin, rule import, cleanup, or manual recalculation actions.
 
 ## Product Decisions

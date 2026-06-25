@@ -24,13 +24,13 @@ const placeholderTriggerRoutes = [
 
 const successResponse: TriggerResponse = { status: 'success' };
 
-const parseDeletedAtMs = (value: string | undefined): number => {
-  if (!value) {
+const parseDeletedAtMs = (deletedAt: string | undefined): number => {
+  if (!deletedAt) {
     return Date.now();
   }
 
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : Date.now();
+  const timestamp = Date.parse(deletedAt);
+  return Number.isFinite(timestamp) ? timestamp : Date.now();
 };
 
 const getLedgerRepository = (): LedgerRepository =>
@@ -47,36 +47,40 @@ triggers.post('/on-app-install', async (c) => {
 
 triggers.post('/on-post-delete', async (c) => {
   const input = await c.req.json<OnPostDeleteRequest>();
-  const result = await getLedgerRepository().markTargetDeleted({
-    targetId: input.postId,
-    targetKind: 'post',
-    ...(input.subreddit?.name ? { subredditName: input.subreddit.name } : {}),
-    deletedAtMs: parseDeletedAtMs(input.deletedAt),
-  });
-  logInfo('trigger.post_delete.scrubbed', {
-    subredditName: input.subreddit?.name,
-    targetId: input.postId,
-    scanned: result.scanned,
-    updated: result.updated,
-  });
+  if (input.postId) {
+    const result = await getLedgerRepository().markTargetDeleted({
+      targetId: input.postId,
+      targetKind: 'post',
+      ...(input.subreddit?.name ? { subredditName: input.subreddit.name } : {}),
+      deletedAtMs: parseDeletedAtMs(input.deletedAt),
+    });
+    logInfo('trigger.post_delete.scrubbed', {
+      subredditName: input.subreddit?.name,
+      targetId: input.postId,
+      scanned: result.scanned,
+      updated: result.updated,
+    });
+  }
 
   return c.json<TriggerResponse>(successResponse, 200);
 });
 
 triggers.post('/on-comment-delete', async (c) => {
   const input = await c.req.json<OnCommentDeleteRequest>();
-  const result = await getLedgerRepository().markTargetDeleted({
-    targetId: input.commentId,
-    targetKind: 'comment',
-    ...(input.subreddit?.name ? { subredditName: input.subreddit.name } : {}),
-    deletedAtMs: parseDeletedAtMs(input.deletedAt),
-  });
-  logInfo('trigger.comment_delete.scrubbed', {
-    subredditName: input.subreddit?.name,
-    targetId: input.commentId,
-    scanned: result.scanned,
-    updated: result.updated,
-  });
+  if (input.commentId) {
+    const result = await getLedgerRepository().markTargetDeleted({
+      targetId: input.commentId,
+      targetKind: 'comment',
+      ...(input.subreddit?.name ? { subredditName: input.subreddit.name } : {}),
+      deletedAtMs: parseDeletedAtMs(input.deletedAt),
+    });
+    logInfo('trigger.comment_delete.scrubbed', {
+      subredditName: input.subreddit?.name,
+      targetId: input.commentId,
+      scanned: result.scanned,
+      updated: result.updated,
+    });
+  }
 
   return c.json<TriggerResponse>(successResponse, 200);
 });

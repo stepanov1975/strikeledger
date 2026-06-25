@@ -238,7 +238,6 @@ const snapshotAuthor = (
 ): TargetAuthorSnapshot | null => {
   const userKey = getUserKey({
     ...(authorId !== undefined ? { userId: authorId } : {}),
-    ...(authorName !== undefined ? { username: authorName } : {}),
   });
   if (!userKey) {
     return null;
@@ -246,7 +245,7 @@ const snapshotAuthor = (
 
   return {
     userKey,
-    ...(authorId !== undefined ? { authorId } : {}),
+    authorId: authorId?.trim() ?? '',
     ...(authorName !== undefined ? { authorName } : {}),
   };
 };
@@ -272,7 +271,7 @@ const buildNonceRecord = (
     targetKind,
     subredditName: target.subredditName,
     userKey: author.userKey,
-    ...(author.authorId !== undefined ? { authorId: author.authorId } : {}),
+    authorId: author.authorId,
     ...(author.authorName !== undefined
       ? { authorName: author.authorName }
       : {}),

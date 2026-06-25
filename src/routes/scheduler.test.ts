@@ -69,14 +69,14 @@ class SchedulerRedisMock {
     key: string,
     start: number,
     stop: number,
-    options: { reverse?: boolean } = {}
+    options: { reverse?: boolean; by?: 'rank' | 'score' } = {}
   ): Promise<RedisZMember[]> {
     const set = this.sortedSets.get(key);
     if (!set) {
       return [];
     }
 
-    const members = Array.from(set.entries())
+    const sortedMembers = Array.from(set.entries())
       .sort(([leftMember, leftScore], [rightMember, rightScore]) => {
         if (leftScore !== rightScore) {
           return leftScore - rightScore;
@@ -85,9 +85,17 @@ class SchedulerRedisMock {
         return leftMember.localeCompare(rightMember);
       })
       .map(([member, score]) => ({ member, score }));
+    const members =
+      options.by === 'score'
+        ? sortedMembers.filter(({ score }) => score >= start && score <= stop)
+        : sortedMembers;
 
     if (options.reverse) {
       members.reverse();
+    }
+
+    if (options.by === 'score') {
+      return members;
     }
 
     const normalizedStop = stop < 0 ? members.length + stop : stop;
@@ -133,6 +141,7 @@ const buildEntry = (createdAtMs: number): LedgerEntry => ({
   schemaVersion: SCHEMA_VERSION,
   entryId: 'old-inactive',
   subredditName: 'testsub',
+  userId: 't2_user',
   username: 'target-user',
   userKey: 'id:t2_user',
   targetId: 't3_target',
@@ -158,6 +167,9 @@ const loadScheduler = async () => {
   const redis = new SchedulerRedisMock();
   const reddit = {
     getCurrentSubreddit: vi.fn(async () => ({ name: 'testsub' })),
+    getUserById: vi.fn(
+      async (): Promise<{ id: string } | undefined> => ({ id: 't2_user' })
+    ),
   };
   const settings = { getAll: vi.fn(async () => ({})) };
 
@@ -185,6 +197,10 @@ describe('scheduler routes', () => {
       score: entry.createdAtMs,
     });
     await redis.zAdd('target:t3_target:entries', {
+      member: entry.entryId,
+      score: entry.createdAtMs,
+    });
+    await redis.zAdd('post:t3_target:entries', {
       member: entry.entryId,
       score: entry.createdAtMs,
     });
@@ -223,7 +239,60 @@ describe('scheduler routes', () => {
     expect(redis.values.has('ledger_entry:old-inactive')).toBe(true);
   });
 
-  it('registers the scheduled cleanup task in Devvit config', () => {
+  it('runs scheduled account deletion checks', async () => {
+    const nowMs = Date.UTC(2026, 0, 1);
+    vi.useFakeTimers();
+    vi.setSystemTime(nowMs);
+    const oldMs = nowMs - 2 * 24 * 60 * 60 * 1000;
+    const { reddit, redis, schedulerRoutes } = await loadScheduler();
+    const entry = buildEntry(oldMs);
+    reddit.getUserById.mockResolvedValueOnce(undefined);
+
+    await redis.set(`ledger_entry:${entry.entryId}`, JSON.stringify(entry));
+    await redis.zAdd('user:id:t2_user:ledger', {
+      member: entry.entryId,
+      score: entry.createdAtMs,
+    });
+    await redis.zAdd('target:t3_target:entries', {
+      member: entry.entryId,
+      score: entry.createdAtMs,
+    });
+    await redis.zAdd('post:t3_target:entries', {
+      member: entry.entryId,
+      score: entry.createdAtMs,
+    });
+    await redis.zAdd('ledger:testsub:entries', {
+      member: entry.entryId,
+      score: entry.createdAtMs,
+    });
+    await redis.zAdd('users:tracked', {
+      member: 't2_user',
+      score: entry.createdAtMs,
+    });
+
+    const response = await schedulerRoutes.request('/account-deletion-check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'accountDeletionCheck',
+        data: {
+          checkIntervalHours: 24,
+          maxUsers: 5,
+          maxEntriesPerUser: 10,
+          maxEntriesPerRun: 10,
+        },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({});
+    expect(reddit.getUserById).toHaveBeenCalledWith('t2_user');
+    expect(redis.values.has('ledger_entry:old-inactive')).toBe(false);
+    expect(await redis.zRange('post:t3_target:entries', 0, -1)).toEqual([]);
+    expect(await redis.zRange('users:tracked', 0, -1)).toEqual([]);
+  });
+
+  it('registers scheduled tasks in Devvit config', () => {
     const config = JSON.parse(readFileSync('devvit.json', 'utf8')) as {
       scheduler?: {
         tasks?: Record<
@@ -231,7 +300,7 @@ describe('scheduler routes', () => {
           {
             endpoint: string;
             cron?: string;
-            data?: { retentionDays: number; maxEntries: number };
+            data?: Record<string, number>;
           }
         >;
       };
@@ -243,6 +312,18 @@ describe('scheduler routes', () => {
       data: {
         retentionDays: 365,
         maxEntries: 2000,
+        maxRuntimeMs: 10000,
+      },
+    });
+    expect(config.scheduler?.tasks?.accountDeletionCheck).toEqual({
+      endpoint: '/internal/scheduler/account-deletion-check',
+      cron: '37 * * * *',
+      data: {
+        checkIntervalHours: 24,
+        maxUsers: 50,
+        maxEntriesPerUser: 200,
+        maxEntriesPerRun: 1000,
+        maxRuntimeMs: 10000,
       },
     });
   });

@@ -236,7 +236,19 @@
         "cron": "17 * * * *",
         "data": {
           "retentionDays": 365,
-          "maxEntries": 2000
+          "maxEntries": 2000,
+          "maxRuntimeMs": 10000
+        }
+      },
+      "accountDeletionCheck": {
+        "endpoint": "/internal/scheduler/account-deletion-check",
+        "cron": "37 * * * *",
+        "data": {
+          "checkIntervalHours": 24,
+          "maxUsers": 50,
+          "maxEntriesPerUser": 200,
+          "maxEntriesPerRun": 1000,
+          "maxRuntimeMs": 10000
         }
       }
     }

@@ -22,7 +22,7 @@ import {
 export const FORM_NONCE_TTL_MS = 10 * 60 * 1000;
 
 export type TargetAuthorSnapshot = {
-  authorId?: string;
+  authorId: string;
   authorName?: string;
   userKey: string;
 };
@@ -118,9 +118,7 @@ export const buildLedgerEntry = (input: BuildLedgerEntryInput): LedgerEntry => {
     schemaVersion: SCHEMA_VERSION,
     entryId: input.entryId,
     subredditName: input.target.subredditName,
-    ...(input.target.author.authorId !== undefined
-      ? { userId: input.target.author.authorId }
-      : {}),
+    userId: input.target.author.authorId,
     username: input.target.author.authorName ?? '[unknown]',
     userKey: input.target.author.userKey,
     targetId: input.target.targetId,

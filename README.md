@@ -1,6 +1,6 @@
 # StrikeLedger User Manual
 
-App version: `1.0.0`
+App version: `1.1.0`
 
 StrikeLedger helps moderators record rule violations in a durable warning ledger. It adds moderator menu actions for warnings, removal warnings, NSFW warnings, history, profile, and settings. The app records what happened, calculates active warning totals with decay, and keeps a reversible audit trail for future moderator review.
 
@@ -8,7 +8,7 @@ StrikeLedger moderation tools are for moderators only. Logged-in non-moderators 
 
 ## What StrikeLedger Records
 
-Each warning action creates one ledger entry for the affected user. A ledger entry includes the subreddit, target post or comment, rule, action, original point value, moderator, time, status, Reddit side-effect results, and reversal details if the entry is later reversed.
+Each warning action creates one ledger entry for the affected user. A ledger entry includes the user's Reddit ID, display username, subreddit, target post or comment, rule, action, original point value, moderator, time, status, Reddit side-effect results, and reversal details if the entry is later reversed.
 
 Active totals are recalculated from the ledger. If a cached total ever needs to be rebuilt, the ledger remains the source of truth.
 
@@ -122,7 +122,7 @@ To record a warning:
 5. Add an optional public comment override if the default rule or global template is not appropriate.
 6. Submit the form.
 
-StrikeLedger checks the target before creating a ledger entry. It blocks actions when the author cannot be identified, the target is locked, the action is not valid for the target type, or the target has already reached a state that makes the selected action invalid.
+StrikeLedger checks the target before creating a ledger entry. It blocks actions when the author cannot be identified by Reddit user ID, the target is locked, the action is not valid for the target type, or the target has already reached a state that makes the selected action invalid.
 
 StrikeLedger also prevents accidental duplicate warnings. A repeat submit by the same moderator for the same target, action, and rule within the retry window returns the existing ledger entry. A duplicate submit by another moderator is blocked while the existing entry is still active or partial. To record a separate issue on the same target, choose a different rule or action. To reissue the same rule and action after a mistake, reverse the existing entry first, then submit a new warning.
 
@@ -144,7 +144,7 @@ Use `StrikeLedger: History` from a post or comment to open that author's ledger 
 
 History is loaded from a short-lived server-issued context token. Open History from a post or comment menu item when you need a selected user's ledger. On narrow/mobile screens, History shows the same entries as compact cards instead of a wide table.
 
-Moderators with full `all` permission can also open History from Admin by entering a username or user key in User lookup and clicking `History`. Use direct lookup for repair or review when no current post or comment menu context is available.
+Moderators with full `all` permission can also open History from Admin by entering a username or `id:t2_*` user key in User lookup and clicking `History`. Username lookup resolves the live Reddit user first, then reads the ID-keyed ledger. Use direct lookup for repair or review when no current post or comment menu context is available.
 
 ## Profile
 
@@ -159,7 +159,7 @@ Use `StrikeLedger: Profile` from a post or comment to open the author's profile 
 
 Profile is loaded from a short-lived server-issued context token. Open Profile from a post or comment menu item when you need a selected user's summary. Active total is recalculated from the active ledger window; historical summary metrics are bounded to the latest entries on very large ledgers. On narrow/mobile screens, recent Profile entries use the compact card layout.
 
-Moderators with full `all` permission can also open Profile from Admin by entering a username or user key in User lookup and clicking `Profile`.
+Moderators with full `all` permission can also open Profile from Admin by entering a username or `id:t2_*` user key in User lookup and clicking `Profile`. Username lookup resolves the live Reddit user first, then reads the ID-keyed ledger.
 
 ## Limited User Dashboard
 
@@ -188,7 +188,7 @@ If reversal mod notes are enabled, StrikeLedger records a native mod note for th
 
 ## Manual Recalculation
 
-Moderators with full settings access can recalculate a user's active total from Admin. Enter a username or user key, then click `Recalculate`. This rebuilds the cached active total from the ledger and current decay settings.
+Moderators with full settings access can recalculate a user's active total from Admin. Enter a username or `id:t2_*` user key, then click `Recalculate`. Username input resolves the live Reddit user first. Recalculation rebuilds the cached active total from the ID-keyed ledger and current decay settings.
 
 ## Admin Maintenance
 
@@ -216,6 +216,10 @@ If a moderator can open the dashboard but cannot edit Admin settings, the Admin 
 StrikeLedger stores ledger history, active-total caches, dashboard records, and short-lived form/view tokens in Devvit Redis for the app installation.
 
 The app runs an hourly cleanup job. Cleanup deletes old reversed entries and old entries that have no active points; entries that still contribute active points are kept. The default cleanup retention window is 365 days, and Admin users can run the same cleanup from the dashboard.
+
+The app also runs an hourly account deletion check. When Reddit no longer resolves a stored Reddit user ID, StrikeLedger removes that user's ledger records, active-total cache, and related author-identifying stored data.
+
+Reddit delete-event triggers are also part of the compliance path. `onPostDelete` and `onCommentDelete` scrub stored target permalinks because Reddit permalinks can include author-identifying or content-derived URL text. They keep the moderation audit entry but clear the permalink and record when the target was deleted; do not remove these trigger registrations without replacing the scrub path.
 
 Uninstalling or reinstalling the app may remove or orphan stored data. Treat uninstall and reinstall actions as data-retention events.
 

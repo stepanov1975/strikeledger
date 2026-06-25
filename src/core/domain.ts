@@ -66,7 +66,7 @@ export type LedgerEntry = {
   schemaVersion: typeof SCHEMA_VERSION;
   entryId: string;
   subredditName: string;
-  userId?: string;
+  userId: string;
   username: string;
   userKey: string;
   targetId: string;

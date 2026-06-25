@@ -1,5 +1,6 @@
 import type { TargetKind } from './domain';
 import type { RedisStore } from './redisStore';
+import { userViewContextIndexKey, viewContextKey } from './userIdentityIndexes';
 
 export const DASHBOARD_CONTEXT_TTL_MS = 15 * 60 * 1000;
 
@@ -34,7 +35,6 @@ export type DashboardBootstrapRecord = {
 };
 
 const dashboardPostKey = 'dashboard_post_id';
-const viewContextKey = (token: string): string => `view_context:${token}`;
 const dashboardBootstrapKey = (
   subredditName: string,
   moderatorUsername: string
@@ -50,6 +50,14 @@ export const createExpiringTimes = (
   createdAtMs: nowMs,
   expiresAtMs: nowMs + DASHBOARD_CONTEXT_TTL_MS,
 });
+
+const getViewContextUserKey = (record: ViewContextRecord): string | null => {
+  if (record.userKey?.trim()) {
+    return record.userKey.trim();
+  }
+
+  return record.authorId?.trim() ? `id:${record.authorId.trim()}` : null;
+};
 
 export class DashboardRepository {
   constructor(private readonly store: RedisStore) {}
@@ -79,9 +87,25 @@ export class DashboardRepository {
   }
 
   async saveViewContext(record: ViewContextRecord): Promise<void> {
-    await this.store.set(viewContextKey(record.token), JSON.stringify(record), {
-      expiresAtMs: record.expiresAtMs,
-    });
+    const recordKey = viewContextKey(record.token);
+    const userKey = getViewContextUserKey(record);
+    const indexKey = userKey ? userViewContextIndexKey(userKey) : null;
+    await this.store.runTransaction(
+      indexKey ? [recordKey, indexKey] : [recordKey],
+      async () => {
+        await this.store.set(recordKey, JSON.stringify(record), {
+          expiresAtMs: record.expiresAtMs,
+        });
+        if (!indexKey) {
+          return;
+        }
+
+        await this.store.zAdd(indexKey, {
+          member: record.token,
+          score: record.expiresAtMs,
+        });
+      }
+    );
   }
 
   async getViewContext(token: string): Promise<ViewContextRecord | null> {

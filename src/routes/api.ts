@@ -92,20 +92,13 @@ const parseHistoryOffset = (value: string | undefined): number | null => {
 const trimString = (value: unknown): string | null =>
   typeof value === 'string' ? value.trim() : null;
 
-const parseUserKeyInput = (
-  rawUserKey: string | null,
-  username: string | null
-): string | null => {
+const parseUserIdInput = (rawUserKey: string | null): string | null => {
   if (rawUserKey?.startsWith('id:')) {
     const userId = rawUserKey.slice(3).trim();
-    return userId ? `id:${userId}` : null;
+    return getUserKey({ userId }) ? userId : null;
   }
 
-  if (rawUserKey?.startsWith('name:')) {
-    return getUserKey({ username: rawUserKey.slice(5) });
-  }
-
-  return username ? getUserKey({ username }) : null;
+  return null;
 };
 
 const trimUsernamePrefix = (username: string): string =>
@@ -144,24 +137,44 @@ const serializeRedditRuleImport = (
   enabled: true,
 });
 
-const getUserLookupContext = (
+const getUserLookupContext = async (
   subredditName: string,
   rawUserKey: string | null,
   username: string | null
-): UserViewContext | null => {
-  const userKey = parseUserKeyInput(rawUserKey, username);
-  if (!userKey) {
+): Promise<UserViewContext | null> => {
+  const rawAuthorName = username;
+  const authorName = rawAuthorName ? trimUsernamePrefix(rawAuthorName) : null;
+  const userId = parseUserIdInput(rawUserKey);
+
+  if (userId) {
+    const user = await reddit.getUserById(userId as `t2_${string}`);
+    const resolvedUserKey = user?.id ? getUserKey({ userId: user.id }) : null;
+    if (!resolvedUserKey) {
+      return null;
+    }
+    const resolvedAuthorName = user?.username ?? authorName;
+
+    return {
+      subredditName,
+      userKey: resolvedUserKey,
+      ...(resolvedAuthorName ? { authorName: resolvedAuthorName } : {}),
+    };
+  }
+
+  if (!authorName) {
     return null;
   }
 
-  const rawAuthorName =
-    username ?? (rawUserKey?.startsWith('name:') ? rawUserKey.slice(5) : null);
-  const authorName = rawAuthorName ? trimUsernamePrefix(rawAuthorName) : null;
+  const user = await reddit.getUserByUsername(authorName);
+  const resolvedUserKey = user?.id ? getUserKey({ userId: user.id }) : null;
+  if (!resolvedUserKey) {
+    return null;
+  }
 
   return {
     subredditName,
-    userKey,
-    ...(authorName ? { authorName } : {}),
+    userKey: resolvedUserKey,
+    authorName: user?.username ?? authorName,
   };
 };
 
@@ -170,26 +183,14 @@ const getContextUserKeys = (context: UserViewContext): string[] => {
     return [];
   }
 
-  const userKeys = [context.userKey];
-  if (context.userKey.startsWith('id:') && context.authorName) {
-    const fallbackUserKey = getUserKey({ username: context.authorName });
-    if (fallbackUserKey && !userKeys.includes(fallbackUserKey)) {
-      userKeys.push(fallbackUserKey);
-    }
-  }
-
-  return userKeys;
+  return [context.userKey];
 };
 
 const uniqueStrings = (values: string[]): string[] =>
   Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 
 const getEntryUserKeys = (entry: LedgerEntry): string[] => {
-  const fallbackUserKey = getUserKey({ username: entry.username });
-  return uniqueStrings([
-    entry.userKey,
-    ...(fallbackUserKey ? [fallbackUserKey] : []),
-  ]);
+  return uniqueStrings([entry.userKey]);
 };
 
 const getReversalUserScope = (
@@ -251,14 +252,20 @@ const getAuthorizedUserViewContext = async (
     return { status: 'ok', context: tokenContext };
   }
 
-  const lookupContext = getUserLookupContext(subredditName, rawUserKey, username);
+  if ((rawUserKey || username) && !access.canManage) {
+    return { status: 'denied' };
+  }
+
+  const lookupContext = await getUserLookupContext(
+    subredditName,
+    rawUserKey,
+    username
+  );
   if (!lookupContext) {
     return { status: 'ok', context: null };
   }
 
-  return access.canManage
-    ? { status: 'ok', context: lookupContext }
-    : { status: 'denied' };
+  return { status: 'ok', context: lookupContext };
 };
 
 const serializeEntry = (
@@ -370,12 +377,9 @@ api.get('/self-summary', async (c) => {
 
   const primaryUserKey = getUserKey({
     userId: user.id,
-    username: user.username,
   });
-  const fallbackUserKey = getUserKey({ username: user.username });
   const userKeys = uniqueStrings([
     ...(primaryUserKey ? [primaryUserKey] : []),
-    ...(fallbackUserKey ? [fallbackUserKey] : []),
   ]);
   if (!primaryUserKey || userKeys.length === 0) {
     return c.json({ error: 'unsupported_user' }, 400);
@@ -495,7 +499,6 @@ api.get('/history', async (c) => {
     subredditName: apiAccess.subredditName,
     moderatorUsername: apiAccess.access.username,
     userKey: context.userKey,
-    fallbackUserKeyCount: userKeys.length - 1,
     targetId: context.targetId,
     targetKind: context.targetKind,
     offset,
@@ -593,7 +596,6 @@ api.get('/profile', async (c) => {
     subredditName: apiAccess.subredditName,
     moderatorUsername: apiAccess.access.username,
     userKey: context.userKey,
-    fallbackUserKeyCount: userKeys.length - 1,
     targetId: context.targetId,
     targetKind: context.targetKind,
     entryCount: entries.length,
@@ -846,7 +848,7 @@ api.post('/recalculate-user-total', async (c) => {
   const username = trimString(payload.username);
   const lookupContext =
     context ??
-    getUserLookupContext(apiAccess.subredditName, rawUserKey, username);
+    (await getUserLookupContext(apiAccess.subredditName, rawUserKey, username));
   const userKey = lookupContext?.userKey;
   const userKeys = lookupContext ? getContextUserKeys(lookupContext) : [];
 

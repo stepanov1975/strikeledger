@@ -139,6 +139,7 @@ const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => ({
   schemaVersion: SCHEMA_VERSION,
   entryId: 'entry-1',
   subredditName: 'testsub',
+  userId: 't2_user',
   username: 'target-user',
   userKey: 'id:t2_user',
   targetId: 't3_target',
@@ -190,6 +191,18 @@ const loadApi = async (
   const reddit = {
     getCurrentSubreddit: vi.fn(async () => ({ name: 'testsub' })),
     getCurrentUser: vi.fn(async () => user),
+    getUserByUsername: vi.fn(async (username: string) => ({
+      id: `t2_${username.toLowerCase().replace(/[^a-z0-9_]/g, '')}`,
+      username,
+    })),
+    getUserById: vi.fn(
+      async (
+        userId: string
+      ): Promise<{ id: string; username: string } | undefined> => ({
+        id: userId,
+        username: userId.replace(/^t2_/, ''),
+      })
+    ),
     getModerators: vi.fn(() => ({
       all: vi.fn(async () =>
         options.listedModerator && user ? [{ username: user.username }] : []
@@ -629,7 +642,7 @@ describe('api routes', () => {
     });
   });
 
-  it('checks the username fallback ledger for ID-key history contexts', async () => {
+  it('does not read username-key legacy ledger entries for ID-key history contexts', async () => {
     const { api, redis } = await loadApi(['posts']);
     await seedViewContext(redis);
     await seedLedger(
@@ -645,15 +658,10 @@ describe('api routes', () => {
 
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
-      activeTotal: 3,
-      entries: [
-        {
-          entryId: 'entry-1',
-          activePoints: 3,
-        },
-      ],
+      activeTotal: 0,
+      entries: [],
     });
-    expect(redis.values.get('user:id:t2_user:active_total')).toBe('3');
+    expect(redis.values.get('user:id:t2_user:active_total')).toBe('0');
   });
 
   it('filters history entries and totals to the current subreddit', async () => {
@@ -689,9 +697,10 @@ describe('api routes', () => {
   });
 
   it('reads history by username for moderator dashboard lookup', async () => {
-    const { api, redis } = await loadApi(['all']);
+    const { api, reddit, redis } = await loadApi(['all']);
     const entry = buildEntry({
-      userKey: 'name:someuser',
+      userId: 't2_someuser',
+      userKey: 'id:t2_someuser',
       username: 'SomeUser',
     });
     await seedLedger(redis, entry);
@@ -702,12 +711,13 @@ describe('api routes', () => {
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
       context: {
-        userKey: 'name:someuser',
+        userKey: 'id:t2_someuser',
         authorName: 'SomeUser',
       },
       activeTotal: 3,
       entries: [{ entryId: 'entry-1' }],
     });
+    expect(reddit.getUserByUsername).toHaveBeenCalledWith('SomeUser');
   });
 
   it('reads target-only history from a server-side view context token', async () => {
@@ -768,7 +778,8 @@ describe('api routes', () => {
     await seedLedger(
       redis,
       buildEntry({
-        userKey: 'name:someuser',
+        userId: 't2_someuser',
+        userKey: 'id:t2_someuser',
         username: 'SomeUser',
       })
     );
@@ -807,7 +818,7 @@ describe('api routes', () => {
     });
   });
 
-  it('checks the username fallback ledger for ID-key profile contexts', async () => {
+  it('does not read username-key legacy ledger entries for ID-key profile contexts', async () => {
     const { api, redis } = await loadApi(['posts']);
     await seedViewContext(redis);
     await seedLedger(
@@ -824,14 +835,10 @@ describe('api routes', () => {
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
       summary: {
-        activeTotal: 3,
-        originalPoints: 3,
+        activeTotal: 0,
+        originalPoints: 0,
       },
-      recentEntries: [
-        {
-          entryId: 'entry-1',
-        },
-      ],
+      recentEntries: [],
     });
   });
 
@@ -934,21 +941,22 @@ describe('api routes', () => {
     expect(body.summary).not.toHaveProperty('lifetimeOriginalPoints');
   });
 
-  it('reads profile by user key for moderator dashboard lookup', async () => {
-    const { api, redis } = await loadApi(['all']);
+  it('resolves username profile lookups to ID keys for moderator dashboard lookup', async () => {
+    const { api, reddit, redis } = await loadApi(['all']);
     const entry = buildEntry({
-      userKey: 'name:someuser',
+      userId: 't2_someuser',
+      userKey: 'id:t2_someuser',
       username: 'SomeUser',
     });
     await seedLedger(redis, entry);
 
-    const response = await api.request('/profile?userKey=name%3Asomeuser');
+    const response = await api.request('/profile?username=someuser');
     const body = await response.json();
 
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
       context: {
-        userKey: 'name:someuser',
+        userKey: 'id:t2_someuser',
         authorName: 'someuser',
       },
       summary: {
@@ -956,6 +964,7 @@ describe('api routes', () => {
         originalPoints: 3,
       },
     });
+    expect(reddit.getUserByUsername).toHaveBeenCalledWith('someuser');
   });
 
   it('rejects raw profile lookups for read-only moderators', async () => {
@@ -963,12 +972,13 @@ describe('api routes', () => {
     await seedLedger(
       redis,
       buildEntry({
-        userKey: 'name:someuser',
+        userId: 't2_someuser',
+        userKey: 'id:t2_someuser',
         username: 'SomeUser',
       })
     );
 
-    const response = await api.request('/profile?userKey=name%3Asomeuser');
+    const response = await api.request('/profile?username=someuser');
 
     expect(response.status).toBe(403);
     await expect(response.json()).resolves.toEqual({
@@ -1106,9 +1116,10 @@ describe('api routes', () => {
   });
 
   it('normalizes username input when recalculating a user total', async () => {
-    const { api, redis } = await loadApi(['all']);
+    const { api, reddit, redis } = await loadApi(['all']);
     const entry = buildEntry({
-      userKey: 'name:someuser',
+      userId: 't2_someuser',
+      userKey: 'id:t2_someuser',
       username: 'SomeUser',
     });
     await seedLedger(redis, entry);
@@ -1122,9 +1133,34 @@ describe('api routes', () => {
 
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
-      userKey: 'name:someuser',
+      userKey: 'id:t2_someuser',
       activeTotal: 3,
     });
+    expect(reddit.getUserByUsername).toHaveBeenCalledWith('SomeUser');
+  });
+
+  it('allows direct user-key recalculation for users that still resolve', async () => {
+    const { api, reddit, redis } = await loadApi(['all']);
+    const entry = buildEntry({
+      userId: 't2_someuser',
+      userKey: 'id:t2_someuser',
+      username: 'SomeUser',
+    });
+    await seedLedger(redis, entry);
+
+    const response = await api.request('/recalculate-user-total', {
+      method: 'POST',
+      body: JSON.stringify({ userKey: 'id:t2_someuser' }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      userKey: 'id:t2_someuser',
+      activeTotal: 3,
+    });
+    expect(reddit.getUserById).toHaveBeenCalledWith('t2_someuser');
   });
 
   it('filters manual recalculation totals to the current subreddit', async () => {
@@ -1133,7 +1169,8 @@ describe('api routes', () => {
       redis,
       buildEntry({
         entryId: 'entry-current',
-        userKey: 'name:someuser',
+        userId: 't2_someuser',
+        userKey: 'id:t2_someuser',
         username: 'SomeUser',
         originalPoints: 3,
       })
@@ -1145,7 +1182,8 @@ describe('api routes', () => {
         subredditName: 'othersub',
         targetId: 't3_other',
         targetPermalink: '/r/othersub/comments/other',
-        userKey: 'name:someuser',
+        userId: 't2_someuser',
+        userKey: 'id:t2_someuser',
         username: 'SomeUser',
         originalPoints: 99,
       })
@@ -1160,10 +1198,64 @@ describe('api routes', () => {
 
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
-      userKey: 'name:someuser',
+      userKey: 'id:t2_someuser',
       activeTotal: 3,
     });
-    expect(redis.values.get('user:name:someuser:active_total')).toBe('3');
+    expect(redis.values.get('user:id:t2_someuser:active_total')).toBe('3');
+  });
+
+  it('rejects direct user-key recalculation unless the key is a Reddit user ID', async () => {
+    const { api, redis } = await loadApi(['all']);
+
+    const response = await api.request('/recalculate-user-total', {
+      method: 'POST',
+      body: JSON.stringify({ userKey: 'id:t3_post' }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'missing_user' });
+    expect(redis.values.has('user:id:t3_post:active_total')).toBe(false);
+  });
+
+  it('does not recreate cached totals for deleted direct user IDs', async () => {
+    const { api, reddit, redis } = await loadApi(['all']);
+    reddit.getUserById.mockResolvedValueOnce(undefined);
+
+    const response = await api.request('/recalculate-user-total', {
+      method: 'POST',
+      body: JSON.stringify({ userKey: 'id:t2_deleted' }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: 'missing_user' });
+    expect(reddit.getUserById).toHaveBeenCalledWith('t2_deleted');
+    expect(redis.values.has('user:id:t2_deleted:active_total')).toBe(false);
+  });
+
+  it('rejects deleted direct user IDs for history lookups without recreating caches', async () => {
+    const { api, reddit, redis } = await loadApi(['all']);
+    reddit.getUserById.mockResolvedValueOnce(undefined);
+
+    const response = await api.request('/history?userKey=id:t2_deleted');
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ error: 'invalid_context' });
+    expect(reddit.getUserById).toHaveBeenCalledWith('t2_deleted');
+    expect(redis.values.has('user:id:t2_deleted:active_total')).toBe(false);
+  });
+
+  it('rejects deleted direct user IDs for profile lookups without recreating caches', async () => {
+    const { api, reddit, redis } = await loadApi(['all']);
+    reddit.getUserById.mockResolvedValueOnce(undefined);
+
+    const response = await api.request('/profile?userKey=id:t2_deleted');
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ error: 'invalid_context' });
+    expect(reddit.getUserById).toHaveBeenCalledWith('t2_deleted');
+    expect(redis.values.has('user:id:t2_deleted:active_total')).toBe(false);
   });
 
   it('does not expose a client-initiated side-effect retry API', async () => {
@@ -1248,7 +1340,7 @@ describe('api routes', () => {
       redis,
       buildEntry({
         entryId: 'entry-legacy',
-        userKey: 'name:target-user',
+        userKey: 'id:t2_user',
         username: 'target-user',
         targetId: 't3_legacy',
         originalPoints: 3,

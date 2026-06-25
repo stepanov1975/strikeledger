@@ -34,7 +34,7 @@ Default decay subtracts `1` active point every `30` days, clamped at zero. Decay
 ## Architecture
 
 - Devvit menu actions and forms handle enforcement.
-- Redis stores config, ledger entries, indexes, active-total cache, settings audit, form nonces, and view context tokens.
+- Redis stores config, ledger entries, indexes, tracked user IDs for account deletion checks, active-total cache, settings audit, form nonces, and view context tokens.
 - A small Vite app with plain TypeScript renders moderator history, profile, reversal, settings UI, and the limited user self view.
 - Hono JSON endpoints back the web UI, including `/api/self-summary` for the logged-in user's own limited dashboard data.
 - `vitest` covers unit, repository, and route tests.
@@ -45,9 +45,9 @@ Native Devvit setting defaults in `devvit.json` are generated from the TypeScrip
 
 ## Devvit Triggers
 
-`onPostDelete` and `onCommentDelete` are registered because StrikeLedger stores target permalinks in ledger entries. The app does not intentionally store post or comment body text, but Reddit permalinks can include post-title slugs, so they are content-derived data. When Reddit reports a deleted post or comment, the trigger marks the related ledger entries as deleted and clears `targetPermalink` while preserving the audit record: target ID, user/moderator IDs, timestamps, rule/action, point values, side-effect status, and reversal state remain available for moderation accountability.
+Account deletion cleanup is handled by the scheduled `accountDeletionCheck` task. New ledger entries must use `id:t2_*` user keys only and add the `t2_*` user ID to `users:tracked`; do not reintroduce username-derived `name:*` ledger keys. When Reddit no longer resolves a tracked user ID, the task deletes that user's ledger entries, active-total cache, and related author-identifying Redis indexes.
 
-Post deletion also scrubs indexed comment ledger entries under the deleted post. This is why new entries carry `targetPostId` and why the repository keeps a `post:{postId}:entries` index in addition to the exact `target:{targetId}:entries` index. Without that parent-post index, a deleted post could leave warned comment permalinks containing the deleted post title.
+`onPostDelete` and `onCommentDelete` are registered for Reddit compliance scrubbing. They clear stored `targetPermalink` values and set `targetDeletedAtMs` for deleted post/comment targets, including comments indexed under a deleted post. These handlers must not be deleted unless another code path provides the same scrub behavior.
 
 `devvit.json` still intentionally registers no-op placeholders for `onPostSubmit`, `onPostCreate`, `onPostUpdate`, `onPostFlairUpdate`, `onPostNsfwUpdate`, `onPostSpoilerUpdate`, and `onModAction`. They return success without reading Reddit data or writing Redis. Keep these placeholders unless the Devvit platform no longer supports them; registering them now avoids requiring moderators to reinstall the app when future trigger-backed functionality is added.
 
@@ -68,7 +68,7 @@ Use the MVP implementation plan in [MVP.md](./MVP.md) before adding code.
 
 ## Data Retention Warning
 
-StrikeLedger stores ledger history in Devvit Redis scoped to the app installation. Uninstalling or reinstalling the app may remove or orphan ledger history unless Reddit provides a retention path for that installation.
+StrikeLedger stores ledger history in Devvit Redis scoped to the app installation. Uninstalling or reinstalling the app may remove or orphan ledger history unless Reddit provides a retention path for that installation. Deleted-account cleanup can also remove all ledger records for a tracked Reddit user ID.
 
 ## Manual Playtest
 

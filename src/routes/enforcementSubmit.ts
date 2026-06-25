@@ -155,18 +155,15 @@ const getComparableUsername = (
 };
 
 const getNonceComparableUsername = (nonce: FormNonceRecord): string | null =>
-  getComparableUsername(
-    nonce.authorName ??
-      (nonce.userKey?.startsWith('name:') ? nonce.userKey.slice(5) : undefined)
-  );
+  getComparableUsername(nonce.authorName);
 
 const targetAuthorMatchesNonce = (
   nonce: FormNonceRecord,
   target: Post | Comment
 ): boolean => {
   const currentAuthorId = target.authorId?.trim();
-  const nonceAuthorId = nonce.authorId?.trim();
-  if (currentAuthorId && nonceAuthorId && currentAuthorId !== nonceAuthorId) {
+  const nonceAuthorId = nonce.authorId.trim();
+  if (!currentAuthorId || currentAuthorId !== nonceAuthorId) {
     return false;
   }
 
@@ -227,7 +224,7 @@ const buildTargetSnapshot = (
     subredditName: nonce.subredditName,
     author: {
       userKey,
-      ...(nonce.authorId !== undefined ? { authorId: nonce.authorId } : {}),
+      authorId: nonce.authorId,
       ...(nonce.authorName !== undefined
         ? { authorName: nonce.authorName }
         : {}),

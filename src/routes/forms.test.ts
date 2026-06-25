@@ -9,6 +9,7 @@ const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => ({
   schemaVersion: SCHEMA_VERSION,
   entryId: 'entry-1',
   subredditName: 'testsub',
+  userId: 't2_user',
   username: 'target-user',
   userKey: 'id:t2_user',
   targetId: 't3_target',

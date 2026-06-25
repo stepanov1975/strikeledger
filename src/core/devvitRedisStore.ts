@@ -88,6 +88,10 @@ export class DevvitRedisStore implements RedisStore {
     await this.redis.zRem(key, members);
   }
 
+  async zScore(key: string, member: string): Promise<number | null> {
+    return (await this.redis.zScore(key, member)) ?? null;
+  }
+
   async zRange(
     key: string,
     start: number,
@@ -95,8 +99,9 @@ export class DevvitRedisStore implements RedisStore {
     options: ZRangeOptions = {}
   ): Promise<string[]> {
     const members = await this.redis.zRange(key, start, stop, {
-      by: 'rank',
+      by: options.by ?? 'rank',
       ...(options.reverse !== undefined ? { reverse: options.reverse } : {}),
+      ...(options.limit !== undefined ? { limit: options.limit } : {}),
     });
     return members.map((member) => member.member);
   }

@@ -4,15 +4,19 @@ import type { LedgerRepository } from './ledgerRepository';
 export const DEFAULT_LEDGER_CLEANUP_RETENTION_DAYS = 365;
 export const DEFAULT_LEDGER_CLEANUP_BATCH_SIZE = 2000;
 export const MAX_LEDGER_CLEANUP_BATCH_SIZE = 5000;
+export const DEFAULT_LEDGER_CLEANUP_MAX_RUNTIME_MS = 10_000;
+export const MAX_LEDGER_CLEANUP_MAX_RUNTIME_MS = 30_000;
 
 export type LedgerCleanupOptions = {
   retentionDays: number;
   maxEntries: number;
+  maxRuntimeMs: number;
 };
 
 export type LedgerCleanupRunResult = LedgerCleanupOptions & {
   scanned: number;
   deleted: number;
+  stoppedEarly?: true;
 };
 
 export const normalizeLedgerCleanupOptions = (
@@ -28,8 +32,13 @@ export const normalizeLedgerCleanupOptions = (
     Number.isInteger(requestedMaxEntries) && requestedMaxEntries > 0
       ? Math.min(requestedMaxEntries, MAX_LEDGER_CLEANUP_BATCH_SIZE)
       : DEFAULT_LEDGER_CLEANUP_BATCH_SIZE;
+  const requestedMaxRuntimeMs = Number(payload.maxRuntimeMs);
+  const maxRuntimeMs =
+    Number.isInteger(requestedMaxRuntimeMs) && requestedMaxRuntimeMs > 0
+      ? Math.min(requestedMaxRuntimeMs, MAX_LEDGER_CLEANUP_MAX_RUNTIME_MS)
+      : DEFAULT_LEDGER_CLEANUP_MAX_RUNTIME_MS;
 
-  return { retentionDays, maxEntries };
+  return { retentionDays, maxEntries, maxRuntimeMs };
 };
 
 export const runLedgerCleanup = async (input: {
@@ -38,6 +47,7 @@ export const runLedgerCleanup = async (input: {
   ledgerRepository: LedgerRepository;
   nowMs: number;
   payload?: Record<string, unknown>;
+  getNowMs?: () => number;
 }): Promise<LedgerCleanupRunResult> => {
   const options = normalizeLedgerCleanupOptions(input.payload);
   const result = await input.ledgerRepository.cleanupLedger({
@@ -46,6 +56,8 @@ export const runLedgerCleanup = async (input: {
     nowMs: input.nowMs,
     retentionDays: options.retentionDays,
     maxEntries: options.maxEntries,
+    maxRuntimeMs: options.maxRuntimeMs,
+    ...(input.getNowMs ? { getNowMs: input.getNowMs } : {}),
   });
 
   return { ...result, ...options };

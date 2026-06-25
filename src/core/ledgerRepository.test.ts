@@ -13,6 +13,10 @@ import {
   getRetryClaimKey,
 } from './idempotency';
 import {
+  DashboardRepository,
+  type ViewContextRecord,
+} from './dashboard';
+import {
   LedgerRepository,
   type FormNonceRecord,
 } from './ledgerRepository';
@@ -95,6 +99,7 @@ const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => {
     schemaVersion: SCHEMA_VERSION,
     entryId: overrides.entryId ?? 'entry-1',
     subredditName: overrides.subredditName ?? 'testsub',
+    userId: overrides.userId ?? 't2_user',
     username: overrides.username ?? 'target-user',
     userKey: overrides.userKey ?? 'id:t2_user',
     targetId,
@@ -128,7 +133,6 @@ const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => {
     },
     formNonce: overrides.formNonce ?? 'nonce-1',
     sideEffects: overrides.sideEffects ?? { ...EMPTY_SIDE_EFFECTS },
-    ...(overrides.userId !== undefined ? { userId: overrides.userId } : {}),
     ...(overrides.targetPostId !== undefined
       ? { targetPostId: overrides.targetPostId }
       : {}),
@@ -186,6 +190,20 @@ const buildNonce = (overrides: Partial<FormNonceRecord> = {}): FormNonceRecord =
   ...(overrides.entryId !== undefined ? { entryId: overrides.entryId } : {}),
 });
 
+const buildViewContext = (
+  overrides: Partial<ViewContextRecord> = {}
+): ViewContextRecord => ({
+  token: overrides.token ?? 'context-1',
+  targetId: overrides.targetId ?? 't3_target',
+  targetKind: overrides.targetKind ?? 'post',
+  subredditName: overrides.subredditName ?? 'testsub',
+  userKey: overrides.userKey ?? 'id:t2_user',
+  createdAtMs: overrides.createdAtMs ?? nowMs,
+  expiresAtMs: overrides.expiresAtMs ?? nowMs + 15 * 60 * 1000,
+  authorId: overrides.authorId ?? 't2_user',
+  authorName: overrides.authorName ?? 'target-user',
+});
+
 const seedEntry = async (
   store: FakeRedisStore,
   entry: LedgerEntry
@@ -199,8 +217,12 @@ const seedEntry = async (
     member: entry.entryId,
     score: entry.createdAtMs,
   });
-  if (entry.targetPostId) {
-    await store.zAdd(`post:${entry.targetPostId}:entries`, {
+  const postIds = [
+    ...(entry.targetPostId ? [entry.targetPostId] : []),
+    ...(entry.targetKind === 'post' ? [entry.targetId] : []),
+  ];
+  for (const postId of Array.from(new Set(postIds))) {
+    await store.zAdd(`post:${postId}:entries`, {
       member: entry.entryId,
       score: entry.createdAtMs,
     });
@@ -212,99 +234,24 @@ const seedEntry = async (
 };
 
 describe('LedgerRepository', () => {
-  it('scrubs deleted comment target permalinks without deleting the ledger entry', async () => {
+  it('stores form nonce records and cleanup indexes in one transaction', async () => {
     const { repo, store } = createRepo();
-    const deletedAtMs = Date.UTC(2026, 0, 2);
-    const entry = buildEntry({
-      entryId: 'comment-entry',
-      targetId: 't1_comment',
-      targetKind: 'comment',
-      targetPostId: 't3_parent',
-      targetPermalink: '/r/testsub/comments/post_title/_/comment',
-      status: 'succeeded',
-    });
-    await seedEntry(store, entry);
 
-    const result = await repo.markTargetDeleted({
-      targetId: 't1_comment',
-      targetKind: 'comment',
-      subredditName: 'testsub',
-      deletedAtMs,
-    });
+    await repo.saveFormNonce(buildNonce({ nonce: 'open-nonce' }));
 
-    const updated = await repo.getLedgerEntry(entry.entryId);
-    expect(result).toEqual({ scanned: 1, updated: 1 });
-    expect(updated).toMatchObject({
-      entryId: entry.entryId,
-      targetId: 't1_comment',
-      targetKind: 'comment',
-      targetPermalink: '',
-      targetDeletedAtMs: deletedAtMs,
-      status: 'succeeded',
-      originalPoints: 1,
-    });
-    await expect(repo.getUserLedger(entry.userKey)).resolves.toHaveLength(1);
-  });
-
-  it('scrubs deleted post target permalinks for the post and indexed comments', async () => {
-    const { repo, store } = createRepo();
-    const deletedAtMs = Date.UTC(2026, 0, 2);
-    const postEntry = buildEntry({
-      entryId: 'post-entry',
-      targetId: 't3_post',
-      targetKind: 'post',
-      targetPostId: 't3_post',
-      targetPermalink: '/r/testsub/comments/post_title',
-      status: 'succeeded',
-    });
-    const commentEntry = buildEntry({
-      entryId: 'comment-entry',
-      targetId: 't1_comment',
-      targetKind: 'comment',
-      targetPostId: 't3_post',
-      targetPermalink: '/r/testsub/comments/post_title/_/comment',
-      status: 'succeeded',
-    });
-    const otherPostEntry = buildEntry({
-      entryId: 'other-post-entry',
-      targetId: 't3_other',
-      targetKind: 'post',
-      targetPostId: 't3_other',
-      targetPermalink: '/r/testsub/comments/other_title',
-      status: 'succeeded',
-    });
-    await seedEntry(store, postEntry);
-    await seedEntry(store, commentEntry);
-    await seedEntry(store, otherPostEntry);
-
-    const result = await repo.markTargetDeleted({
-      targetId: 't3_post',
-      targetKind: 'post',
-      subredditName: 'testsub',
-      deletedAtMs,
-    });
-
-    await expect(repo.getLedgerEntry(postEntry.entryId)).resolves.toMatchObject({
-      targetPermalink: '',
-      targetDeletedAtMs: deletedAtMs,
-    });
+    expect(store.transactionWatchKeys).toContainEqual([
+      'form_nonce:open-nonce',
+      'user:id:t2_user:form_nonces',
+    ]);
+    await expect(store.get('form_nonce:open-nonce')).resolves.not.toBeNull();
     await expect(
-      repo.getLedgerEntry(commentEntry.entryId)
-    ).resolves.toMatchObject({
-      targetPermalink: '',
-      targetDeletedAtMs: deletedAtMs,
-    });
-    await expect(
-      repo.getLedgerEntry(otherPostEntry.entryId)
-    ).resolves.toMatchObject({
-      targetPermalink: '/r/testsub/comments/other_title',
-    });
-    expect(result).toEqual({ scanned: 2, updated: 2 });
+      store.zRange('user:id:t2_user:form_nonces', 0, -1)
+    ).resolves.toEqual(['open-nonce']);
   });
 
   it('creates a pending ledger entry, consumes nonce, indexes, and caches total', async () => {
     const { repo, store } = createRepo();
-    const entry = buildEntry();
+    const entry = buildEntry({ userId: 't2_user' });
     await repo.saveFormNonce(buildNonce());
 
     const result = await repo.createLedgerEntry({
@@ -316,7 +263,7 @@ describe('LedgerRepository', () => {
     });
 
     expect(result).toEqual({ status: 'created', entry, activeTotal: 1 });
-    expect(store.transactionWatchKeys[0]).toEqual([
+    expect(store.transactionWatchKeys).toContainEqual([
       'form_nonce:nonce-1',
       getDuplicateClaimKey({
         targetId: entry.targetId,
@@ -334,7 +281,300 @@ describe('LedgerRepository', () => {
     ]);
     await expect(repo.getLedgerEntry(entry.entryId)).resolves.toEqual(entry);
     await expect(repo.getUserLedger(entry.userKey)).resolves.toEqual([entry]);
+    await expect(
+      repo.getTrackedUserIdsForAccountCheck(nowMs + 1, 10, 0)
+    ).resolves.toEqual(['t2_user']);
     await expect(repo.getCachedActiveTotal(entry.userKey)).resolves.toBe(1);
+  });
+
+  it('deletes a deleted user ledger from every index', async () => {
+    const { repo, store } = createRepo();
+    const entry = buildEntry({
+      userId: 't2_user',
+      status: 'succeeded',
+      publicCommentId: 't1_public_comment',
+      modNoteId: 'mod-note-1',
+      userNoticeId: 'modmail-1',
+    });
+    await seedEntry(store, entry);
+    await store.zAdd('users:tracked', {
+      member: 't2_user',
+      score: entry.createdAtMs,
+    });
+    await store.set('user:id:t2_user:active_total', '1');
+    await store.set('user:id:t2_user:ledger_version', '3');
+    await store.set(
+      getDuplicateClaimKey({
+        targetId: entry.targetId,
+        action: entry.action,
+        ruleId: entry.ruleId,
+      }),
+      entry.entryId
+    );
+    await store.set(
+      getRetryClaimKey({
+        targetId: entry.targetId,
+        action: entry.action,
+        ruleId: entry.ruleId,
+        moderatorUsername: entry.moderatorUsername,
+        submittedAtMs: entry.createdAtMs,
+      }),
+      entry.entryId
+    );
+    await store.set('form_nonce:nonce-1', JSON.stringify(buildNonce()));
+
+    await expect(store.zRange('post:t3_target:entries', 0, -1)).resolves.toEqual([
+      entry.entryId,
+    ]);
+    await expect(store.get('form_nonce:nonce-1')).resolves.not.toBeNull();
+    await expect(repo.deleteUserLedgerByUserId('t2_user', 10)).resolves.toEqual({
+      scanned: 1,
+      deleted: 1,
+      remaining: 0,
+    });
+
+    await expect(repo.getLedgerEntry(entry.entryId)).resolves.toBeNull();
+    await expect(store.zRange('user:id:t2_user:ledger', 0, -1)).resolves.toEqual(
+      []
+    );
+    await expect(store.get('user:id:t2_user:active_total')).resolves.toBeNull();
+    await expect(store.get('user:id:t2_user:ledger_version')).resolves.toBeNull();
+    await expect(store.zRange('target:t3_target:entries', 0, -1)).resolves.toEqual(
+      []
+    );
+    await expect(store.zRange('post:t3_target:entries', 0, -1)).resolves.toEqual(
+      []
+    );
+    await expect(
+      store.zRange('ledger:testsub:entries', 0, -1)
+    ).resolves.toEqual([]);
+    await expect(store.zRange('users:tracked', 0, -1)).resolves.toEqual([]);
+    await expect(
+      store.get(
+        getDuplicateClaimKey({
+          targetId: entry.targetId,
+          action: entry.action,
+          ruleId: entry.ruleId,
+        })
+      )
+    ).resolves.toBeNull();
+    await expect(
+      store.get(
+        getRetryClaimKey({
+          targetId: entry.targetId,
+          action: entry.action,
+          ruleId: entry.ruleId,
+          moderatorUsername: entry.moderatorUsername,
+          submittedAtMs: entry.createdAtMs,
+        })
+      )
+    ).resolves.toBeNull();
+    await expect(store.get('form_nonce:nonce-1')).resolves.toBeNull();
+  });
+
+  it('deletes open author snapshots for a deleted user', async () => {
+    const { repo, store } = createRepo();
+    const dashboard = new DashboardRepository(store);
+
+    await repo.saveFormNonce(buildNonce({ nonce: 'open-nonce' }));
+    await dashboard.saveViewContext(buildViewContext({ token: 'open-context' }));
+    await store.zAdd('users:tracked', {
+      member: 't2_user',
+      score: nowMs,
+    });
+
+    await expect(repo.deleteUserLedgerByUserId('t2_user', 10)).resolves.toEqual({
+      scanned: 2,
+      deleted: 0,
+      remaining: 0,
+    });
+
+    await expect(store.get('form_nonce:open-nonce')).resolves.toBeNull();
+    await expect(store.get('view_context:open-context')).resolves.toBeNull();
+    await expect(
+      store.zRange('user:id:t2_user:form_nonces', 0, -1)
+    ).resolves.toEqual([]);
+    await expect(
+      store.zRange('user:id:t2_user:view_contexts', 0, -1)
+    ).resolves.toEqual([]);
+    await expect(store.zRange('users:tracked', 0, -1)).resolves.toEqual([]);
+  });
+
+  it('keeps transient author snapshot deletion bounded', async () => {
+    const { repo, store } = createRepo();
+    const dashboard = new DashboardRepository(store);
+
+    for (const index of [1, 2, 3]) {
+      await repo.saveFormNonce(buildNonce({ nonce: `open-nonce-${index}` }));
+      await dashboard.saveViewContext(
+        buildViewContext({ token: `open-context-${index}` })
+      );
+    }
+    await store.zAdd('users:tracked', {
+      member: 't2_user',
+      score: nowMs,
+    });
+
+    await expect(repo.deleteUserLedgerByUserId('t2_user', 2)).resolves.toEqual({
+      scanned: 2,
+      deleted: 0,
+      remaining: 1,
+    });
+
+    await expect(store.get('form_nonce:open-nonce-1')).resolves.toBeNull();
+    await expect(store.get('form_nonce:open-nonce-2')).resolves.toBeNull();
+    await expect(store.get('form_nonce:open-nonce-3')).resolves.not.toBeNull();
+    await expect(store.get('view_context:open-context-1')).resolves.not.toBeNull();
+    await expect(store.zRange('users:tracked', 0, -1)).resolves.toEqual([
+      't2_user',
+    ]);
+
+    await expect(repo.deleteUserLedgerByUserId('t2_user', 10)).resolves.toEqual({
+      scanned: 4,
+      deleted: 0,
+      remaining: 0,
+    });
+    await expect(store.zRange('users:tracked', 0, -1)).resolves.toEqual([]);
+  });
+
+  it('finalizes deleted-user metadata when transient cleanup exactly consumes the budget', async () => {
+    const { repo, store } = createRepo();
+
+    await repo.saveFormNonce(buildNonce({ nonce: 'open-nonce' }));
+    await store.zAdd('users:tracked', {
+      member: 't2_user',
+      score: nowMs,
+    });
+    await store.set('user:id:t2_user:active_total', '1');
+    await store.set('user:id:t2_user:ledger_version', '3');
+
+    await expect(repo.deleteUserLedgerByUserId('t2_user', 1)).resolves.toEqual({
+      scanned: 1,
+      deleted: 0,
+      remaining: 0,
+    });
+
+    await expect(store.get('form_nonce:open-nonce')).resolves.toBeNull();
+    await expect(
+      store.zRange('user:id:t2_user:form_nonces', 0, -1)
+    ).resolves.toEqual([]);
+    await expect(store.get('user:id:t2_user:active_total')).resolves.toBeNull();
+    await expect(store.get('user:id:t2_user:ledger_version')).resolves.toBeNull();
+    await expect(store.zRange('users:tracked', 0, -1)).resolves.toEqual([]);
+  });
+
+  it('deletes stale deleted-user metadata when only missing ledger entries remain', async () => {
+    const { repo, store } = createRepo();
+    await store.zAdd('user:id:t2_user:ledger', {
+      member: 'missing-entry',
+      score: nowMs,
+    });
+    await store.zAdd('users:tracked', {
+      member: 't2_user',
+      score: nowMs,
+    });
+    await store.set('user:id:t2_user:active_total', '1');
+    await store.set('user:id:t2_user:ledger_version', '3');
+
+    await expect(repo.deleteUserLedgerByUserId('t2_user', 10)).resolves.toEqual({
+      scanned: 1,
+      deleted: 0,
+      remaining: 0,
+    });
+
+    await expect(store.zRange('user:id:t2_user:ledger', 0, -1)).resolves.toEqual(
+      []
+    );
+    await expect(store.zRange('users:tracked', 0, -1)).resolves.toEqual([]);
+    await expect(store.get('user:id:t2_user:active_total')).resolves.toBeNull();
+    await expect(store.get('user:id:t2_user:ledger_version')).resolves.toBeNull();
+  });
+
+  it('keeps deleted-user cleanup bounded for later runs', async () => {
+    const { repo, store } = createRepo();
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'entry-1',
+        userId: 't2_user',
+        targetId: 't3_first',
+        createdAtMs: nowMs,
+      })
+    );
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'entry-2',
+        userId: 't2_user',
+        targetId: 't3_second',
+        createdAtMs: nowMs + 1,
+      })
+    );
+    await store.zAdd('users:tracked', {
+      member: 't2_user',
+      score: nowMs,
+    });
+
+    await expect(repo.deleteUserLedgerByUserId('t2_user', 1)).resolves.toEqual({
+      scanned: 1,
+      deleted: 1,
+      remaining: 1,
+    });
+
+    await expect(store.zRange('users:tracked', 0, -1)).resolves.toEqual([
+      't2_user',
+    ]);
+    await expect(repo.getUserLedger('id:t2_user')).resolves.toHaveLength(1);
+  });
+
+  it('bounds tracked-user account checks at the Redis read', async () => {
+    const store = new RecordingRedisStore();
+    const repo = new LedgerRepository(store);
+    for (let index = 0; index < 5; index += 1) {
+      await store.zAdd('users:tracked', {
+        member: `t2_due_${index}`,
+        score: nowMs,
+      });
+    }
+
+    await expect(
+      repo.getTrackedUserIdsForAccountCheck(nowMs + 1, 2, 0)
+    ).resolves.toEqual(['t2_due_0', 't2_due_1']);
+    expect(store.zRangeCalls).toContainEqual({
+      key: 'users:tracked',
+      start: 0,
+      stop: nowMs + 1,
+      options: {
+        by: 'score',
+        limit: { offset: 0, count: 2 },
+      },
+    });
+  });
+
+  it('does not postpone account deletion checks when adding another entry', async () => {
+    const { repo, store } = createRepo();
+    const originalTrackedAtMs = nowMs - 2 * MS_PER_DAY;
+    const entry = buildEntry({ createdAtMs: nowMs });
+
+    await store.zAdd('users:tracked', {
+      member: 't2_user',
+      score: originalTrackedAtMs,
+    });
+    await repo.saveFormNonce(buildNonce());
+
+    await expect(
+      repo.createLedgerEntry({
+        entry,
+        formNonce: entry.formNonce,
+        submittedAtMs: nowMs,
+        nowMs,
+        config: DEFAULT_CONFIG,
+      })
+    ).resolves.toMatchObject({ status: 'created' });
+
+    await expect(
+      repo.getTrackedUserIdsForAccountCheck(originalTrackedAtMs + 1, 10, 0)
+    ).resolves.toEqual(['t2_user']);
   });
 
   it('blocks creation cleanly after repeated transaction conflicts', async () => {
@@ -397,7 +637,7 @@ describe('LedgerRepository', () => {
     await expect(repo.getCachedActiveTotal(entry.userKey)).resolves.toBe(0);
   });
 
-  it('includes fallback username entries in create and reversal totals for ID-key users', async () => {
+  it('does not merge username-key entries into ID-key totals', async () => {
     const { repo, store } = createRepo();
     await seedEntry(
       store,
@@ -435,8 +675,8 @@ describe('LedgerRepository', () => {
         nowMs,
         config: DEFAULT_CONFIG,
       })
-    ).resolves.toMatchObject({ status: 'created', activeTotal: 5 });
-    await expect(repo.getCachedActiveTotal('id:t2_user')).resolves.toBe(5);
+    ).resolves.toMatchObject({ status: 'created', activeTotal: 2 });
+    await expect(repo.getCachedActiveTotal('id:t2_user')).resolves.toBe(2);
 
     await expect(
       repo.reverseLedgerEntry({
@@ -447,11 +687,11 @@ describe('LedgerRepository', () => {
         config: DEFAULT_CONFIG,
         nowMs,
       })
-    ).resolves.toMatchObject({ status: 'reversed', activeTotal: 3 });
-    await expect(repo.getCachedActiveTotal('id:t2_user')).resolves.toBe(3);
+    ).resolves.toMatchObject({ status: 'reversed', activeTotal: 0 });
+    await expect(repo.getCachedActiveTotal('id:t2_user')).resolves.toBe(0);
   });
 
-  it('indexes ID-key entries under the normalized username fallback', async () => {
+  it('does not index ID-key entries under username-derived keys', async () => {
     const { repo, store } = createRepo();
     const entry = buildEntry({
       entryId: 'entry-current',
@@ -480,7 +720,7 @@ describe('LedgerRepository', () => {
 
     await expect(
       store.zRange('user:name:target-user:ledger', 0, -1)
-    ).resolves.toEqual(['entry-current']);
+    ).resolves.toEqual([]);
     await expect(
       repo.recalculateActiveTotalForKeys(
         ['name:target-user'],
@@ -489,10 +729,10 @@ describe('LedgerRepository', () => {
         nowMs,
         'testsub'
       )
-    ).resolves.toBe(2);
+    ).resolves.toBe(0);
   });
 
-  it('uses related user keys when reversing a legacy username entry', async () => {
+  it('uses explicitly provided user keys when recalculating after reversal', async () => {
     const { repo, store } = createRepo();
     await seedEntry(
       store,
@@ -508,22 +748,23 @@ describe('LedgerRepository', () => {
     await seedEntry(
       store,
       buildEntry({
-        entryId: 'entry-legacy',
-        userKey: 'name:targetuser',
-        username: 'TargetUser',
-        targetId: 't3_legacy',
+        entryId: 'entry-other-user',
+        userId: 't2_other',
+        userKey: 'id:t2_other',
+        username: 'OtherUser',
+        targetId: 't3_other',
         originalPoints: 3,
       })
     );
 
     const result = await repo.reverseLedgerEntry({
-      entryId: 'entry-legacy',
+      entryId: 'entry-other-user',
       reversedAtMs: nowMs + 1000,
       reversedBy: 'mod-b',
       reversalReason: 'issued in error',
       config: DEFAULT_CONFIG,
       nowMs,
-      userKeys: ['id:t2_user', 'name:targetuser'],
+      userKeys: ['id:t2_user', 'id:t2_other'],
       cacheUserKey: 'id:t2_user',
     } as Parameters<LedgerRepository['reverseLedgerEntry']>[0] & {
       userKeys: string[];
@@ -909,16 +1150,17 @@ describe('LedgerRepository', () => {
       await seedEntry(
         store,
         buildEntry({
-          entryId: `name-${index}`,
-          userKey: 'name:someuser',
-          targetId: `t3_name_${index}`,
+          entryId: `other-${index}`,
+          userId: 't2_other',
+          userKey: 'id:t2_other',
+          targetId: `t3_other_${index}`,
           createdAtMs: baseMs + 1000 + index,
         })
       );
     }
 
     const result = await repo.getUserLedgerPageForKeys(
-      ['id:t2_user', 'name:someuser'],
+      ['id:t2_user', 'id:t2_other'],
       10,
       5
     );
@@ -1137,6 +1379,82 @@ describe('LedgerRepository', () => {
     expect(await repo.getLedgerEntry('old-inactive')).toBeNull();
   });
 
+  it('stops ledger cleanup when the runtime budget is exhausted', async () => {
+    const { repo, store } = createRepo();
+    const old = nowMs - 400 * MS_PER_DAY;
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'old-inactive-1',
+        targetId: 't3_old_inactive_1',
+        createdAtMs: old,
+      })
+    );
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'old-inactive-2',
+        targetId: 't3_old_inactive_2',
+        createdAtMs: old + 1,
+      })
+    );
+    const clock = [0, 0, 1_001, 1_001];
+    const getNowMs = () => clock.shift() ?? 1_001;
+
+    const result = await repo.cleanupLedger({
+      config: DEFAULT_CONFIG,
+      getNowMs,
+      maxEntries: 10,
+      maxRuntimeMs: 1_000,
+      nowMs,
+      retentionDays: 365,
+      subredditName: 'testsub',
+    });
+
+    expect(result).toEqual({ scanned: 1, deleted: 1, stoppedEarly: true });
+    expect(await repo.getLedgerEntry('old-inactive-1')).toBeNull();
+    expect(await repo.getLedgerEntry('old-inactive-2')).not.toBeNull();
+  });
+
+  it('advances the cleanup cursor when runtime stops after an undeleted entry', async () => {
+    const { repo, store } = createRepo();
+    const old = nowMs - 400 * MS_PER_DAY;
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'old-active',
+        targetId: 't3_old_active',
+        createdAtMs: old,
+        originalPoints: 100,
+      })
+    );
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'old-inactive',
+        targetId: 't3_old_inactive',
+        createdAtMs: old + 1,
+      })
+    );
+    const clock = [0, 0, 1_001, 1_001];
+    const getNowMs = () => clock.shift() ?? 1_001;
+
+    const result = await repo.cleanupLedger({
+      config: DEFAULT_CONFIG,
+      getNowMs,
+      maxEntries: 10,
+      maxRuntimeMs: 1_000,
+      nowMs,
+      retentionDays: 365,
+      subredditName: 'testsub',
+    });
+
+    expect(result).toEqual({ scanned: 1, deleted: 0, stoppedEarly: true });
+    await expect(store.get('ledger:testsub:cleanup_cursor')).resolves.toBe('1');
+    expect(await repo.getLedgerEntry('old-active')).not.toBeNull();
+    expect(await repo.getLedgerEntry('old-inactive')).not.toBeNull();
+  });
+
   it('keeps the cleanup cursor on the same rank after deleting scanned entries', async () => {
     const { repo, store } = createRepo();
     const old = nowMs - 400 * MS_PER_DAY;
@@ -1167,25 +1485,27 @@ describe('LedgerRepository', () => {
 
     expect(result).toEqual({ scanned: 2, deleted: 2 });
     await expect(store.get('ledger:testsub:cleanup_cursor')).resolves.toBe('0');
-    expect(store.transactionWatchKeys).toContainEqual([
+    expect(store.transactionWatchKeys).toContainEqual(expect.arrayContaining([
       'ledger_entry:old-inactive-1',
+      'form_nonce:nonce-1',
       'duplicate:t3_old_inactive_1:warn:rule-general',
+      'users:tracked',
       'user:id:t2_user:ledger',
-      'user:name:target-user:ledger',
       'post:t3_old_inactive_1:entries',
       'target:t3_old_inactive_1:entries',
       'ledger:testsub:entries',
-    ]);
+    ]));
   });
 
-  it('reads and recalculates across primary and fallback user keys', async () => {
+  it('reads and recalculates across explicitly provided user keys', async () => {
     const { repo, store } = createRepo();
     await seedEntry(
       store,
       buildEntry({
-        entryId: 'entry-fallback',
-        userKey: 'name:someuser',
-        username: 'SomeUser',
+        entryId: 'entry-other-user',
+        userId: 't2_other',
+        userKey: 'id:t2_other',
+        username: 'OtherUser',
         originalPoints: 3,
         createdAtMs: nowMs,
       })
@@ -1202,14 +1522,14 @@ describe('LedgerRepository', () => {
     );
 
     await expect(
-      repo.getUserLedgerPageForKeys(['id:t2_user', 'name:someuser'], 0, 2)
+      repo.getUserLedgerPageForKeys(['id:t2_user', 'id:t2_other'], 0, 2)
     ).resolves.toEqual([
       expect.objectContaining({ entryId: 'entry-id' }),
-      expect.objectContaining({ entryId: 'entry-fallback' }),
+      expect.objectContaining({ entryId: 'entry-other-user' }),
     ]);
     await expect(
       repo.recalculateActiveTotalForKeys(
-        ['id:t2_user', 'name:someuser'],
+        ['id:t2_user', 'id:t2_other'],
         'id:t2_user',
         DEFAULT_CONFIG,
         nowMs

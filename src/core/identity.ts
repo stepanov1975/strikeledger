@@ -1,24 +1,23 @@
 export const normalizeUsername = (username: string): string =>
   username.trim().replace(/^u\//i, '').toLowerCase();
 
+const REDDIT_USER_ID_PATTERN = /^t2_.+$/;
+
+const normalizeRedditUserId = (userId: string | undefined): string | null => {
+  const trimmed = userId?.trim();
+  return trimmed && REDDIT_USER_ID_PATTERN.test(trimmed) ? trimmed : null;
+};
+
 export const getUserKey = (identity: {
   userId?: string;
   username?: string;
 }): string | null => {
-  if (identity.userId?.trim()) {
-    return `id:${identity.userId.trim()}`;
+  const userId = normalizeRedditUserId(identity.userId);
+  if (userId) {
+    return `id:${userId}`;
   }
 
-  if (!identity.username) {
-    return null;
-  }
-
-  const username = normalizeUsername(identity.username);
-  if (!username || username === '[deleted]' || username === '[unknown]') {
-    return null;
-  }
-
-  return `name:${username}`;
+  return null;
 };
 
 export const getTargetAuthorUserKey = (identity: {
@@ -26,12 +25,12 @@ export const getTargetAuthorUserKey = (identity: {
   authorId?: string;
   authorName?: string;
 }): string | null => {
-  if (identity.userKey?.trim()) {
-    return identity.userKey.trim();
+  const userKey = identity.userKey?.trim();
+  if (userKey?.startsWith('id:')) {
+    return getUserKey({ userId: userKey.slice(3) });
   }
 
   return getUserKey({
     ...(identity.authorId !== undefined ? { userId: identity.authorId } : {}),
-    ...(identity.authorName !== undefined ? { username: identity.authorName } : {}),
   });
 };

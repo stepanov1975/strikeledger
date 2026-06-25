@@ -1541,7 +1541,7 @@ const renderSettings = (response: SettingsResponse) => {
 
   if (response.canManage) {
     const recalcForm = create('form', 'settings-form') as HTMLFormElement;
-    const recalcLabel = create('label', 'field-label', 'Username or user key');
+    const recalcLabel = create('label', 'field-label', 'Username or id:t2_* key');
     const recalcInput = create('input', 'field-control') as HTMLInputElement;
     recalcInput.type = 'text';
     recalcLabel.append(recalcInput);
@@ -1599,7 +1599,7 @@ const loadSettings = async () => {
 };
 
 const getLookupPayloadField = (value: string): 'userKey' | 'username' =>
-  value.startsWith('id:') || value.startsWith('name:') ? 'userKey' : 'username';
+  value.startsWith('id:') ? 'userKey' : 'username';
 
 const openUserLookupView = async (
   view: Extract<DashboardView, 'history' | 'profile'>,

@@ -31,6 +31,33 @@ describe('DashboardRepository', () => {
     await expect(repo.getDashboardPost('othersub')).resolves.toBeNull();
   });
 
+  it('stores view context records and cleanup indexes in one transaction', async () => {
+    const { repo, store } = createRepo();
+    const times = createExpiringTimes(nowMs);
+
+    await repo.saveViewContext({
+      token: 'view-token',
+      targetId: 't3_target',
+      targetKind: 'post',
+      subredditName: 'testsub',
+      userKey: 'id:t2_user',
+      authorId: 't2_user',
+      authorName: 'target-user',
+      ...times,
+    });
+
+    expect(store.transactionWatchKeys).toContainEqual([
+      'view_context:view-token',
+      'user:id:t2_user:view_contexts',
+    ]);
+    await expect(repo.getViewContext('view-token')).resolves.toMatchObject({
+      userKey: 'id:t2_user',
+    });
+    await expect(
+      store.zRange('user:id:t2_user:view_contexts', 0, -1)
+    ).resolves.toEqual(['view-token']);
+  });
+
   it('expires read-only view context tokens after fifteen minutes', async () => {
     const { repo, store } = createRepo();
     const times = createExpiringTimes(nowMs);

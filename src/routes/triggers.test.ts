@@ -14,6 +14,12 @@ type RedisZMember = {
 class TriggerRedisMock {
   readonly values = new Map<string, string>();
   readonly sortedSets = new Map<string, Map<string, number>>();
+  readonly zRangeCalls: Array<{
+    key: string;
+    start: number;
+    stop: number;
+    options: { reverse?: boolean; by?: 'rank' | 'score' };
+  }> = [];
 
   async get(key: string): Promise<string | undefined> {
     return this.values.get(key);
@@ -62,8 +68,9 @@ class TriggerRedisMock {
     key: string,
     start: number,
     stop: number,
-    options: { reverse?: boolean } = {}
+    options: { reverse?: boolean; by?: 'rank' | 'score' } = {}
   ): Promise<RedisZMember[]> {
+    this.zRangeCalls.push({ key, start, stop, options });
     const set = this.sortedSets.get(key);
     if (!set) {
       return [];
@@ -129,6 +136,7 @@ const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => ({
   schemaVersion: SCHEMA_VERSION,
   entryId: overrides.entryId ?? 'entry-1',
   subredditName: overrides.subredditName ?? 'testsub',
+  userId: overrides.userId ?? 't2_user',
   username: overrides.username ?? 'target-user',
   userKey: overrides.userKey ?? 'id:t2_user',
   targetId: overrides.targetId ?? 't3_target',
@@ -168,8 +176,12 @@ const seedEntry = async (
     member: entry.entryId,
     score: entry.createdAtMs,
   });
-  if (entry.targetPostId) {
-    await redis.zAdd(`post:${entry.targetPostId}:entries`, {
+  const postIds = [
+    ...(entry.targetPostId ? [entry.targetPostId] : []),
+    ...(entry.targetKind === 'post' ? [entry.targetId] : []),
+  ];
+  for (const postId of Array.from(new Set(postIds))) {
+    await redis.zAdd(`post:${postId}:entries`, {
       member: entry.entryId,
       score: entry.createdAtMs,
     });
@@ -301,6 +313,14 @@ describe('trigger routes', () => {
       targetPermalink: '',
       targetDeletedAtMs: deletedAtMs,
     });
+    expect(redis.zRangeCalls).toEqual([
+      {
+        key: 'post:t3_post:entries',
+        start: 0,
+        stop: 199,
+        options: { by: 'rank' },
+      },
+    ]);
   });
 
   it('scrubs deleted comment targets', async () => {

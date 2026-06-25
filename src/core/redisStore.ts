@@ -9,6 +9,11 @@ export type RedisSetOptions = {
 
 export type ZRangeOptions = {
   reverse?: boolean;
+  by?: 'rank' | 'score';
+  limit?: {
+    offset: number;
+    count: number;
+  };
 };
 
 export interface RedisStore {
@@ -18,6 +23,7 @@ export interface RedisStore {
   incrBy(key: string, value: number): Promise<void>;
   zAdd(key: string, member: ZMember): Promise<void>;
   zRem(key: string, members: string[]): Promise<void>;
+  zScore(key: string, member: string): Promise<number | null>;
   zRange(
     key: string,
     start: number,
@@ -104,6 +110,10 @@ export class FakeRedisStore implements RedisStore {
     }
   }
 
+  async zScore(key: string, member: string): Promise<number | null> {
+    return this.sortedSets.get(key)?.get(member) ?? null;
+  }
+
   async zRange(
     key: string,
     start: number,
@@ -115,18 +125,33 @@ export class FakeRedisStore implements RedisStore {
       return [];
     }
 
-    const members = Array.from(set.entries())
+    const sortedEntries = Array.from(set.entries())
       .sort(([leftMember, leftScore], [rightMember, rightScore]) => {
         if (leftScore !== rightScore) {
           return leftScore - rightScore;
         }
 
         return leftMember.localeCompare(rightMember);
-      })
-      .map(([member]) => member);
+      });
+    let rangedEntries =
+      options.by === 'score'
+        ? sortedEntries.filter(([, score]) => score >= start && score <= stop)
+        : sortedEntries;
 
     if (options.reverse) {
-      members.reverse();
+      rangedEntries = [...rangedEntries].reverse();
+    }
+
+    if (options.by === 'score' && options.limit) {
+      const offset = Math.max(0, options.limit.offset);
+      const count = Math.max(0, options.limit.count);
+      rangedEntries = rangedEntries.slice(offset, offset + count);
+    }
+
+    const members = rangedEntries.map(([member]) => member);
+
+    if (options.by === 'score') {
+      return members;
     }
 
     const normalizedStop = stop < 0 ? members.length + stop : stop;

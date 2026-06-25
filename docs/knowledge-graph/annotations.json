@@ -1,0 +1,355 @@
+{
+  "version": 1,
+  "documents": [
+    {
+      "path": "docs/knowledge-graph/workflows/enforcement.md",
+      "kind": "workflow",
+      "title": "Enforcement Workflow",
+      "mvpSections": [
+        "Menu Actions",
+        "Enforcement Form",
+        "Actions",
+        "Preconditions",
+        "Side Effects And Partial Failure",
+        "Entry Model",
+        "Idempotency And Duplicates",
+        "Permissions"
+      ],
+      "sourceFiles": [
+        "src/routes/menu.ts",
+        "src/routes/forms.ts",
+        "src/routes/enforcementSubmit.ts",
+        "src/routes/permissions.ts",
+        "src/core/enforcement.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/sideEffects.ts",
+        "src/core/identity.ts",
+        "src/core/idempotency.ts"
+      ],
+      "testFiles": [
+        "src/routes/menu.test.ts",
+        "src/routes/forms.test.ts",
+        "src/routes/enforcementSubmit.test.ts",
+        "src/core/enforcement.test.ts",
+        "src/core/idempotency.test.ts",
+        "src/core/identity.test.ts",
+        "src/core/ledgerRepository.test.ts",
+        "src/core/sideEffects.test.ts"
+      ]
+    },
+    {
+      "path": "docs/knowledge-graph/workflows/dashboard.md",
+      "kind": "workflow",
+      "title": "Dashboard Workflow",
+      "mvpSections": [
+        "Web UI Surfaces",
+        "Frontend And Routes",
+        "View Context Tokens",
+        "History View",
+        "Profile View",
+        "Limited User View",
+        "Reversal",
+        "Permissions"
+      ],
+      "sourceFiles": [
+        "src/routes/menu.ts",
+        "src/routes/api.ts",
+        "src/routes/permissions.ts",
+        "src/core/dashboard.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/scoring.ts",
+        "src/client/dashboard.ts",
+        "src/client/dashboardLaunch.ts",
+        "src/client/compactEntryRows.ts"
+      ],
+      "testFiles": [
+        "src/routes/api.test.ts",
+        "src/routes/menu.test.ts",
+        "src/core/dashboard.test.ts",
+        "src/core/ledgerRepository.test.ts",
+        "src/client/dashboardLaunch.test.ts",
+        "src/client/compactEntryRows.test.ts"
+      ]
+    },
+    {
+      "path": "docs/knowledge-graph/workflows/settings.md",
+      "kind": "workflow",
+      "title": "Settings Workflow",
+      "mvpSections": [
+        "Configuration And Settings",
+        "Source Of Truth",
+        "Native Settings And Admin UI",
+        "Required Settings",
+        "Rule Schema",
+        "Validation",
+        "Settings Audit",
+        "Public Comment Template",
+        "Private User Notice Template",
+        "Native Mod Note Template"
+      ],
+      "sourceFiles": [
+        "src/routes/settingsValidators.ts",
+        "src/routes/api.ts",
+        "src/core/config.ts",
+        "src/core/configRepository.ts",
+        "src/core/nativeSettings.ts",
+        "src/core/templates.ts",
+        "src/core/canonicalJson.ts"
+      ],
+      "testFiles": [
+        "src/routes/settingsValidators.test.ts",
+        "src/routes/api.test.ts",
+        "src/core/config.test.ts",
+        "src/core/configRepository.test.ts",
+        "src/core/templates.test.ts"
+      ]
+    },
+    {
+      "path": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "kind": "workflow",
+      "title": "Cleanup And Retention Workflow",
+      "mvpSections": [
+        "Identity Keys",
+        "Entry Model",
+        "Storage",
+        "Permissions",
+        "Acceptance Criteria"
+      ],
+      "sourceFiles": [
+        "src/routes/scheduler.ts",
+        "src/routes/triggers.ts",
+        "src/core/accountDeletion.ts",
+        "src/core/ledgerCleanup.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/userIdentityIndexes.ts"
+      ],
+      "testFiles": [
+        "src/routes/scheduler.test.ts",
+        "src/routes/triggers.test.ts",
+        "src/core/accountDeletion.test.ts",
+        "src/core/ledgerCleanup.test.ts",
+        "src/core/ledgerRepository.test.ts"
+      ]
+    },
+    {
+      "path": "docs/knowledge-graph/modules/routes.md",
+      "kind": "module",
+      "title": "Routes Module Group",
+      "mvpSections": [
+        "Menu Actions",
+        "UI And API",
+        "Permissions"
+      ],
+      "sourceFiles": [
+        "src/index.ts",
+        "src/routes/api.ts",
+        "src/routes/menu.ts",
+        "src/routes/forms.ts",
+        "src/routes/enforcementSubmit.ts",
+        "src/routes/permissions.ts",
+        "src/routes/scheduler.ts",
+        "src/routes/settingsValidators.ts",
+        "src/routes/triggers.ts"
+      ],
+      "testFiles": [
+        "src/routes/api.test.ts",
+        "src/routes/menu.test.ts",
+        "src/routes/forms.test.ts",
+        "src/routes/enforcementSubmit.test.ts",
+        "src/routes/scheduler.test.ts",
+        "src/routes/settingsValidators.test.ts",
+        "src/routes/triggers.test.ts"
+      ]
+    },
+    {
+      "path": "docs/knowledge-graph/modules/core-ledger.md",
+      "kind": "module",
+      "title": "Core Ledger Module Group",
+      "mvpSections": [
+        "Ledger And Scoring",
+        "Identity Keys",
+        "Points And Decay",
+        "Idempotency And Duplicates",
+        "Reversal",
+        "Storage"
+      ],
+      "sourceFiles": [
+        "src/core/domain.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/redisStore.ts",
+        "src/core/devvitRedisStore.ts",
+        "src/core/scoring.ts",
+        "src/core/identity.ts",
+        "src/core/idempotency.ts",
+        "src/core/accountDeletion.ts",
+        "src/core/ledgerCleanup.ts",
+        "src/core/userIdentityIndexes.ts"
+      ],
+      "testFiles": [
+        "src/core/ledgerRepository.test.ts",
+        "src/core/devvitRedisStore.test.ts",
+        "src/core/scoring.test.ts",
+        "src/core/identity.test.ts",
+        "src/core/idempotency.test.ts",
+        "src/core/accountDeletion.test.ts",
+        "src/core/ledgerCleanup.test.ts"
+      ]
+    },
+    {
+      "path": "docs/knowledge-graph/modules/core-config.md",
+      "kind": "module",
+      "title": "Core Config Module Group",
+      "mvpSections": [
+        "Configuration And Settings",
+        "Rule Schema",
+        "Validation",
+        "Settings Audit",
+        "Public Comment Template",
+        "Private User Notice Template",
+        "Native Mod Note Template"
+      ],
+      "sourceFiles": [
+        "src/core/config.ts",
+        "src/core/configRepository.ts",
+        "src/core/nativeSettings.ts",
+        "src/core/templates.ts",
+        "src/core/canonicalJson.ts",
+        "src/routes/settingsValidators.ts"
+      ],
+      "testFiles": [
+        "src/core/config.test.ts",
+        "src/core/configRepository.test.ts",
+        "src/core/templates.test.ts",
+        "src/routes/settingsValidators.test.ts"
+      ]
+    },
+    {
+      "path": "docs/knowledge-graph/modules/core-side-effects.md",
+      "kind": "module",
+      "title": "Core Side Effects Module Group",
+      "mvpSections": [
+        "Side Effects And Partial Failure",
+        "Side-Effect Statuses",
+        "Public Comment Template",
+        "Private User Notice Template",
+        "Native Mod Note Template"
+      ],
+      "sourceFiles": [
+        "src/core/sideEffects.ts",
+        "src/core/templates.ts",
+        "src/core/logging.ts",
+        "src/core/domain.ts"
+      ],
+      "testFiles": [
+        "src/core/sideEffects.test.ts",
+        "src/core/templates.test.ts"
+      ]
+    },
+    {
+      "path": "docs/knowledge-graph/modules/client-dashboard.md",
+      "kind": "module",
+      "title": "Client Dashboard Module Group",
+      "mvpSections": [
+        "Frontend And Routes",
+        "History View",
+        "Profile View",
+        "Limited User View"
+      ],
+      "sourceFiles": [
+        "src/client/dashboard.ts",
+        "src/client/dashboardLaunch.ts",
+        "src/client/compactEntryRows.ts"
+      ],
+      "testFiles": [
+        "src/client/dashboardLaunch.test.ts",
+        "src/client/compactEntryRows.test.ts",
+        "src/routes/api.test.ts"
+      ]
+    },
+    {
+      "path": "docs/knowledge-graph/hotspots/ledgerRepository.md",
+      "kind": "hotspot",
+      "title": "LedgerRepository Hotspot",
+      "mvpSections": [
+        "Entry Model",
+        "Identity Keys",
+        "Points And Decay",
+        "Idempotency And Duplicates",
+        "Reversal",
+        "Storage"
+      ],
+      "sourceFiles": [
+        "src/core/ledgerRepository.ts"
+      ],
+      "testFiles": [
+        "src/core/ledgerRepository.test.ts",
+        "src/core/accountDeletion.test.ts",
+        "src/core/ledgerCleanup.test.ts",
+        "src/routes/api.test.ts",
+        "src/routes/enforcementSubmit.test.ts"
+      ]
+    },
+    {
+      "path": "docs/knowledge-graph/hotspots/api-routes.md",
+      "kind": "hotspot",
+      "title": "API Routes Hotspot",
+      "mvpSections": [
+        "UI And API",
+        "View Context Tokens",
+        "History View",
+        "Profile View",
+        "Limited User View",
+        "Reversal"
+      ],
+      "sourceFiles": [
+        "src/routes/api.ts"
+      ],
+      "testFiles": [
+        "src/routes/api.test.ts",
+        "src/core/dashboard.test.ts",
+        "src/core/ledgerRepository.test.ts",
+        "src/client/dashboardLaunch.test.ts"
+      ]
+    },
+    {
+      "path": "docs/knowledge-graph/hotspots/enforcementSubmit.md",
+      "kind": "hotspot",
+      "title": "Enforcement Submit Hotspot",
+      "mvpSections": [
+        "Enforcement Form",
+        "Preconditions",
+        "Side Effects And Partial Failure",
+        "Idempotency And Duplicates"
+      ],
+      "sourceFiles": [
+        "src/routes/enforcementSubmit.ts"
+      ],
+      "testFiles": [
+        "src/routes/enforcementSubmit.test.ts",
+        "src/core/enforcement.test.ts",
+        "src/core/ledgerRepository.test.ts",
+        "src/core/sideEffects.test.ts"
+      ]
+    },
+    {
+      "path": "docs/knowledge-graph/hotspots/sideEffects.md",
+      "kind": "hotspot",
+      "title": "Side Effects Hotspot",
+      "mvpSections": [
+        "Side Effects And Partial Failure",
+        "Side-Effect Statuses",
+        "Public Comment Template",
+        "Private User Notice Template",
+        "Native Mod Note Template"
+      ],
+      "sourceFiles": [
+        "src/core/sideEffects.ts"
+      ],
+      "testFiles": [
+        "src/core/sideEffects.test.ts",
+        "src/core/templates.test.ts",
+        "src/routes/enforcementSubmit.test.ts"
+      ]
+    }
+  ]
+}

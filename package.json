@@ -7,14 +7,17 @@
   "scripts": {
     "build": "npm run check-devvit-settings && vite build",
     "check-devvit-settings": "node scripts/sync-devvit-settings.mjs --check",
+    "check-knowledge-graph": "node scripts/generate-knowledge-graph.mjs --check",
     "deploy": "npm run check-devvit-settings && npm run type-check && npm run lint && npm test && devvit upload",
     "dev": "devvit playtest",
+    "generate-knowledge-graph": "node scripts/generate-knowledge-graph.mjs",
     "launch": "npm run deploy && devvit publish",
     "lint": "eslint src",
     "login": "devvit login",
     "prettier": "prettier --write .",
     "sync-devvit-settings": "node scripts/sync-devvit-settings.mjs",
     "test": "vitest run --dir src",
+    "test:knowledge-graph": "node --test scripts/generate-knowledge-graph.test.mjs",
     "type-check": "tsc --build"
   },
   "engines": {

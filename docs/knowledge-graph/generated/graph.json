@@ -1,0 +1,2875 @@
+{
+  "version": 1,
+  "generatedAt": "2026-06-25T16:24:12.794Z",
+  "nodes": [
+    {
+      "id": "docs/knowledge-graph/hotspots/api-routes.md",
+      "kind": "document",
+      "documentKind": "hotspot",
+      "title": "API Routes Hotspot",
+      "mvpSections": [
+        "UI And API",
+        "View Context Tokens",
+        "History View",
+        "Profile View",
+        "Limited User View",
+        "Reversal"
+      ]
+    },
+    {
+      "id": "docs/knowledge-graph/hotspots/enforcementSubmit.md",
+      "kind": "document",
+      "documentKind": "hotspot",
+      "title": "Enforcement Submit Hotspot",
+      "mvpSections": [
+        "Enforcement Form",
+        "Preconditions",
+        "Side Effects And Partial Failure",
+        "Idempotency And Duplicates"
+      ]
+    },
+    {
+      "id": "docs/knowledge-graph/hotspots/ledgerRepository.md",
+      "kind": "document",
+      "documentKind": "hotspot",
+      "title": "LedgerRepository Hotspot",
+      "mvpSections": [
+        "Entry Model",
+        "Identity Keys",
+        "Points And Decay",
+        "Idempotency And Duplicates",
+        "Reversal",
+        "Storage"
+      ]
+    },
+    {
+      "id": "docs/knowledge-graph/hotspots/sideEffects.md",
+      "kind": "document",
+      "documentKind": "hotspot",
+      "title": "Side Effects Hotspot",
+      "mvpSections": [
+        "Side Effects And Partial Failure",
+        "Side-Effect Statuses",
+        "Public Comment Template",
+        "Private User Notice Template",
+        "Native Mod Note Template"
+      ]
+    },
+    {
+      "id": "docs/knowledge-graph/modules/client-dashboard.md",
+      "kind": "document",
+      "documentKind": "module",
+      "title": "Client Dashboard Module Group",
+      "mvpSections": [
+        "Frontend And Routes",
+        "History View",
+        "Profile View",
+        "Limited User View"
+      ]
+    },
+    {
+      "id": "docs/knowledge-graph/modules/core-config.md",
+      "kind": "document",
+      "documentKind": "module",
+      "title": "Core Config Module Group",
+      "mvpSections": [
+        "Configuration And Settings",
+        "Rule Schema",
+        "Validation",
+        "Settings Audit",
+        "Public Comment Template",
+        "Private User Notice Template",
+        "Native Mod Note Template"
+      ]
+    },
+    {
+      "id": "docs/knowledge-graph/modules/core-ledger.md",
+      "kind": "document",
+      "documentKind": "module",
+      "title": "Core Ledger Module Group",
+      "mvpSections": [
+        "Ledger And Scoring",
+        "Identity Keys",
+        "Points And Decay",
+        "Idempotency And Duplicates",
+        "Reversal",
+        "Storage"
+      ]
+    },
+    {
+      "id": "docs/knowledge-graph/modules/core-side-effects.md",
+      "kind": "document",
+      "documentKind": "module",
+      "title": "Core Side Effects Module Group",
+      "mvpSections": [
+        "Side Effects And Partial Failure",
+        "Side-Effect Statuses",
+        "Public Comment Template",
+        "Private User Notice Template",
+        "Native Mod Note Template"
+      ]
+    },
+    {
+      "id": "docs/knowledge-graph/modules/routes.md",
+      "kind": "document",
+      "documentKind": "module",
+      "title": "Routes Module Group",
+      "mvpSections": [
+        "Menu Actions",
+        "UI And API",
+        "Permissions"
+      ]
+    },
+    {
+      "id": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "kind": "document",
+      "documentKind": "workflow",
+      "title": "Cleanup And Retention Workflow",
+      "mvpSections": [
+        "Identity Keys",
+        "Entry Model",
+        "Storage",
+        "Permissions",
+        "Acceptance Criteria"
+      ]
+    },
+    {
+      "id": "docs/knowledge-graph/workflows/dashboard.md",
+      "kind": "document",
+      "documentKind": "workflow",
+      "title": "Dashboard Workflow",
+      "mvpSections": [
+        "Web UI Surfaces",
+        "Frontend And Routes",
+        "View Context Tokens",
+        "History View",
+        "Profile View",
+        "Limited User View",
+        "Reversal",
+        "Permissions"
+      ]
+    },
+    {
+      "id": "docs/knowledge-graph/workflows/enforcement.md",
+      "kind": "document",
+      "documentKind": "workflow",
+      "title": "Enforcement Workflow",
+      "mvpSections": [
+        "Menu Actions",
+        "Enforcement Form",
+        "Actions",
+        "Preconditions",
+        "Side Effects And Partial Failure",
+        "Entry Model",
+        "Idempotency And Duplicates",
+        "Permissions"
+      ]
+    },
+    {
+      "id": "docs/knowledge-graph/workflows/settings.md",
+      "kind": "document",
+      "documentKind": "workflow",
+      "title": "Settings Workflow",
+      "mvpSections": [
+        "Configuration And Settings",
+        "Source Of Truth",
+        "Native Settings And Admin UI",
+        "Required Settings",
+        "Rule Schema",
+        "Validation",
+        "Settings Audit",
+        "Public Comment Template",
+        "Private User Notice Template",
+        "Native Mod Note Template"
+      ]
+    },
+    {
+      "id": "src/client/compactEntryRows.test.ts",
+      "kind": "module",
+      "layer": "client",
+      "exports": [],
+      "imports": [
+        "src/client/compactEntryRows.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/client-dashboard.md",
+        "docs/knowledge-graph/workflows/dashboard.md"
+      ]
+    },
+    {
+      "id": "src/client/compactEntryRows.ts",
+      "kind": "module",
+      "layer": "client",
+      "exports": [
+        "CompactEntryInput",
+        "CompactEntryRow",
+        "buildCompactEntryRow"
+      ],
+      "imports": [],
+      "tests": [
+        "src/client/compactEntryRows.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/client-dashboard.md",
+        "docs/knowledge-graph/workflows/dashboard.md"
+      ]
+    },
+    {
+      "id": "src/client/dashboard.ts",
+      "kind": "module",
+      "layer": "client",
+      "exports": [],
+      "imports": [
+        "src/client/compactEntryRows.ts",
+        "src/client/dashboardLaunch.ts",
+        "src/core/domain.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/client-dashboard.md",
+        "docs/knowledge-graph/workflows/dashboard.md"
+      ]
+    },
+    {
+      "id": "src/client/dashboardLaunch.test.ts",
+      "kind": "module",
+      "layer": "client",
+      "exports": [],
+      "imports": [
+        "src/client/dashboardLaunch.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/modules/client-dashboard.md",
+        "docs/knowledge-graph/workflows/dashboard.md"
+      ]
+    },
+    {
+      "id": "src/client/dashboardLaunch.ts",
+      "kind": "module",
+      "layer": "client",
+      "exports": [
+        "BootstrapResponse",
+        "DashboardLaunch",
+        "DashboardView",
+        "resolveDashboardLaunch",
+        "shouldKeepDashboardContext"
+      ],
+      "imports": [],
+      "tests": [
+        "src/client/dashboardLaunch.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/client-dashboard.md",
+        "docs/knowledge-graph/workflows/dashboard.md"
+      ]
+    },
+    {
+      "id": "src/client/vite-env.d.ts",
+      "kind": "module",
+      "layer": "client",
+      "exports": [],
+      "imports": [],
+      "tests": [],
+      "curatedDocs": []
+    },
+    {
+      "id": "src/core/accountDeletion.test.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [],
+      "imports": [
+        "src/core/accountDeletion.ts",
+        "src/core/domain.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/redisStore.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/ledgerRepository.md",
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "src/core/accountDeletion.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [
+        "AccountDeletionOptions",
+        "AccountDeletionRedditClient",
+        "AccountDeletionRunResult",
+        "DEFAULT_ACCOUNT_DELETION_CHECK_INTERVAL_HOURS",
+        "DEFAULT_ACCOUNT_DELETION_MAX_ENTRIES_PER_RUN",
+        "DEFAULT_ACCOUNT_DELETION_MAX_ENTRIES_PER_USER",
+        "DEFAULT_ACCOUNT_DELETION_MAX_RUNTIME_MS",
+        "DEFAULT_ACCOUNT_DELETION_MAX_USERS",
+        "RunAccountDeletionCheckRequest",
+        "normalizeAccountDeletionOptions",
+        "runAccountDeletionCheck"
+      ],
+      "imports": [
+        "src/core/ledgerRepository.ts"
+      ],
+      "tests": [
+        "src/core/accountDeletion.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "src/core/canonicalJson.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [
+        "canonicalJson",
+        "hashCanonicalJson",
+        "sha256Hex"
+      ],
+      "imports": [],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-config.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "src/core/config.test.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [],
+      "imports": [
+        "src/core/config.ts",
+        "src/core/domain.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-config.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "src/core/config.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [
+        "ConfigValidationIssue",
+        "DEFAULT_CONFIG",
+        "DEFAULT_NATIVE_MOD_NOTE_TEMPLATE",
+        "DEFAULT_PRIVATE_USER_NOTICE_TEMPLATE",
+        "DEFAULT_PUBLIC_COMMENT_TEMPLATE",
+        "DEFAULT_RULE",
+        "DEFAULT_ZERO_POINT_NATIVE_MOD_NOTE_TEMPLATE",
+        "DEFAULT_ZERO_POINT_PRIVATE_USER_NOTICE_TEMPLATE",
+        "MAX_ACTIVE_ENTRY_DAYS",
+        "MAX_DECAY_INTERVAL_DAYS",
+        "MAX_POINT_VALUE",
+        "getMaxDecayIntervalDays",
+        "getRulePoints",
+        "validateConfig"
+      ],
+      "imports": [
+        "src/core/domain.ts",
+        "src/core/templates.ts"
+      ],
+      "tests": [
+        "src/core/config.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-config.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "src/core/configRepository.test.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [],
+      "imports": [
+        "src/core/config.ts",
+        "src/core/configRepository.ts",
+        "src/core/nativeSettings.ts",
+        "src/core/redisStore.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-config.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "src/core/configRepository.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [
+        "ConfigRepository",
+        "SaveConfigRequest",
+        "SaveConfigResult",
+        "SettingsAuditRecord",
+        "SettingsAuditSnapshotRecord",
+        "canonicalJson",
+        "sha256Hex"
+      ],
+      "imports": [
+        "src/core/canonicalJson.ts",
+        "src/core/config.ts",
+        "src/core/domain.ts",
+        "src/core/logging.ts",
+        "src/core/nativeSettings.ts",
+        "src/core/redisStore.ts"
+      ],
+      "tests": [
+        "src/core/configRepository.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-config.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "src/core/dashboard.test.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [],
+      "imports": [
+        "src/core/dashboard.ts",
+        "src/core/redisStore.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md"
+      ]
+    },
+    {
+      "id": "src/core/dashboard.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [
+        "DASHBOARD_CONTEXT_TTL_MS",
+        "DashboardBootstrapRecord",
+        "DashboardPostRecord",
+        "DashboardRepository",
+        "DashboardView",
+        "ViewContextRecord",
+        "createExpiringTimes"
+      ],
+      "imports": [
+        "src/core/domain.ts",
+        "src/core/redisStore.ts",
+        "src/core/userIdentityIndexes.ts"
+      ],
+      "tests": [
+        "src/core/dashboard.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/workflows/dashboard.md"
+      ]
+    },
+    {
+      "id": "src/core/devvitRedisStore.test.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [],
+      "imports": [
+        "src/core/devvitRedisStore.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-ledger.md"
+      ]
+    },
+    {
+      "id": "src/core/devvitRedisStore.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [
+        "DevvitRedisStore"
+      ],
+      "imports": [
+        "src/core/redisStore.ts"
+      ],
+      "tests": [
+        "src/core/devvitRedisStore.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-ledger.md"
+      ]
+    },
+    {
+      "id": "src/core/domain.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [
+        "ACTION_LABELS",
+        "ActionPointDefaults",
+        "CommentStickySettings",
+        "EMPTY_SIDE_EFFECTS",
+        "LedgerEntry",
+        "LedgerStatus",
+        "PublicCommentOptionStatus",
+        "RuleConfig",
+        "RulePointOverrides",
+        "SCHEMA_VERSION",
+        "STRIKE_ACTIONS",
+        "SideEffectStatus",
+        "SideEffects",
+        "StrikeAction",
+        "StrikeLedgerConfig",
+        "TargetKind"
+      ],
+      "imports": [],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/modules/core-side-effects.md"
+      ]
+    },
+    {
+      "id": "src/core/enforcement.test.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [],
+      "imports": [
+        "src/core/canonicalJson.ts",
+        "src/core/config.ts",
+        "src/core/enforcement.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/enforcementSubmit.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "src/core/enforcement.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [
+        "BuildLedgerEntryInput",
+        "FORM_NONCE_TTL_MS",
+        "TargetAuthorSnapshot",
+        "TargetSnapshot",
+        "buildInitialSideEffects",
+        "buildLedgerEntry",
+        "createFormNonceRecordTimes",
+        "findEnabledRule",
+        "getEnabledRules",
+        "getRuntimeConfig",
+        "normalizeSelectValue"
+      ],
+      "imports": [
+        "src/core/canonicalJson.ts",
+        "src/core/config.ts",
+        "src/core/domain.ts",
+        "src/core/idempotency.ts"
+      ],
+      "tests": [
+        "src/core/enforcement.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "src/core/idempotency.test.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [],
+      "imports": [
+        "src/core/idempotency.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "src/core/idempotency.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [
+        "DuplicateKeyInput",
+        "ModeratorRetryKeyInput",
+        "RETRY_WINDOW_MS",
+        "canonicalJson",
+        "createDuplicateKey",
+        "createModeratorRetryKey",
+        "getDuplicateClaimKey",
+        "getRetryBucket",
+        "getRetryClaimKey",
+        "hashCanonicalJson",
+        "sha256Hex"
+      ],
+      "imports": [
+        "src/core/canonicalJson.ts",
+        "src/core/domain.ts"
+      ],
+      "tests": [
+        "src/core/idempotency.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "src/core/identity.test.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [],
+      "imports": [
+        "src/core/identity.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "src/core/identity.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [
+        "getTargetAuthorUserKey",
+        "getUserKey",
+        "normalizeUsername"
+      ],
+      "imports": [],
+      "tests": [
+        "src/core/identity.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "src/core/ledgerCleanup.test.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [],
+      "imports": [
+        "src/core/ledgerCleanup.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/ledgerRepository.md",
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "src/core/ledgerCleanup.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [
+        "DEFAULT_LEDGER_CLEANUP_BATCH_SIZE",
+        "DEFAULT_LEDGER_CLEANUP_MAX_RUNTIME_MS",
+        "DEFAULT_LEDGER_CLEANUP_RETENTION_DAYS",
+        "LedgerCleanupOptions",
+        "LedgerCleanupRunResult",
+        "MAX_LEDGER_CLEANUP_BATCH_SIZE",
+        "MAX_LEDGER_CLEANUP_MAX_RUNTIME_MS",
+        "normalizeLedgerCleanupOptions",
+        "runLedgerCleanup"
+      ],
+      "imports": [
+        "src/core/configRepository.ts",
+        "src/core/ledgerRepository.ts"
+      ],
+      "tests": [
+        "src/core/ledgerCleanup.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "src/core/ledgerRepository.test.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [],
+      "imports": [
+        "src/core/config.ts",
+        "src/core/dashboard.ts",
+        "src/core/domain.ts",
+        "src/core/idempotency.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/redisStore.ts",
+        "src/core/scoring.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/hotspots/enforcementSubmit.md",
+        "docs/knowledge-graph/hotspots/ledgerRepository.md",
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "src/core/ledgerRepository.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [
+        "CleanupLedgerRequest",
+        "CleanupLedgerResult",
+        "CreateLedgerEntryRequest",
+        "CreateLedgerEntryResult",
+        "DeleteUserLedgerResult",
+        "FormNonceRecord",
+        "LedgerRepository",
+        "MarkTargetDeletedRequest",
+        "MarkTargetDeletedResult",
+        "ReverseLedgerEntryRequest",
+        "ReverseLedgerEntryResult"
+      ],
+      "imports": [
+        "src/core/domain.ts",
+        "src/core/idempotency.ts",
+        "src/core/logging.ts",
+        "src/core/redisStore.ts",
+        "src/core/scoring.ts",
+        "src/core/userIdentityIndexes.ts"
+      ],
+      "tests": [
+        "src/core/ledgerRepository.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/ledgerRepository.md",
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "src/core/logging.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [
+        "LogDetails",
+        "logError",
+        "logInfo",
+        "logWarn"
+      ],
+      "imports": [],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-side-effects.md"
+      ]
+    },
+    {
+      "id": "src/core/nativeSettings.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [
+        "MAX_NATIVE_DECAY_INTERVAL_DAYS",
+        "MAX_NATIVE_TEMPLATE_BYTES",
+        "NATIVE_SETTINGS_KEYS",
+        "NativeSettingValue",
+        "NativeSettingsProvider",
+        "NativeSettingsValues",
+        "applyNativeSettings",
+        "toRedisOwnedConfig"
+      ],
+      "imports": [
+        "src/core/config.ts",
+        "src/core/domain.ts",
+        "src/core/templates.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-config.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "src/core/redisStore.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [
+        "FakeRedisStore",
+        "RedisSetOptions",
+        "RedisStore",
+        "RedisTransactionConflictError",
+        "ZMember",
+        "ZRangeOptions",
+        "isRedisTransactionConflictError"
+      ],
+      "imports": [],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-ledger.md"
+      ]
+    },
+    {
+      "id": "src/core/scoring.test.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [],
+      "imports": [
+        "src/core/config.ts",
+        "src/core/scoring.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-ledger.md"
+      ]
+    },
+    {
+      "id": "src/core/scoring.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [
+        "ActivePointInput",
+        "MS_PER_DAY",
+        "calculateActivePoints",
+        "getDecayIntervalMs",
+        "recalculateActiveTotal"
+      ],
+      "imports": [
+        "src/core/domain.ts"
+      ],
+      "tests": [
+        "src/core/scoring.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/workflows/dashboard.md"
+      ]
+    },
+    {
+      "id": "src/core/sideEffects.test.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [],
+      "imports": [
+        "src/core/config.ts",
+        "src/core/domain.ts",
+        "src/core/logging.ts",
+        "src/core/sideEffects.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/enforcementSubmit.md",
+        "docs/knowledge-graph/hotspots/sideEffects.md",
+        "docs/knowledge-graph/modules/core-side-effects.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "src/core/sideEffects.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [
+        "ExecuteReversalSideEffectsInput",
+        "ExecuteSideEffectsInput",
+        "PublicComment",
+        "SideEffectRedditClient",
+        "SideEffectTarget",
+        "executeReversalSideEffects",
+        "executeSideEffects"
+      ],
+      "imports": [
+        "src/core/domain.ts",
+        "src/core/logging.ts",
+        "src/core/templates.ts"
+      ],
+      "tests": [
+        "src/core/sideEffects.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/sideEffects.md",
+        "docs/knowledge-graph/modules/core-side-effects.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "src/core/templates.test.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [],
+      "imports": [
+        "src/core/templates.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/sideEffects.md",
+        "docs/knowledge-graph/modules/core-config.md",
+        "docs/knowledge-graph/modules/core-side-effects.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "src/core/templates.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [
+        "PRIVATE_PLACEHOLDERS",
+        "PUBLIC_PLACEHOLDERS",
+        "Placeholder",
+        "PrivatePlaceholder",
+        "PublicPlaceholder",
+        "TemplateValidationIssue",
+        "TemplateValues",
+        "extractPlaceholders",
+        "renderTemplate",
+        "validateTemplatePlaceholders"
+      ],
+      "imports": [],
+      "tests": [
+        "src/core/templates.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-config.md",
+        "docs/knowledge-graph/modules/core-side-effects.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "src/core/userIdentityIndexes.ts",
+      "kind": "module",
+      "layer": "core",
+      "exports": [
+        "formNonceKey",
+        "userFormNonceIndexKey",
+        "userViewContextIndexKey",
+        "viewContextKey"
+      ],
+      "imports": [],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "src/index.ts",
+      "kind": "module",
+      "layer": "entrypoint",
+      "exports": [],
+      "imports": [
+        "src/routes/api.ts",
+        "src/routes/forms.ts",
+        "src/routes/menu.ts",
+        "src/routes/scheduler.ts",
+        "src/routes/settingsValidators.ts",
+        "src/routes/triggers.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md"
+      ]
+    },
+    {
+      "id": "src/routes/api.test.ts",
+      "kind": "module",
+      "layer": "routes",
+      "exports": [],
+      "imports": [
+        "src/core/domain.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/hotspots/ledgerRepository.md",
+        "docs/knowledge-graph/modules/client-dashboard.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "src/routes/api.ts",
+      "kind": "module",
+      "layer": "routes",
+      "exports": [
+        "api"
+      ],
+      "imports": [
+        "src/core/configRepository.ts",
+        "src/core/dashboard.ts",
+        "src/core/devvitRedisStore.ts",
+        "src/core/domain.ts",
+        "src/core/identity.ts",
+        "src/core/ledgerCleanup.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/logging.ts",
+        "src/core/scoring.ts",
+        "src/core/sideEffects.ts",
+        "src/routes/permissions.ts"
+      ],
+      "tests": [
+        "src/routes/api.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "src/routes/enforcementSubmit.test.ts",
+      "kind": "module",
+      "layer": "routes",
+      "exports": [],
+      "imports": [
+        "src/core/config.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/redisStore.ts",
+        "src/routes/enforcementSubmit.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/enforcementSubmit.md",
+        "docs/knowledge-graph/hotspots/ledgerRepository.md",
+        "docs/knowledge-graph/hotspots/sideEffects.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "src/routes/enforcementSubmit.ts",
+      "kind": "module",
+      "layer": "routes",
+      "exports": [
+        "EnforcementFormValues",
+        "EnforcementSubmitDependencies",
+        "EnforcementSubmitRedditClient",
+        "failedSideEffectLabels",
+        "formatCreatedToast",
+        "handleEnforcementSubmit"
+      ],
+      "imports": [
+        "src/core/configRepository.ts",
+        "src/core/domain.ts",
+        "src/core/enforcement.ts",
+        "src/core/identity.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/logging.ts",
+        "src/core/sideEffects.ts",
+        "src/core/templates.ts",
+        "src/routes/permissions.ts"
+      ],
+      "tests": [
+        "src/routes/enforcementSubmit.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/enforcementSubmit.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "src/routes/forms.test.ts",
+      "kind": "module",
+      "layer": "routes",
+      "exports": [],
+      "imports": [
+        "src/core/domain.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "src/routes/forms.ts",
+      "kind": "module",
+      "layer": "routes",
+      "exports": [
+        "failedSideEffectLabels",
+        "formatCreatedToast",
+        "forms"
+      ],
+      "imports": [
+        "src/core/configRepository.ts",
+        "src/core/devvitRedisStore.ts",
+        "src/core/ledgerRepository.ts",
+        "src/routes/enforcementSubmit.ts"
+      ],
+      "tests": [
+        "src/routes/forms.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "src/routes/menu.test.ts",
+      "kind": "module",
+      "layer": "routes",
+      "exports": [],
+      "imports": [
+        "src/core/config.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "src/routes/menu.ts",
+      "kind": "module",
+      "layer": "routes",
+      "exports": [
+        "buildEnforcementFields",
+        "menu"
+      ],
+      "imports": [
+        "src/core/config.ts",
+        "src/core/configRepository.ts",
+        "src/core/dashboard.ts",
+        "src/core/devvitRedisStore.ts",
+        "src/core/domain.ts",
+        "src/core/enforcement.ts",
+        "src/core/identity.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/logging.ts",
+        "src/routes/permissions.ts"
+      ],
+      "tests": [
+        "src/routes/menu.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "src/routes/permissions.ts",
+      "kind": "module",
+      "layer": "routes",
+      "exports": [
+        "ModeratorAccess",
+        "canEnforceWithPermissions",
+        "getModeratorAccess"
+      ],
+      "imports": [
+        "src/core/logging.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "src/routes/scheduler.test.ts",
+      "kind": "module",
+      "layer": "routes",
+      "exports": [],
+      "imports": [
+        "src/core/domain.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "src/routes/scheduler.ts",
+      "kind": "module",
+      "layer": "routes",
+      "exports": [
+        "schedulerRoutes"
+      ],
+      "imports": [
+        "src/core/accountDeletion.ts",
+        "src/core/configRepository.ts",
+        "src/core/devvitRedisStore.ts",
+        "src/core/ledgerCleanup.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/logging.ts"
+      ],
+      "tests": [
+        "src/routes/scheduler.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "src/routes/settingsValidators.test.ts",
+      "kind": "module",
+      "layer": "routes",
+      "exports": [],
+      "imports": [
+        "src/core/config.ts",
+        "src/routes/settingsValidators.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-config.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "src/routes/settingsValidators.ts",
+      "kind": "module",
+      "layer": "routes",
+      "exports": [
+        "settingsValidators"
+      ],
+      "imports": [
+        "src/core/nativeSettings.ts",
+        "src/core/templates.ts"
+      ],
+      "tests": [
+        "src/routes/settingsValidators.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-config.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "src/routes/triggers.test.ts",
+      "kind": "module",
+      "layer": "routes",
+      "exports": [],
+      "imports": [
+        "src/core/domain.ts"
+      ],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "src/routes/triggers.ts",
+      "kind": "module",
+      "layer": "routes",
+      "exports": [
+        "triggers"
+      ],
+      "imports": [
+        "src/core/devvitRedisStore.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/logging.ts"
+      ],
+      "tests": [
+        "src/routes/triggers.test.ts"
+      ],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "docs/knowledge-graph/hotspots/api-routes.md",
+      "to": "src/client/dashboardLaunch.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/hotspots/api-routes.md",
+      "to": "src/core/dashboard.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/hotspots/api-routes.md",
+      "to": "src/core/ledgerRepository.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/hotspots/api-routes.md",
+      "to": "src/routes/api.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/hotspots/api-routes.md",
+      "to": "src/routes/api.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/hotspots/enforcementSubmit.md",
+      "to": "src/core/enforcement.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/hotspots/enforcementSubmit.md",
+      "to": "src/core/ledgerRepository.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/hotspots/enforcementSubmit.md",
+      "to": "src/core/sideEffects.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/hotspots/enforcementSubmit.md",
+      "to": "src/routes/enforcementSubmit.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/hotspots/enforcementSubmit.md",
+      "to": "src/routes/enforcementSubmit.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/hotspots/ledgerRepository.md",
+      "to": "src/core/accountDeletion.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/hotspots/ledgerRepository.md",
+      "to": "src/core/ledgerCleanup.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/hotspots/ledgerRepository.md",
+      "to": "src/core/ledgerRepository.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/hotspots/ledgerRepository.md",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/hotspots/ledgerRepository.md",
+      "to": "src/routes/api.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/hotspots/ledgerRepository.md",
+      "to": "src/routes/enforcementSubmit.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/hotspots/sideEffects.md",
+      "to": "src/core/sideEffects.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/hotspots/sideEffects.md",
+      "to": "src/core/sideEffects.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/hotspots/sideEffects.md",
+      "to": "src/core/templates.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/hotspots/sideEffects.md",
+      "to": "src/routes/enforcementSubmit.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/client-dashboard.md",
+      "to": "src/client/compactEntryRows.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/client-dashboard.md",
+      "to": "src/client/compactEntryRows.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/client-dashboard.md",
+      "to": "src/client/dashboard.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/client-dashboard.md",
+      "to": "src/client/dashboardLaunch.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/client-dashboard.md",
+      "to": "src/client/dashboardLaunch.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/client-dashboard.md",
+      "to": "src/routes/api.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-config.md",
+      "to": "src/core/canonicalJson.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-config.md",
+      "to": "src/core/config.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-config.md",
+      "to": "src/core/config.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-config.md",
+      "to": "src/core/configRepository.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-config.md",
+      "to": "src/core/configRepository.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-config.md",
+      "to": "src/core/nativeSettings.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-config.md",
+      "to": "src/core/templates.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-config.md",
+      "to": "src/core/templates.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-config.md",
+      "to": "src/routes/settingsValidators.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-config.md",
+      "to": "src/routes/settingsValidators.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-ledger.md",
+      "to": "src/core/accountDeletion.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-ledger.md",
+      "to": "src/core/accountDeletion.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-ledger.md",
+      "to": "src/core/devvitRedisStore.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-ledger.md",
+      "to": "src/core/devvitRedisStore.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-ledger.md",
+      "to": "src/core/domain.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-ledger.md",
+      "to": "src/core/idempotency.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-ledger.md",
+      "to": "src/core/idempotency.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-ledger.md",
+      "to": "src/core/identity.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-ledger.md",
+      "to": "src/core/identity.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-ledger.md",
+      "to": "src/core/ledgerCleanup.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-ledger.md",
+      "to": "src/core/ledgerCleanup.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-ledger.md",
+      "to": "src/core/ledgerRepository.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-ledger.md",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-ledger.md",
+      "to": "src/core/redisStore.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-ledger.md",
+      "to": "src/core/scoring.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-ledger.md",
+      "to": "src/core/scoring.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-ledger.md",
+      "to": "src/core/userIdentityIndexes.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-side-effects.md",
+      "to": "src/core/domain.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-side-effects.md",
+      "to": "src/core/logging.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-side-effects.md",
+      "to": "src/core/sideEffects.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-side-effects.md",
+      "to": "src/core/sideEffects.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-side-effects.md",
+      "to": "src/core/templates.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/core-side-effects.md",
+      "to": "src/core/templates.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/routes.md",
+      "to": "src/index.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/routes.md",
+      "to": "src/routes/api.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/routes.md",
+      "to": "src/routes/api.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/routes.md",
+      "to": "src/routes/enforcementSubmit.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/routes.md",
+      "to": "src/routes/enforcementSubmit.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/routes.md",
+      "to": "src/routes/forms.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/routes.md",
+      "to": "src/routes/forms.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/routes.md",
+      "to": "src/routes/menu.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/routes.md",
+      "to": "src/routes/menu.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/routes.md",
+      "to": "src/routes/permissions.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/routes.md",
+      "to": "src/routes/scheduler.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/routes.md",
+      "to": "src/routes/scheduler.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/routes.md",
+      "to": "src/routes/settingsValidators.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/routes.md",
+      "to": "src/routes/settingsValidators.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/routes.md",
+      "to": "src/routes/triggers.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/routes.md",
+      "to": "src/routes/triggers.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "to": "src/core/accountDeletion.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "to": "src/core/accountDeletion.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "to": "src/core/ledgerCleanup.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "to": "src/core/ledgerCleanup.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "to": "src/core/ledgerRepository.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "to": "src/core/userIdentityIndexes.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "to": "src/routes/scheduler.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "to": "src/routes/scheduler.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "to": "src/routes/triggers.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "to": "src/routes/triggers.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/client/compactEntryRows.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/client/compactEntryRows.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/client/dashboard.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/client/dashboardLaunch.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/client/dashboardLaunch.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/core/dashboard.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/core/dashboard.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/core/ledgerRepository.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/core/scoring.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/routes/api.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/routes/api.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/routes/menu.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/routes/menu.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/routes/permissions.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/core/enforcement.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/core/enforcement.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/core/idempotency.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/core/idempotency.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/core/identity.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/core/identity.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/core/ledgerRepository.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/core/sideEffects.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/core/sideEffects.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/routes/enforcementSubmit.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/routes/enforcementSubmit.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/routes/forms.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/routes/forms.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/routes/menu.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/routes/menu.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/routes/permissions.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/settings.md",
+      "to": "src/core/canonicalJson.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/settings.md",
+      "to": "src/core/config.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/settings.md",
+      "to": "src/core/config.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/settings.md",
+      "to": "src/core/configRepository.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/settings.md",
+      "to": "src/core/configRepository.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/settings.md",
+      "to": "src/core/nativeSettings.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/settings.md",
+      "to": "src/core/templates.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/settings.md",
+      "to": "src/core/templates.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/settings.md",
+      "to": "src/routes/api.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/settings.md",
+      "to": "src/routes/api.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/settings.md",
+      "to": "src/routes/settingsValidators.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/settings.md",
+      "to": "src/routes/settingsValidators.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "src/client/compactEntryRows.test.ts",
+      "to": "src/client/compactEntryRows.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/client/dashboard.ts",
+      "to": "src/client/compactEntryRows.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/client/dashboard.ts",
+      "to": "src/client/dashboardLaunch.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/client/dashboard.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/client/dashboardLaunch.test.ts",
+      "to": "src/client/dashboardLaunch.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/accountDeletion.test.ts",
+      "to": "src/core/accountDeletion.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/accountDeletion.test.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/accountDeletion.test.ts",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/accountDeletion.test.ts",
+      "to": "src/core/redisStore.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/accountDeletion.ts",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/config.test.ts",
+      "to": "src/core/config.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/config.test.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/config.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/config.ts",
+      "to": "src/core/templates.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/configRepository.test.ts",
+      "to": "src/core/config.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/configRepository.test.ts",
+      "to": "src/core/configRepository.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/configRepository.test.ts",
+      "to": "src/core/nativeSettings.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/configRepository.test.ts",
+      "to": "src/core/redisStore.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/configRepository.ts",
+      "to": "src/core/canonicalJson.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/configRepository.ts",
+      "to": "src/core/config.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/configRepository.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/configRepository.ts",
+      "to": "src/core/logging.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/configRepository.ts",
+      "to": "src/core/nativeSettings.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/configRepository.ts",
+      "to": "src/core/redisStore.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/dashboard.test.ts",
+      "to": "src/core/dashboard.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/dashboard.test.ts",
+      "to": "src/core/redisStore.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/dashboard.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/dashboard.ts",
+      "to": "src/core/redisStore.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/dashboard.ts",
+      "to": "src/core/userIdentityIndexes.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/devvitRedisStore.test.ts",
+      "to": "src/core/devvitRedisStore.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/devvitRedisStore.ts",
+      "to": "src/core/redisStore.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/enforcement.test.ts",
+      "to": "src/core/canonicalJson.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/enforcement.test.ts",
+      "to": "src/core/config.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/enforcement.test.ts",
+      "to": "src/core/enforcement.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/enforcement.ts",
+      "to": "src/core/canonicalJson.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/enforcement.ts",
+      "to": "src/core/config.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/enforcement.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/enforcement.ts",
+      "to": "src/core/idempotency.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/idempotency.test.ts",
+      "to": "src/core/idempotency.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/idempotency.ts",
+      "to": "src/core/canonicalJson.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/idempotency.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/identity.test.ts",
+      "to": "src/core/identity.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/ledgerCleanup.test.ts",
+      "to": "src/core/ledgerCleanup.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/ledgerCleanup.ts",
+      "to": "src/core/configRepository.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/ledgerCleanup.ts",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/ledgerRepository.test.ts",
+      "to": "src/core/config.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/ledgerRepository.test.ts",
+      "to": "src/core/dashboard.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/ledgerRepository.test.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/ledgerRepository.test.ts",
+      "to": "src/core/idempotency.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/ledgerRepository.test.ts",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/ledgerRepository.test.ts",
+      "to": "src/core/redisStore.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/ledgerRepository.test.ts",
+      "to": "src/core/scoring.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/ledgerRepository.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/ledgerRepository.ts",
+      "to": "src/core/idempotency.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/ledgerRepository.ts",
+      "to": "src/core/logging.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/ledgerRepository.ts",
+      "to": "src/core/redisStore.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/ledgerRepository.ts",
+      "to": "src/core/scoring.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/ledgerRepository.ts",
+      "to": "src/core/userIdentityIndexes.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/nativeSettings.ts",
+      "to": "src/core/config.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/nativeSettings.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/nativeSettings.ts",
+      "to": "src/core/templates.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/scoring.test.ts",
+      "to": "src/core/config.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/scoring.test.ts",
+      "to": "src/core/scoring.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/scoring.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/sideEffects.test.ts",
+      "to": "src/core/config.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/sideEffects.test.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/sideEffects.test.ts",
+      "to": "src/core/logging.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/sideEffects.test.ts",
+      "to": "src/core/sideEffects.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/sideEffects.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/sideEffects.ts",
+      "to": "src/core/logging.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/sideEffects.ts",
+      "to": "src/core/templates.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/core/templates.test.ts",
+      "to": "src/core/templates.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/index.ts",
+      "to": "src/routes/api.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/index.ts",
+      "to": "src/routes/forms.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/index.ts",
+      "to": "src/routes/menu.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/index.ts",
+      "to": "src/routes/scheduler.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/index.ts",
+      "to": "src/routes/settingsValidators.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/index.ts",
+      "to": "src/routes/triggers.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/api.test.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "src/core/configRepository.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "src/core/dashboard.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "src/core/devvitRedisStore.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "src/core/identity.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "src/core/ledgerCleanup.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "src/core/logging.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "src/core/scoring.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "src/core/sideEffects.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "src/routes/permissions.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/enforcementSubmit.test.ts",
+      "to": "src/core/config.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/enforcementSubmit.test.ts",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/enforcementSubmit.test.ts",
+      "to": "src/core/redisStore.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/enforcementSubmit.test.ts",
+      "to": "src/routes/enforcementSubmit.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/enforcementSubmit.ts",
+      "to": "src/core/configRepository.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/enforcementSubmit.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/enforcementSubmit.ts",
+      "to": "src/core/enforcement.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/enforcementSubmit.ts",
+      "to": "src/core/identity.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/enforcementSubmit.ts",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/enforcementSubmit.ts",
+      "to": "src/core/logging.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/enforcementSubmit.ts",
+      "to": "src/core/sideEffects.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/enforcementSubmit.ts",
+      "to": "src/core/templates.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/enforcementSubmit.ts",
+      "to": "src/routes/permissions.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/forms.test.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/forms.ts",
+      "to": "src/core/configRepository.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/forms.ts",
+      "to": "src/core/devvitRedisStore.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/forms.ts",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/forms.ts",
+      "to": "src/routes/enforcementSubmit.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/menu.test.ts",
+      "to": "src/core/config.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/menu.ts",
+      "to": "src/core/config.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/menu.ts",
+      "to": "src/core/configRepository.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/menu.ts",
+      "to": "src/core/dashboard.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/menu.ts",
+      "to": "src/core/devvitRedisStore.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/menu.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/menu.ts",
+      "to": "src/core/enforcement.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/menu.ts",
+      "to": "src/core/identity.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/menu.ts",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/menu.ts",
+      "to": "src/core/logging.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/menu.ts",
+      "to": "src/routes/permissions.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/permissions.ts",
+      "to": "src/core/logging.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/scheduler.test.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/scheduler.ts",
+      "to": "src/core/accountDeletion.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/scheduler.ts",
+      "to": "src/core/configRepository.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/scheduler.ts",
+      "to": "src/core/devvitRedisStore.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/scheduler.ts",
+      "to": "src/core/ledgerCleanup.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/scheduler.ts",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/scheduler.ts",
+      "to": "src/core/logging.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/settingsValidators.test.ts",
+      "to": "src/core/config.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/settingsValidators.test.ts",
+      "to": "src/routes/settingsValidators.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/settingsValidators.ts",
+      "to": "src/core/nativeSettings.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/settingsValidators.ts",
+      "to": "src/core/templates.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/triggers.test.ts",
+      "to": "src/core/domain.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/triggers.ts",
+      "to": "src/core/devvitRedisStore.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/triggers.ts",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/routes/triggers.ts",
+      "to": "src/core/logging.ts",
+      "kind": "imports"
+    },
+    {
+      "from": "src/client/compactEntryRows.ts",
+      "to": "src/client/compactEntryRows.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/client/dashboardLaunch.ts",
+      "to": "src/client/dashboardLaunch.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/core/accountDeletion.ts",
+      "to": "src/core/accountDeletion.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/core/config.ts",
+      "to": "src/core/config.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/core/configRepository.ts",
+      "to": "src/core/configRepository.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/core/dashboard.ts",
+      "to": "src/core/dashboard.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/core/devvitRedisStore.ts",
+      "to": "src/core/devvitRedisStore.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/core/enforcement.ts",
+      "to": "src/core/enforcement.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/core/idempotency.ts",
+      "to": "src/core/idempotency.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/core/identity.ts",
+      "to": "src/core/identity.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/core/ledgerCleanup.ts",
+      "to": "src/core/ledgerCleanup.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/core/ledgerRepository.ts",
+      "to": "src/core/ledgerRepository.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/core/scoring.ts",
+      "to": "src/core/scoring.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/core/sideEffects.ts",
+      "to": "src/core/sideEffects.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/core/templates.ts",
+      "to": "src/core/templates.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "src/routes/api.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/routes/enforcementSubmit.ts",
+      "to": "src/routes/enforcementSubmit.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/routes/forms.ts",
+      "to": "src/routes/forms.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/routes/menu.ts",
+      "to": "src/routes/menu.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/routes/scheduler.ts",
+      "to": "src/routes/scheduler.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/routes/settingsValidators.ts",
+      "to": "src/routes/settingsValidators.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/routes/triggers.ts",
+      "to": "src/routes/triggers.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "to": "src/core/accountDeletion.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "to": "src/core/ledgerCleanup.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "to": "src/core/userIdentityIndexes.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "to": "src/routes/scheduler.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "to": "src/routes/triggers.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/client/compactEntryRows.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/client/dashboard.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/client/dashboardLaunch.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/core/dashboard.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/core/scoring.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/routes/api.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/routes/menu.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/routes/permissions.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/core/enforcement.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/core/idempotency.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/core/identity.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/core/sideEffects.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/routes/enforcementSubmit.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/routes/forms.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/routes/menu.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/enforcement.md",
+      "to": "src/routes/permissions.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/settings.md",
+      "to": "src/core/canonicalJson.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/settings.md",
+      "to": "src/core/config.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/settings.md",
+      "to": "src/core/configRepository.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/settings.md",
+      "to": "src/core/nativeSettings.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/settings.md",
+      "to": "src/core/templates.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/settings.md",
+      "to": "src/routes/api.ts",
+      "kind": "workflowTouches"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/settings.md",
+      "to": "src/routes/settingsValidators.ts",
+      "kind": "workflowTouches"
+    }
+  ]
+}

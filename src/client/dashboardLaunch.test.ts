@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DASHBOARD_ENTRYPOINT,
   resolveDashboardLaunch,
+  shouldLoadDashboardData,
   shouldKeepDashboardContext,
 } from './dashboardLaunch';
 
@@ -71,5 +73,11 @@ describe('resolveDashboardLaunch', () => {
     expect(shouldKeepDashboardContext('history')).toBe(true);
     expect(shouldKeepDashboardContext('profile')).toBe(true);
     expect(shouldKeepDashboardContext('settings')).toBe(false);
+  });
+
+  it('loads dashboard data only after the webview enters expanded mode', () => {
+    expect(DASHBOARD_ENTRYPOINT).toBe('dashboard');
+    expect(shouldLoadDashboardData('inline')).toBe(false);
+    expect(shouldLoadDashboardData('expanded')).toBe(true);
   });
 });

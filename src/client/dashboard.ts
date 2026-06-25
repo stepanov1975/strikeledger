@@ -1,4 +1,9 @@
 import './dashboard.css';
+import {
+  addWebViewModeListener,
+  getWebViewMode,
+  requestExpandedMode,
+} from '@devvit/client';
 import { buildCompactEntryRow } from './compactEntryRows';
 import {
   ACTION_LABELS,
@@ -8,7 +13,9 @@ import {
   type StrikeAction,
 } from '../core/domain';
 import {
+  DASHBOARD_ENTRYPOINT,
   resolveDashboardLaunch,
+  shouldLoadDashboardData,
   shouldKeepDashboardContext,
   type BootstrapResponse,
   type DashboardView,
@@ -161,6 +168,7 @@ let historyActiveTotal = 0;
 let historyCanAddReversalModNote = false;
 let historyNotice: string | null = null;
 let settingsNotice: string | null = null;
+let dashboardStarted = false;
 
 const create = <K extends keyof HTMLElementTagNameMap>(
   tagName: K,
@@ -1785,25 +1793,88 @@ const loadActiveView = async () => {
   }
 };
 
+const openExpandedDashboard = async (
+  event: MouseEvent,
+  status: HTMLElement
+) => {
+  status.textContent = '';
+  try {
+    await requestExpandedMode(event, DASHBOARD_ENTRYPOINT);
+  } catch (error) {
+    status.textContent =
+      error instanceof Error
+        ? error.message
+        : 'Unable to open StrikeLedger.';
+  }
+};
+
+const renderInlineLauncher = () => {
+  const shell = create('div', 'launcher-shell');
+  const copy = create('div', 'launcher-copy');
+  copy.append(
+    create('h1', 'launcher-title', 'StrikeLedger'),
+    create(
+      'p',
+      'launcher-text',
+      'Open the moderation dashboard in expanded mode.'
+    )
+  );
+
+  const actions = create('div', 'launcher-actions');
+  const button = create('button', 'launch-button', 'Open StrikeLedger');
+  button.type = 'button';
+  const status = create('p', 'launcher-status');
+  button.addEventListener('click', (event) => {
+    void openExpandedDashboard(event, status);
+  });
+  actions.append(button, status);
+
+  shell.append(copy, actions);
+  app.replaceChildren(shell);
+};
+
+const renderStartupError = (error: unknown) => {
+  app.replaceChildren(
+    create(
+      'div',
+      'error',
+      error instanceof Error ? error.message : 'Unable to load StrikeLedger.'
+    )
+  );
+};
+
+const startDashboard = async () => {
+  if (dashboardStarted) {
+    return;
+  }
+
+  dashboardStarted = true;
+  bootstrap = await fetchJson<BootstrapResponse>('/api/bootstrap');
+  const launch = resolveDashboardLaunch(
+    bootstrap,
+    new URLSearchParams(window.location.search)
+  );
+  activeView = launch.view;
+  activeContextToken = launch.contextToken ?? null;
+  renderFrame();
+  await loadActiveView();
+};
+
 const start = async () => {
   try {
-    bootstrap = await fetchJson<BootstrapResponse>('/api/bootstrap');
-    const launch = resolveDashboardLaunch(
-      bootstrap,
-      new URLSearchParams(window.location.search)
-    );
-    activeView = launch.view;
-    activeContextToken = launch.contextToken ?? null;
-    renderFrame();
-    await loadActiveView();
+    if (!shouldLoadDashboardData(getWebViewMode())) {
+      addWebViewModeListener((mode) => {
+        if (shouldLoadDashboardData(mode)) {
+          void startDashboard().catch(renderStartupError);
+        }
+      });
+      renderInlineLauncher();
+      return;
+    }
+
+    await startDashboard();
   } catch (error) {
-    app.replaceChildren(
-      create(
-        'div',
-        'error',
-        error instanceof Error ? error.message : 'Unable to load StrikeLedger.'
-      )
-    );
+    renderStartupError(error);
   }
 };
 

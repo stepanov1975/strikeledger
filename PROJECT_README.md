@@ -19,7 +19,7 @@ Each enforcement action records a ledger entry, applies configured points, leave
 
 The ledger is the source of truth. Cached active totals are rebuildable, decay is calculated from ledger entries, and reversals remove an entry's contribution without deleting the audit trail or undoing Reddit side effects.
 
-Logged-in non-moderators who open the dashboard get a limited self view. It uses a server-derived current user identity, shows only that user's active total and compact current-subreddit history, and does not expose moderator History, Profile, Admin, side-effect, target, or reversal data.
+Logged-in non-moderators who open the dashboard post and click `Open StrikeLedger` get a limited self view in expanded mode. It uses a server-derived current user identity, shows only that user's active total and compact current-subreddit history, and does not expose moderator History, Profile, Admin, side-effect, target, or reversal data.
 
 ## Core Defaults
 
@@ -35,7 +35,7 @@ Default decay subtracts `1` active point every `30` days, clamped at zero. Decay
 
 - Devvit menu actions and forms handle enforcement.
 - Redis stores config, ledger entries, indexes, tracked user IDs for account deletion checks, active-total cache, settings audit, form nonces, and view context tokens.
-- A small Vite app with plain TypeScript renders moderator history, profile, reversal, settings UI, and the limited user self view.
+- A small Vite app with plain TypeScript renders a non-scrolling inline launcher, then moderator history, profile, reversal, settings UI, and the limited user self view in expanded mode.
 - Hono JSON endpoints back the web UI, including `/api/self-summary` for the logged-in user's own limited dashboard data.
 - `vitest` covers unit, repository, and route tests.
 

@@ -4,7 +4,7 @@ App version: `1.1.0`
 
 StrikeLedger helps moderators record rule violations in a durable warning ledger. It adds moderator menu actions for warnings, removal warnings, NSFW warnings, history, profile, and settings. The app records what happened, calculates active warning totals with decay, and keeps a reversible audit trail for future moderator review.
 
-StrikeLedger moderation tools are for moderators only. Logged-in non-moderators who open the dashboard can see only their own active warning total and compact warning history. Public comments explain the rule violation but do not expose warning points or a user's active total. Private user notices, the limited user dashboard, and native moderator notes can include point totals when those options are enabled or available.
+StrikeLedger moderation tools are for moderators only. Logged-in non-moderators who open the dashboard post and launch StrikeLedger can see only their own active warning total and compact warning history. Public comments explain the rule violation but do not expose warning points or a user's active total. Private user notices, the limited user dashboard, and native moderator notes can include point totals when those options are enabled or available.
 
 ## What StrikeLedger Records
 
@@ -27,7 +27,7 @@ Moderators can use these Reddit menu actions:
 
 ## First Setup
 
-Configure stable subreddit settings on the standard Devvit app settings page. Boolean side-effect settings include help text that explains what each toggle does. Then open the subreddit menu and choose `StrikeLedger: Admin`. A moderator with full `all` permissions can create or open the StrikeLedger dashboard surface for the subreddit.
+Configure stable subreddit settings on the standard Devvit app settings page. Boolean side-effect settings include help text that explains what each toggle does. Then open the subreddit menu and choose `StrikeLedger: Admin`. A moderator with full `all` permissions can create or open the StrikeLedger dashboard surface for the subreddit. When the dashboard post opens, click `Open StrikeLedger` to use the full dashboard in expanded mode.
 
 Before using enforcement actions, review native app settings:
 
@@ -142,7 +142,7 @@ Use `StrikeLedger: History` from a post or comment to open that author's ledger 
 - Side-effect summary.
 - Reversal controls for entries that can still be reversed.
 
-History is loaded from a short-lived server-issued context token. Open History from a post or comment menu item when you need a selected user's ledger. On narrow/mobile screens, History shows the same entries as compact cards instead of a wide table.
+History is loaded from a short-lived server-issued context token. Open History from a post or comment menu item when you need a selected user's ledger, then click `Open StrikeLedger` on the dashboard post. On narrow/mobile screens, History shows the same entries as compact cards instead of a wide table.
 
 Moderators with full `all` permission can also open History from Admin by entering a username or `id:t2_*` user key in User lookup and clicking `History`. Username lookup resolves the live Reddit user first, then reads the ID-keyed ledger. Use direct lookup for repair or review when no current post or comment menu context is available.
 
@@ -157,13 +157,13 @@ Use `StrikeLedger: Profile` from a post or comment to open the author's profile 
 - Removals grouped by rule.
 - Recent ledger entries.
 
-Profile is loaded from a short-lived server-issued context token. Open Profile from a post or comment menu item when you need a selected user's summary. Active total is recalculated from the active ledger window; historical summary metrics are bounded to the latest entries on very large ledgers. On narrow/mobile screens, recent Profile entries use the compact card layout.
+Profile is loaded from a short-lived server-issued context token. Open Profile from a post or comment menu item when you need a selected user's summary, then click `Open StrikeLedger` on the dashboard post. Active total is recalculated from the active ledger window; historical summary metrics are bounded to the latest entries on very large ledgers. On narrow/mobile screens, recent Profile entries use the compact card layout.
 
 Moderators with full `all` permission can also open Profile from Admin by entering a username or `id:t2_*` user key in User lookup and clicking `Profile`. Username lookup resolves the live Reddit user first, then reads the ID-keyed ledger.
 
 ## Limited User Dashboard
 
-If a logged-in non-moderator opens the StrikeLedger dashboard post, the dashboard shows a limited self view instead of an error. The view shows:
+If a logged-in non-moderator opens the StrikeLedger dashboard post and clicks `Open StrikeLedger`, the expanded dashboard shows a limited self view instead of an error. The view shows:
 
 - The user's own active warning total for the current subreddit.
 - A compact mobile-friendly history list.

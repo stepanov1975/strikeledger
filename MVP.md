@@ -4,7 +4,7 @@ This file is the authoritative MVP specification for StrikeLedger, a Devvit mode
 
 ## Goal
 
-Moderators can apply a rule-specific warning action to a post or comment. The app records a durable ledger entry, updates the user's active warning total with configurable step decay, performs configured Reddit side effects, and exposes history, profile, reversal, and Admin workflows in an in-app web UI. Logged-in non-moderators who open the dashboard can see only their own active total and compact warning history.
+Moderators can apply a rule-specific warning action to a post or comment. The app records a durable ledger entry, updates the user's active warning total with configurable step decay, performs configured Reddit side effects, and exposes history, profile, reversal, and Admin workflows in an in-app web UI. Logged-in non-moderators who open the dashboard post and launch expanded mode can see only their own active total and compact warning history.
 
 ## Scope
 
@@ -31,16 +31,16 @@ The MVP includes these in-app web UI views:
 - Admin tools for rules, Reddit rule import, rules JSON import/export, and manual user-total recalculation.
 - Limited user view for logged-in non-moderators, showing only the viewer's own active total and compact warning history.
 
-History and profile menu handlers create short-lived Redis view context records and open the configured StrikeLedger web UI with the requested view and context token. The MVP must not assume that a bare relative URL such as `/app?view=history&context={token}` is directly navigable from a Reddit menu response.
+History and profile menu handlers create short-lived Redis view context records, navigate to the dashboard post, and rely on the expanded dashboard to load the requested view and context token. The MVP must not assume that a bare relative URL such as `/app?view=history&context={token}` is directly navigable from a Reddit menu response.
 
-The MVP UI launch path is a StrikeLedger dashboard custom post/webview entrypoint that renders the plain TypeScript client and reads the selected view/context from the URL or an app-provided bootstrap endpoint. Admin opens the same web UI without a target context token. The app must provide a clear first-run way for moderators with `all` permission to create or locate the dashboard surface.
+The MVP UI launch path is a StrikeLedger dashboard custom post/webview entrypoint. In inline mode, the custom post must render only a compact, non-scrolling launch screen with an `Open StrikeLedger` button. That user action opens the same `dashboard` entrypoint in expanded mode, where the plain TypeScript client loads the selected view/context from the app-provided bootstrap endpoint. Admin opens the same expanded web UI without a target context token. The app must provide a clear first-run way for moderators with `all` permission to create or locate the dashboard surface.
 
 Implementation decision:
 
 - `devvit.json` must define a `post.dir` and a `dashboard` entrypoint.
 - The subreddit-level `StrikeLedger: Admin` menu handler checks for a stored dashboard post ID. If one exists and is readable, it navigates to that post. If none exists, a moderator with `all` permission can create it with `reddit.submitCustomPost({ subredditName, title, entry: 'dashboard' })`; the returned post ID is stored in Redis.
-- History and profile menu handlers store a pending view request in Redis keyed by subreddit and moderator username, then navigate to the dashboard post. The dashboard client calls `/api/bootstrap` to resolve the current moderator's pending view request. Query parameters are optional hints only.
-- The dashboard post is a launch surface, not an authorization boundary. Do not store ledger data, user identities, or target context in custom-post `postData`. Non-moderators who open the dashboard get a limited view. Moderator-only data remains hidden because protected API routes re-check access server-side.
+- History and profile menu handlers store a pending view request in Redis keyed by subreddit and moderator username, then navigate to the dashboard post. The inline launch screen must not call `/api/bootstrap`, because doing so would consume the pending menu launch before the moderator opens the expanded dashboard. The expanded dashboard client calls `/api/bootstrap` to resolve the current moderator's pending view request. Query parameters are optional hints only.
+- The dashboard post is a launch surface, not an authorization boundary. Do not store ledger data, user identities, or target context in custom-post `postData`. Logged-in non-moderators who open the dashboard post and launch expanded mode get a limited view. Moderator-only data remains hidden because protected API routes re-check access server-side.
 
 ### Non-Goals
 
@@ -302,10 +302,12 @@ Version 2 should allow an optional public correction comment during reversal. Th
 
 Use a small Vite client app for the in-app web UI, backed by Hono JSON endpoints. The client uses plain TypeScript and lightweight DOM rendering; do not add React or another frontend framework for MVP.
 
-Proposed routes:
+Proposed routes and launch behavior:
 
 - Web UI entrypoint: use the Devvit Web custom post/webview entrypoint configured in `devvit.json`. The client may render a route-like `/app` view internally, but menu handlers must navigate through a supported Devvit target rather than assuming a relative server route is user-openable.
-- `/api/bootstrap` resolves the dashboard view for the current user. Moderators get pending view request records or explicit settings mode. Logged-in non-moderators get `view = limited`.
+- Inline launch screen: render only compact, button-driven content. Do not render History, Profile, Admin, limited history, tables, long forms, or scrollable regions inline. Inline mode must not call `/api/bootstrap`.
+- Expanded dashboard: after the user clicks `Open StrikeLedger`, request expanded mode for the `dashboard` entrypoint and load the full dashboard there.
+- `/api/bootstrap` resolves the expanded dashboard view for the current user. Moderators get pending view request records or explicit settings mode. Logged-in non-moderators get `view = limited`.
 - `/api/self-summary` reads the logged-in viewer's own active total and compact warning history for the current subreddit.
 - `/api/history` reads paginated ledger history.
 - `/api/profile` reads the selected user's moderation profile.
@@ -366,7 +368,7 @@ Post-rate counts and severe violation summaries can be added when those accepted
 
 ### Limited User View
 
-The limited user view is for logged-in non-moderators who open the dashboard post. It shows:
+The limited user view is for logged-in non-moderators who open the dashboard post and launch the expanded dashboard. It shows:
 
 - The viewer's Reddit username.
 - Current active warning total for the current subreddit.
@@ -641,7 +643,7 @@ All actions are enforced server-side even though menu items are moderator-only.
 - Admin reads require moderator access with any permission.
 - Admin rule writes, rules JSON import, and user-total recalculation require `all`.
 - Reversal requires `posts` or `all`, regardless of whether native mod notes are enabled.
-- Logged-in non-moderators may open the dashboard limited view and call `/api/self-summary` for their own current-subreddit active total and compact history only.
+- Logged-in non-moderators may launch the expanded dashboard limited view and call `/api/self-summary` for their own current-subreddit active total and compact history only.
 
 If permissions are insufficient, the app shows a moderator-facing failure message and creates no ledger entry.
 
@@ -718,6 +720,7 @@ Reviewed during this MVP pass:
 
 - [Devvit menu actions](https://developers.reddit.com/docs/capabilities/client/menu-actions): menu items support `post`, `comment`, and `subreddit` locations, `forUserType: moderator`, UI responses such as `showForm` and `navigateTo`, and a 10 minute moderator form completion window.
 - [Creating a custom post](https://developers.reddit.com/docs/capabilities/creating_custom_post): custom post webviews require `post.dir` and named entrypoints in `devvit.json`, then `reddit.submitCustomPost` creates a post for an entrypoint.
+- [View Modes & Entry Points](https://developers.reddit.com/docs/capabilities/server/launch_screen_and_entry_points/view_modes_entry_points): inline webviews must not trap scrolling or interfere with Reddit-native gestures; full dashboard workflows belong in expanded mode after user action.
 - [Devvit Redis](https://developers.reddit.com/docs/capabilities/server/redis): Redis supports strings, hashes, sorted sets, expirations, and `watch`/transaction semantics, but not key listing, Lua scripts, or pipelining. This supports the explicit key layout and sorted-set indexes.
 - [Reddit API overview](https://developers.reddit.com/docs/capabilities/server/reddit-api): Devvit handles Reddit API authentication when `reddit` permission is enabled, and Reddit Thing IDs use `t1_`, `t2_`, `t3_`, and `t5_` prefixes.
 - [RedditAPIClient addModNote](https://developers.reddit.com/docs/api/redditapi/RedditAPIClient/classes/RedditAPIClient#addmodnote): native mod-note labels are optional typed user-note labels, not a free-form neutral `NOTE` label.
@@ -745,6 +748,7 @@ Use these as product references for the accepted Post Rate Ledger extension:
 
 - Align form nonce expiry with Devvit's 10 minute moderator form window.
 - Make the dashboard custom post mechanics explicit and add `/api/bootstrap`.
+- Keep the inline dashboard post as a non-scrolling launcher and load full dashboard workflows only in expanded mode.
 - Treat the public dashboard post as untrusted/public and keep all authorization server-side.
 - Make `subredditName` required on ledger entries.
 - Define side-effect order, required/configured side effects, public-comment option tracking, and stale `pending` behavior.
@@ -799,16 +803,17 @@ Use `vitest` for unit, repository, and route tests.
 - Already NSFW posts block `Warn and mark NSFW` before ledger creation.
 - Moderators can view recent strike history for the selected author.
 - Moderators can view the selected author's moderation profile.
+- The inline dashboard post has no internal scrolling and only launches the expanded dashboard.
 - Moderators can edit stable MVP settings in native Devvit app settings.
 - Moderators can edit rules in the in-app Admin UI.
 - Admin saves write audit records.
 - Moderators can recalculate cached active totals for a selected user.
-- Logged-in non-moderators can view their own limited dashboard with active total and compact history.
+- Logged-in non-moderators can launch the expanded dashboard and view only their own limited dashboard with active total and compact history.
 - The scheduled account deletion check removes ledger records and author-identifying Redis indexes for deleted Reddit user IDs.
 - No non-moderator can use enforcement, moderator History, Profile, reversal, Admin, rule import, cleanup, or manual recalculation actions.
 
 ## Product Decisions
 
-The MVP UI launch path is the StrikeLedger dashboard custom post/webview entrypoint. Form-only history, profile, reversal, and Admin workflows are not part of the primary MVP UI.
+The MVP UI launch path is the StrikeLedger dashboard custom post/webview entrypoint. Inline mode is only a non-scrolling launcher; History, Profile, reversal, Admin, and limited self-view workflows load in expanded mode. Form-only history, profile, reversal, and Admin workflows are not part of the primary MVP UI.
 
 The reviewed references and incorporated findings above are part of the MVP contract for implementation.

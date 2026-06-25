@@ -16,7 +16,7 @@ npm run build
 - Use a separate test account or known test author for enforcement.
 - Review the standard Devvit app settings page and confirm the native setting defaults are present.
 - Confirm boolean native settings have readable help text for side-effect toggles such as private notices, native mod notes, distinguish, sticky, and lock.
-- Open `StrikeLedger: Admin` from the subreddit menu first and confirm the dashboard post opens.
+- Open `StrikeLedger: Admin` from the subreddit menu first and confirm the dashboard post opens with no inline scrolling, then click `Open StrikeLedger` and confirm the full dashboard opens in expanded mode.
 
 ## Devvit Platform Validation
 
@@ -84,13 +84,13 @@ npx devvit logs strikeledger_dev strikeledger --connect --show-timestamps --log-
 
 ## Dashboard
 
-- Open `StrikeLedger: History` from a post and a comment; confirm the selected author's entries load.
-- Open `StrikeLedger: Profile`; confirm active total, summary-window points, reversals, and removal counts are coherent.
+- Open `StrikeLedger: History` from a post and a comment; click `Open StrikeLedger` on the dashboard post and confirm the selected author's entries load.
+- Open `StrikeLedger: Profile`; click `Open StrikeLedger` on the dashboard post and confirm active total, summary-window points, reversals, and removal counts are coherent.
 - On a narrow/mobile viewport, confirm moderator History and Profile entries render as compact cards with date, rule, action/status, points, target link, moderator, and side-effect summary.
 - Reverse an active entry with a required reason; confirm the active total updates and the entry remains visible as reversed.
 - Use Admin to recalculate a selected user's active total; confirm the displayed result matches history/profile.
-- Open the dashboard post as a logged-in non-moderator with prior test entries; confirm it shows only that user's active total and a narrow history list with date, rule name, and points.
-- Open the dashboard post as a logged-in non-moderator with no entries; confirm it shows total points as `0` and an empty history state instead of `Request failed with 403`.
+- Open the dashboard post as a logged-in non-moderator with prior test entries; click `Open StrikeLedger` and confirm it shows only that user's active total and a narrow history list with date, rule name, and points.
+- Open the dashboard post as a logged-in non-moderator with no entries; click `Open StrikeLedger` and confirm it shows total points as `0` and an empty history state instead of `Request failed with 403`.
 - As a non-moderator, confirm moderator History, Profile, Admin, reversal, cleanup, rule import, and manual recalculation APIs remain blocked.
 
 ## Settings And Admin

@@ -25,6 +25,53 @@ button {
   font: inherit;
 }
 
+.launcher-shell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  background: #ffffff;
+}
+
+.launcher-copy {
+  min-width: 0;
+}
+
+.launcher-title {
+  margin: 0;
+  color: #102a43;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.launcher-text,
+.launcher-status {
+  margin: 4px 0 0;
+  color: #5f6b7a;
+  font-size: 13px;
+}
+
+.launcher-actions {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
+.launch-button {
+  border: 1px solid #116466;
+  border-radius: 6px;
+  padding: 9px 12px;
+  color: #ffffff;
+  background: #116466;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.launcher-status {
+  color: #9f1f1f;
+}
+
 .shell {
   min-height: 100vh;
   background: #f7f8fa;
@@ -556,6 +603,15 @@ tr:last-child td {
 
   .content {
     padding: 14px;
+  }
+
+  .launcher-shell {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .launcher-actions {
+    justify-items: stretch;
   }
 
   .entry-list > .panel {

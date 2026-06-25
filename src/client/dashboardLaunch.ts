@@ -14,6 +14,10 @@ export type DashboardLaunch = {
   contextToken?: string;
 };
 
+export type DashboardWebViewMode = 'inline' | 'expanded';
+
+export const DASHBOARD_ENTRYPOINT = 'dashboard';
+
 const isDashboardView = (
   value: string | null
 ): value is Exclude<DashboardView, 'limited'> =>
@@ -21,6 +25,10 @@ const isDashboardView = (
 
 export const shouldKeepDashboardContext = (view: DashboardView): boolean =>
   view === 'history' || view === 'profile';
+
+export const shouldLoadDashboardData = (
+  mode: DashboardWebViewMode
+): boolean => mode === 'expanded';
 
 const trimParam = (value: string | null): string | null => {
   if (value === null) {

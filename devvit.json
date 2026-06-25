@@ -10,11 +10,11 @@
     "entrypoints": {
       "default": {
         "entry": "dashboard.html",
-        "height": "tall"
+        "height": "regular"
       },
       "dashboard": {
         "entry": "dashboard.html",
-        "height": "tall"
+        "height": "regular"
       }
     }
   },

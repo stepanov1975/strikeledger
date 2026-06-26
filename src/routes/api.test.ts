@@ -237,42 +237,44 @@ const loadApi = async (
     })),
     getRules: vi.fn(async () => options.redditRules ?? []),
     getPostsByUser: vi.fn(() => buildAsyncListing(options.postsByUser ?? [])),
-    getPostById: vi.fn(async () =>
-      options.targetPost ?? {
-        id: 't3_target',
-        subredditName: 'testsub',
-        authorId: 't2_user',
-        authorName: 'target-user',
-        permalink: '/r/testsub/comments/target',
-        locked: false,
-        removed: false,
-        nsfw: false,
-        addComment: vi.fn(async () => ({
-          id: 't1_warning',
-          distinguish: vi.fn(async () => undefined),
-          lock: vi.fn(async () => undefined),
-        })),
-        remove: vi.fn(async () => undefined),
-        markAsNsfw: vi.fn(async () => undefined),
-      }
+    getPostById: vi.fn(
+      async () =>
+        options.targetPost ?? {
+          id: 't3_target',
+          subredditName: 'testsub',
+          authorId: 't2_user',
+          authorName: 'target-user',
+          permalink: '/r/testsub/comments/target',
+          locked: false,
+          removed: false,
+          nsfw: false,
+          addComment: vi.fn(async () => ({
+            id: 't1_warning',
+            distinguish: vi.fn(async () => undefined),
+            lock: vi.fn(async () => undefined),
+          })),
+          remove: vi.fn(async () => undefined),
+          markAsNsfw: vi.fn(async () => undefined),
+        }
     ),
-    getCommentById: vi.fn(async () =>
-      options.targetComment ?? {
-        id: 't1_target',
-        postId: 't3_target',
-        subredditName: 'testsub',
-        authorId: 't2_user',
-        authorName: 'target-user',
-        permalink: '/r/testsub/comments/target/_/comment',
-        locked: false,
-        removed: false,
-        reply: vi.fn(async () => ({
-          id: 't1_warning',
-          distinguish: vi.fn(async () => undefined),
-          lock: vi.fn(async () => undefined),
-        })),
-        remove: vi.fn(async () => undefined),
-      }
+    getCommentById: vi.fn(
+      async () =>
+        options.targetComment ?? {
+          id: 't1_target',
+          postId: 't3_target',
+          subredditName: 'testsub',
+          authorId: 't2_user',
+          authorName: 'target-user',
+          permalink: '/r/testsub/comments/target/_/comment',
+          locked: false,
+          removed: false,
+          reply: vi.fn(async () => ({
+            id: 't1_warning',
+            distinguish: vi.fn(async () => undefined),
+            lock: vi.fn(async () => undefined),
+          })),
+          remove: vi.fn(async () => undefined),
+        }
     ),
     addModNote: vi.fn(async () => ({ id: 'mod-note-1' })),
     modMail: {
@@ -526,7 +528,9 @@ describe('api routes', () => {
       },
     });
     expect(
-      redis.setCalls.filter((call) => call.key === 'user:id:t2_user:active_total')
+      redis.setCalls.filter(
+        (call) => call.key === 'user:id:t2_user:active_total'
+      )
     ).toHaveLength(1);
     expect(
       redis.zRangeCalls
@@ -1210,6 +1214,46 @@ describe('api routes', () => {
     expect(body.records[0]).not.toHaveProperty('beforeConfig');
   });
 
+  it('allows ordinary moderators to read compact settings audit records', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    const timestampMs = Date.UTC(2026, 0, 1);
+    const auditKey = `settings_audit:${timestampMs}:mod-a`;
+    const snapshotKey = `settings_audit_snapshot:${timestampMs}:mod-a`;
+    await redis.set(
+      auditKey,
+      JSON.stringify({
+        moderatorUsername: 'mod-a',
+        timestampMs,
+        changedFields: ['rules'],
+        beforeHash: 'before',
+        afterHash: 'after',
+      })
+    );
+    await redis.set(
+      snapshotKey,
+      JSON.stringify({
+        auditKey,
+        beforeConfig: '{}',
+        afterConfig: '{}',
+      })
+    );
+    await redis.zAdd('settings_audit_snapshots', {
+      member: snapshotKey,
+      score: timestampMs,
+    });
+
+    const response = await api.request('/settings/audit');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.records).toEqual([
+      expect.objectContaining({
+        moderatorUsername: 'mod-a',
+        changedFields: ['rules'],
+      }),
+    ]);
+  });
+
   it('rejects settings saves when the config revision differs from the request revision', async () => {
     const { api } = await loadApi(['all']);
 
@@ -1429,7 +1473,9 @@ describe('api routes', () => {
     const response = await api.request('/history?userKey=id:t2_deleted');
 
     expect(response.status).toBe(404);
-    await expect(response.json()).resolves.toEqual({ error: 'invalid_context' });
+    await expect(response.json()).resolves.toEqual({
+      error: 'invalid_context',
+    });
     expect(reddit.getUserById).toHaveBeenCalledWith('t2_deleted');
     expect(redis.values.has('user:id:t2_deleted:active_total')).toBe(false);
   });

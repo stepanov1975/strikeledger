@@ -61,7 +61,10 @@ export type EnforcementSubmitRedditClient = SideEffectRedditClient & {
 export type EnforcementSubmitDependencies = {
   repository: Pick<
     LedgerRepository,
-    'getFormNonce' | 'createLedgerEntry' | 'updateLedgerEntrySideEffects'
+    | 'getFormNonce'
+    | 'resolveExistingLedgerSubmission'
+    | 'createLedgerEntry'
+    | 'updateLedgerEntrySideEffects'
   >;
   configRepository: Pick<ConfigRepository, 'getConfig'>;
   reddit: EnforcementSubmitRedditClient;
@@ -345,6 +348,87 @@ export const handleEnforcementSubmit = async (
     return { showToast: 'StrikeLedger form expired. Reopen the action.' };
   }
 
+  const moderatorUsername = await getCurrentModeratorUsername(
+    dependencies.reddit,
+    nonce.subredditName
+  );
+  if (!moderatorUsername || moderatorUsername !== nonce.moderatorUsername) {
+    logWarn('enforcement.submit.moderator_mismatch', {
+      action: nonce.action,
+      targetId: nonce.targetId,
+      targetKind: nonce.targetKind,
+      subredditName: nonce.subredditName,
+      expectedModeratorUsername: nonce.moderatorUsername,
+      actualModeratorUsername: moderatorUsername,
+    });
+    return {
+      showToast:
+        'StrikeLedger form can only be submitted by the moderator who opened it.',
+    };
+  }
+
+  const nowMs = getNowMs();
+  const existingResult =
+    await dependencies.repository.resolveExistingLedgerSubmission({
+      formNonce,
+      targetId: nonce.targetId,
+      targetKind: nonce.targetKind,
+      subredditName: nonce.subredditName,
+      action: nonce.action,
+      ruleId,
+      moderatorUsername,
+      submittedAtMs: nowMs,
+      nowMs,
+      config,
+    });
+  switch (existingResult.status) {
+    case 'none':
+      break;
+    case 'idempotent':
+      logInfo(
+        'enforcement.submit.idempotent',
+        buildEntryLogDetails(existingResult.entry, existingResult.activeTotal)
+      );
+      return {
+        showToast: formatCreatedToast(
+          existingResult.entry,
+          existingResult.activeTotal,
+          true
+        ),
+      };
+    case 'duplicate':
+      logWarn('enforcement.submit.duplicate', {
+        existingEntryId: existingResult.existingEntry.entryId,
+        subredditName: nonce.subredditName,
+        moderatorUsername,
+        targetId: nonce.targetId,
+        targetKind: nonce.targetKind,
+        action: nonce.action,
+        ruleId,
+      });
+      return {
+        showToast: `Duplicate blocked. Existing entry: ${existingResult.existingEntry.entryId}.`,
+      };
+    case 'blocked':
+      logWarn('enforcement.submit.blocked', {
+        subredditName: nonce.subredditName,
+        moderatorUsername,
+        targetId: nonce.targetId,
+        targetKind: nonce.targetKind,
+        action: nonce.action,
+        ruleId,
+        reason: existingResult.reason,
+      });
+      if (existingResult.reason === 'transaction_conflict') {
+        return {
+          showToast:
+            'StrikeLedger was busy saving this action. Reopen the action and try again.',
+        };
+      }
+
+      return { showToast: 'StrikeLedger form expired. Reopen the action.' };
+  }
+
   const rule = findEnabledRule(ruleId, config);
   if (!rule) {
     logWarn('enforcement.submit.rule_disabled', {
@@ -380,25 +464,6 @@ export const handleEnforcementSubmit = async (
           'Public comment override contains a private or unsupported placeholder.',
       };
     }
-  }
-
-  const moderatorUsername = await getCurrentModeratorUsername(
-    dependencies.reddit,
-    nonce.subredditName
-  );
-  if (!moderatorUsername || moderatorUsername !== nonce.moderatorUsername) {
-    logWarn('enforcement.submit.moderator_mismatch', {
-      action: nonce.action,
-      targetId: nonce.targetId,
-      targetKind: nonce.targetKind,
-      subredditName: nonce.subredditName,
-      expectedModeratorUsername: nonce.moderatorUsername,
-      actualModeratorUsername: moderatorUsername,
-    });
-    return {
-      showToast:
-        'StrikeLedger form can only be submitted by the moderator who opened it.',
-    };
   }
 
   let targetState: TargetState;
@@ -447,7 +512,6 @@ export const handleEnforcementSubmit = async (
     return { showToast: preconditionFailure };
   }
 
-  const nowMs = getNowMs();
   const moderatorNote = trimOptional(values.moderatorNote);
   const targetSnapshot = buildTargetSnapshot(nonce, targetState);
   if (!targetSnapshot) {

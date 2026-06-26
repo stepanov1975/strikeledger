@@ -250,6 +250,15 @@
           "maxEntriesPerRun": 1000,
           "maxRuntimeMs": 10000
         }
+      },
+      "targetDeleteScrub": {
+        "endpoint": "/internal/scheduler/target-delete-scrub",
+        "cron": "47 * * * *",
+        "data": {
+          "maxTargets": 25,
+          "maxEntriesPerTarget": 200,
+          "maxRuntimeMs": 10000
+        }
       }
     }
   },

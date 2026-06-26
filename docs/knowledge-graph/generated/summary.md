@@ -4,13 +4,63 @@ Generated from source analysis and docs/knowledge-graph/annotations.json.
 
 ## Counts
 
+- criticalPath: 4
 - document: 13
 - file: 4
-- invariant: 6
+- invariant: 11
 - module: 56
 - platformFact: 4
 - reviewPack: 2
 - route: 38
+
+## Critical Paths
+
+### Account Deletion Transient Cleanup Critical Path
+
+- Node: `critical-path:account-deletion-transient-cleanup`
+- Summary: Start here when reviewing tracked t2 user IDs, expired nonce/view-context cleanup, per-user budgets, failed lookup retry behavior, and account deletion scheduler bounds.
+- Tags: privacy-retention, scheduler-bounds
+- Documents: `docs/knowledge-graph/hotspots/ledgerRepository.md`, `docs/knowledge-graph/modules/core-ledger.md`, `docs/knowledge-graph/workflows/cleanup-and-retention.md`
+- Sources: `src/core/accountDeletion.ts`, `src/core/dashboard.ts`, `src/core/ledgerRepository.ts`, `src/core/userIdentityIndexes.ts`, `src/routes/scheduler.ts`
+- Tests: `src/core/accountDeletion.test.ts`, `src/core/dashboard.test.ts`, `src/core/ledgerRepository.test.ts`, `src/routes/scheduler.test.ts`
+- Routes: `route:POST /internal/scheduler/account-deletion-check`
+- Invariants: `invariant:transient-identity-cleanup-bounded`
+- Platform facts: `platform-fact:devvit-endpoint-configuration`
+
+### Deleted Target Scrub Continuation Critical Path
+
+- Node: `critical-path:deleted-target-scrub-continuation`
+- Summary: Start here when reviewing onPostDelete/onCommentDelete scrubbing, post:{postId}:entries indexing, targetDeleteScrub scheduler continuation, and Devvit manifest wiring.
+- Tags: devvit-manifest, privacy-retention, scheduler-bounds
+- Documents: `docs/knowledge-graph/hotspots/ledgerRepository.md`, `docs/knowledge-graph/modules/core-ledger.md`, `docs/knowledge-graph/modules/routes.md`, `docs/knowledge-graph/workflows/cleanup-and-retention.md`
+- Sources: `devvit.json`, `src/core/ledgerRepository.ts`, `src/routes/scheduler.ts`, `src/routes/triggers.ts`
+- Tests: `src/core/ledgerRepository.test.ts`, `src/routes/scheduler.test.ts`, `src/routes/triggers.test.ts`
+- Routes: `route:POST /internal/scheduler/target-delete-scrub`, `route:POST /internal/triggers/on-comment-delete`, `route:POST /internal/triggers/on-post-delete`
+- Invariants: `invariant:deleted-target-scrub-is-bounded`, `invariant:devvit-manifest-routes-match-generated-routes`
+- Platform facts: `platform-fact:devvit-endpoint-configuration`
+
+### Enforcement Idempotent Submit Critical Path
+
+- Node: `critical-path:enforcement-idempotent-submit`
+- Summary: Start here when reviewing warning form submit, nonce replay, duplicate suppression, moderator authorization, and post-ledger Reddit side effects.
+- Tags: auth, idempotency
+- Documents: `docs/knowledge-graph/hotspots/enforcementSubmit.md`, `docs/knowledge-graph/hotspots/ledgerRepository.md`, `docs/knowledge-graph/modules/core-ledger.md`, `docs/knowledge-graph/modules/routes.md`, `docs/knowledge-graph/workflows/enforcement.md`
+- Sources: `src/core/idempotency.ts`, `src/core/ledgerRepository.ts`, `src/core/sideEffects.ts`, `src/routes/enforcementSubmit.ts`, `src/routes/forms.ts`, `src/routes/menu.ts`, `src/routes/permissions.ts`
+- Tests: `src/core/idempotency.test.ts`, `src/core/ledgerRepository.test.ts`, `src/core/sideEffects.test.ts`, `src/routes/enforcementSubmit.test.ts`, `src/routes/forms.test.ts`, `src/routes/menu.test.ts`
+- Routes: `route:POST /internal/form/enforcement-submit`
+- Invariants: `invariant:enforcement-server-side-authorization`, `invariant:nonce-replay-before-mutable-target-checks`
+- Platform facts: `platform-fact:devvit-menu-client-effects`
+
+### Settings Audit Permission Gate Critical Path
+
+- Node: `critical-path:settings-audit-permission-gate`
+- Summary: Start here when reviewing settings audit history access, moderator read permissions, and manage-gated settings/admin mutations.
+- Tags: auth, settings-audit
+- Documents: `docs/knowledge-graph/hotspots/api-routes.md`, `docs/knowledge-graph/modules/core-config.md`, `docs/knowledge-graph/modules/routes.md`, `docs/knowledge-graph/workflows/settings.md`
+- Sources: `src/core/configRepository.ts`, `src/routes/api.ts`, `src/routes/permissions.ts`
+- Tests: `src/core/configRepository.test.ts`, `src/routes/api.test.ts`
+- Routes: `route:GET /api/settings/audit`
+- Invariants: `invariant:settings-audit-readable-by-moderators`
 
 ## Review Packs
 
@@ -18,6 +68,7 @@ Generated from source analysis and docs/knowledge-graph/annotations.json.
 
 - Node: `review-pack:dashboard-launch`
 - Summary: Read this pack before changes to inline launchers, expanded bootstrap, pending dashboard context, or limited dashboard access. Review duplicate mode callbacks, stale async renders, inline overflow, authorization, and Devvit entrypoint compatibility.
+- Tags: auth, launch-surface
 - Documents: `docs/knowledge-graph/hotspots/api-routes.md`, `docs/knowledge-graph/modules/client-dashboard.md`, `docs/knowledge-graph/modules/routes.md`, `docs/knowledge-graph/workflows/dashboard.md`
 - Sources: `MVP.md`, `devvit.json`, `src/client/dashboard.ts`, `src/client/dashboardLaunch.ts`, `src/core/dashboard.ts`, `src/routes/api.ts`, `src/routes/menu.ts`, `src/routes/permissions.ts`
 - Tests: `src/client/dashboard.test.ts`, `src/client/dashboardLaunch.test.ts`, `src/core/dashboard.test.ts`, `src/routes/api.test.ts`, `src/routes/menu.test.ts`
@@ -28,6 +79,7 @@ Generated from source analysis and docs/knowledge-graph/annotations.json.
 
 - Node: `review-pack:manifest-route-drift`
 - Summary: Read this pack before changing devvit.json, generated settings, Devvit route mounts, or manifest endpoint validation.
+- Tags: devvit-manifest
 - Documents: `docs/knowledge-graph/modules/routes.md`, `docs/knowledge-graph/workflows/cleanup-and-retention.md`, `docs/knowledge-graph/workflows/settings.md`
 - Sources: `devvit.json`, `scripts/generate-knowledge-graph.mjs`, `src/index.ts`, `src/routes/forms.ts`, `src/routes/menu.ts`, `src/routes/scheduler.ts`, `src/routes/settingsValidators.ts`, `src/routes/triggers.ts`
 - Tests: `scripts/generate-knowledge-graph.test.mjs`, `src/routes/forms.test.ts`, `src/routes/menu.test.ts`, `src/routes/scheduler.test.ts`, `src/routes/settingsValidators.test.ts`, `src/routes/triggers.test.ts`
@@ -66,15 +118,38 @@ Generated from source analysis and docs/knowledge-graph/annotations.json.
 - Routes: `route:GET /api/bootstrap`, `route:GET /api/inline-profile-preview`
 - Platform facts: `platform-fact:devvit-view-modes`
 
+### Deleted Target Scrub Is Bounded
+
+- Node: `invariant:deleted-target-scrub-is-bounded`
+- Description: Post/comment delete triggers must scrub stored target permalinks in bounded pages and save continuation state for the scheduled targetDeleteScrub task instead of scanning all indexed entries in one trigger.
+- Tags: devvit-manifest, privacy-retention, scheduler-bounds
+- Sources: `devvit.json`, `src/core/ledgerRepository.ts`, `src/routes/scheduler.ts`, `src/routes/triggers.ts`
+- Tests: `src/core/ledgerRepository.test.ts`, `src/routes/scheduler.test.ts`, `src/routes/triggers.test.ts`
+- Docs: `docs/knowledge-graph/hotspots/ledgerRepository.md`, `docs/knowledge-graph/modules/core-ledger.md`, `docs/knowledge-graph/modules/routes.md`, `docs/knowledge-graph/workflows/cleanup-and-retention.md`
+- Routes: `route:POST /internal/scheduler/target-delete-scrub`, `route:POST /internal/triggers/on-comment-delete`, `route:POST /internal/triggers/on-post-delete`
+- Platform facts: `platform-fact:devvit-endpoint-configuration`
+
 ### Devvit Manifest Routes Match Generated Routes
 
 - Node: `invariant:devvit-manifest-routes-match-generated-routes`
 - Description: Every endpoint path declared in devvit.json for Devvit-backed surfaces must have a generated local POST route node, so manifest drift is caught before publish/playtest.
+- Tags: devvit-manifest
 - Sources: `devvit.json`, `scripts/generate-knowledge-graph.mjs`, `src/index.ts`, `src/routes/forms.ts`, `src/routes/menu.ts`, `src/routes/scheduler.ts`, `src/routes/settingsValidators.ts`, `src/routes/triggers.ts`
 - Tests: `scripts/generate-knowledge-graph.test.mjs`, `src/routes/forms.test.ts`, `src/routes/menu.test.ts`, `src/routes/scheduler.test.ts`, `src/routes/settingsValidators.test.ts`, `src/routes/triggers.test.ts`
 - Docs: `docs/knowledge-graph/modules/routes.md`, `docs/knowledge-graph/workflows/cleanup-and-retention.md`, `docs/knowledge-graph/workflows/settings.md`
-- Routes: `route:POST /internal/form/enforcement-submit`, `route:POST /internal/menu/history`, `route:POST /internal/menu/profile`, `route:POST /internal/menu/settings`, `route:POST /internal/menu/warn-comment`, `route:POST /internal/menu/warn-nsfw-post`, `route:POST /internal/menu/warn-post`, `route:POST /internal/menu/warn-remove-comment`, `route:POST /internal/menu/warn-remove-post`, `route:POST /internal/scheduler/account-deletion-check`, `route:POST /internal/scheduler/ledger-cleanup`, `route:POST /internal/settings/validate-days`, `route:POST /internal/settings/validate-decay-amount`, `route:POST /internal/settings/validate-points`, `route:POST /internal/settings/validate-private-template`, `route:POST /internal/settings/validate-public-template`, `route:POST /internal/triggers/on-app-install`, `route:POST /internal/triggers/on-comment-delete`, `route:POST /internal/triggers/on-mod-action`, `route:POST /internal/triggers/on-post-create`, `route:POST /internal/triggers/on-post-delete`, `route:POST /internal/triggers/on-post-flair-update`, `route:POST /internal/triggers/on-post-nsfw-update`, `route:POST /internal/triggers/on-post-spoiler-update`, `route:POST /internal/triggers/on-post-submit`, `route:POST /internal/triggers/on-post-update`
+- Routes: `route:POST /internal/form/enforcement-submit`, `route:POST /internal/menu/history`, `route:POST /internal/menu/profile`, `route:POST /internal/menu/settings`, `route:POST /internal/menu/warn-comment`, `route:POST /internal/menu/warn-nsfw-post`, `route:POST /internal/menu/warn-post`, `route:POST /internal/menu/warn-remove-comment`, `route:POST /internal/menu/warn-remove-post`, `route:POST /internal/scheduler/account-deletion-check`, `route:POST /internal/scheduler/ledger-cleanup`, `route:POST /internal/scheduler/target-delete-scrub`, `route:POST /internal/settings/validate-days`, `route:POST /internal/settings/validate-decay-amount`, `route:POST /internal/settings/validate-points`, `route:POST /internal/settings/validate-private-template`, `route:POST /internal/settings/validate-public-template`, `route:POST /internal/triggers/on-app-install`, `route:POST /internal/triggers/on-comment-delete`, `route:POST /internal/triggers/on-mod-action`, `route:POST /internal/triggers/on-post-create`, `route:POST /internal/triggers/on-post-delete`, `route:POST /internal/triggers/on-post-flair-update`, `route:POST /internal/triggers/on-post-nsfw-update`, `route:POST /internal/triggers/on-post-spoiler-update`, `route:POST /internal/triggers/on-post-submit`, `route:POST /internal/triggers/on-post-update`
 - Platform facts: `platform-fact:devvit-endpoint-configuration`, `platform-fact:devvit-menu-client-effects`
+
+### Enforcement Server-Side Authorization
+
+- Node: `invariant:enforcement-server-side-authorization`
+- Description: Every enforcement action must re-check moderator identity and permissions on the server before reading or mutating protected moderation state; client menu visibility and form payloads are not authorization.
+- Tags: auth
+- Sources: `src/routes/enforcementSubmit.ts`, `src/routes/forms.ts`, `src/routes/menu.ts`, `src/routes/permissions.ts`
+- Tests: `src/routes/enforcementSubmit.test.ts`, `src/routes/forms.test.ts`, `src/routes/menu.test.ts`
+- Docs: `docs/knowledge-graph/hotspots/enforcementSubmit.md`, `docs/knowledge-graph/modules/routes.md`, `docs/knowledge-graph/workflows/enforcement.md`
+- Routes: `route:POST /internal/form/enforcement-submit`, `route:POST /internal/menu/warn-comment`, `route:POST /internal/menu/warn-nsfw-post`, `route:POST /internal/menu/warn-post`, `route:POST /internal/menu/warn-remove-comment`, `route:POST /internal/menu/warn-remove-post`
+- Platform facts: `platform-fact:devvit-menu-client-effects`
 
 ### Inline Profile Preview Bounded
 
@@ -95,6 +170,37 @@ Generated from source analysis and docs/knowledge-graph/annotations.json.
 - Docs: `docs/knowledge-graph/hotspots/api-routes.md`, `docs/knowledge-graph/workflows/dashboard.md`
 - Routes: `route:GET /api/bootstrap`, `route:GET /api/self-summary`
 - Platform facts: `platform-fact:devvit-view-modes`
+
+### Nonce Replay Before Mutable Target Checks
+
+- Node: `invariant:nonce-replay-before-mutable-target-checks`
+- Description: After moderator authorization, consumed nonce and retry-key replays must return the durable existing entry before rule-disable, override-template, removal, or NSFW preconditions can reject the retry.
+- Tags: auth, idempotency
+- Sources: `src/core/idempotency.ts`, `src/core/ledgerRepository.ts`, `src/routes/enforcementSubmit.ts`
+- Tests: `src/core/idempotency.test.ts`, `src/core/ledgerRepository.test.ts`, `src/routes/enforcementSubmit.test.ts`
+- Docs: `docs/knowledge-graph/hotspots/enforcementSubmit.md`, `docs/knowledge-graph/hotspots/ledgerRepository.md`, `docs/knowledge-graph/modules/core-ledger.md`, `docs/knowledge-graph/workflows/enforcement.md`
+- Routes: `route:POST /internal/form/enforcement-submit`
+
+### Settings Audit Readable By Moderators
+
+- Node: `invariant:settings-audit-readable-by-moderators`
+- Description: Settings audit history is read-only moderator dashboard context: ordinary moderators may read it, while rule imports, saves, cleanup, recalculation, and reversal remain gated on manage permissions.
+- Tags: auth, settings-audit
+- Sources: `src/core/configRepository.ts`, `src/routes/api.ts`, `src/routes/permissions.ts`
+- Tests: `src/core/configRepository.test.ts`, `src/routes/api.test.ts`
+- Docs: `docs/knowledge-graph/hotspots/api-routes.md`, `docs/knowledge-graph/modules/core-config.md`, `docs/knowledge-graph/modules/routes.md`, `docs/knowledge-graph/workflows/settings.md`
+- Routes: `route:GET /api/settings/audit`
+
+### Transient Identity Cleanup Bounded
+
+- Node: `invariant:transient-identity-cleanup-bounded`
+- Description: Form nonce and dashboard view-context author snapshots must be indexed by tracked t2 user ID, cleaned in bounded account-deletion runs, and retried promptly when a run exhausts its per-user budget.
+- Tags: privacy-retention, scheduler-bounds
+- Sources: `src/core/accountDeletion.ts`, `src/core/dashboard.ts`, `src/core/ledgerRepository.ts`, `src/core/userIdentityIndexes.ts`, `src/routes/scheduler.ts`
+- Tests: `src/core/accountDeletion.test.ts`, `src/core/dashboard.test.ts`, `src/core/ledgerRepository.test.ts`, `src/routes/scheduler.test.ts`
+- Docs: `docs/knowledge-graph/hotspots/ledgerRepository.md`, `docs/knowledge-graph/modules/core-ledger.md`, `docs/knowledge-graph/workflows/cleanup-and-retention.md`
+- Routes: `route:POST /internal/scheduler/account-deletion-check`
+- Platform facts: `platform-fact:devvit-endpoint-configuration`
 
 ## Platform Facts
 
@@ -135,7 +241,6 @@ Generated from source analysis and docs/knowledge-graph/annotations.json.
 - `route:GET /api/bootstrap` (`src/routes/api.ts`)
 - `route:GET /api/history` (`src/routes/api.ts`)
 - `route:GET /api/inline-profile-preview` (`src/routes/api.ts`)
-- `route:GET /api/profile` (`src/routes/api.ts`)
 - `route:GET /api/self-summary` (`src/routes/api.ts`)
 - `route:GET /api/settings` (`src/routes/api.ts`)
 - `route:GET /api/settings/audit` (`src/routes/api.ts`)
@@ -155,6 +260,7 @@ Generated from source analysis and docs/knowledge-graph/annotations.json.
 - `route:POST /internal/menu/warn-remove-post` (`src/routes/menu.ts`)
 - `route:POST /internal/scheduler/account-deletion-check` (`src/routes/scheduler.ts`)
 - `route:POST /internal/scheduler/ledger-cleanup` (`src/routes/scheduler.ts`)
+- `route:POST /internal/scheduler/target-delete-scrub` (`src/routes/scheduler.ts`)
 - `route:POST /internal/settings/validate-days` (`src/routes/settingsValidators.ts`)
 - `route:POST /internal/settings/validate-decay-amount` (`src/routes/settingsValidators.ts`)
 - `route:POST /internal/settings/validate-points` (`src/routes/settingsValidators.ts`)

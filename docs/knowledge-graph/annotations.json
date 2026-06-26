@@ -5,6 +5,10 @@
       "path": "docs/knowledge-graph/workflows/enforcement.md",
       "kind": "workflow",
       "title": "Enforcement Workflow",
+      "reviewTags": [
+        "auth",
+        "idempotency"
+      ],
       "mvpSections": [
         "Menu Actions",
         "Enforcement Form",
@@ -76,6 +80,10 @@
       "path": "docs/knowledge-graph/workflows/settings.md",
       "kind": "workflow",
       "title": "Settings Workflow",
+      "reviewTags": [
+        "auth",
+        "settings-audit"
+      ],
       "mvpSections": [
         "Configuration And Settings",
         "Source Of Truth",
@@ -109,6 +117,10 @@
       "path": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
       "kind": "workflow",
       "title": "Cleanup And Retention Workflow",
+      "reviewTags": [
+        "privacy-retention",
+        "scheduler-bounds"
+      ],
       "mvpSections": [
         "Identity Keys",
         "Entry Model",
@@ -136,6 +148,10 @@
       "path": "docs/knowledge-graph/modules/routes.md",
       "kind": "module",
       "title": "Routes Module Group",
+      "reviewTags": [
+        "auth",
+        "devvit-manifest"
+      ],
       "mvpSections": [
         "Menu Actions",
         "UI And API",
@@ -166,6 +182,11 @@
       "path": "docs/knowledge-graph/modules/core-ledger.md",
       "kind": "module",
       "title": "Core Ledger Module Group",
+      "reviewTags": [
+        "idempotency",
+        "privacy-retention",
+        "scheduler-bounds"
+      ],
       "mvpSections": [
         "Ledger And Scoring",
         "Identity Keys",
@@ -272,6 +293,11 @@
       "path": "docs/knowledge-graph/hotspots/ledgerRepository.md",
       "kind": "hotspot",
       "title": "LedgerRepository Hotspot",
+      "reviewTags": [
+        "idempotency",
+        "privacy-retention",
+        "scheduler-bounds"
+      ],
       "mvpSections": [
         "Entry Model",
         "Identity Keys",
@@ -295,6 +321,10 @@
       "path": "docs/knowledge-graph/hotspots/api-routes.md",
       "kind": "hotspot",
       "title": "API Routes Hotspot",
+      "reviewTags": [
+        "auth",
+        "settings-audit"
+      ],
       "mvpSections": [
         "UI And API",
         "View Context Tokens",
@@ -317,6 +347,10 @@
       "path": "docs/knowledge-graph/hotspots/enforcementSubmit.md",
       "kind": "hotspot",
       "title": "Enforcement Submit Hotspot",
+      "reviewTags": [
+        "auth",
+        "idempotency"
+      ],
       "mvpSections": [
         "Enforcement Form",
         "Preconditions",
@@ -543,9 +577,172 @@
       ]
     },
     {
+      "id": "enforcement-server-side-authorization",
+      "title": "Enforcement Server-Side Authorization",
+      "description": "Every enforcement action must re-check moderator identity and permissions on the server before reading or mutating protected moderation state; client menu visibility and form payloads are not authorization.",
+      "reviewTags": [
+        "auth"
+      ],
+      "sourceFiles": [
+        "src/routes/enforcementSubmit.ts",
+        "src/routes/forms.ts",
+        "src/routes/menu.ts",
+        "src/routes/permissions.ts"
+      ],
+      "testFiles": [
+        "src/routes/enforcementSubmit.test.ts",
+        "src/routes/forms.test.ts",
+        "src/routes/menu.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/workflows/enforcement.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/hotspots/enforcementSubmit.md"
+      ],
+      "routeIds": [
+        "route:POST /internal/form/enforcement-submit",
+        "route:POST /internal/menu/warn-comment",
+        "route:POST /internal/menu/warn-nsfw-post",
+        "route:POST /internal/menu/warn-post",
+        "route:POST /internal/menu/warn-remove-comment",
+        "route:POST /internal/menu/warn-remove-post"
+      ],
+      "platformFactIds": [
+        "devvit-menu-client-effects"
+      ]
+    },
+    {
+      "id": "nonce-replay-before-mutable-target-checks",
+      "title": "Nonce Replay Before Mutable Target Checks",
+      "description": "After moderator authorization, consumed nonce and retry-key replays must return the durable existing entry before rule-disable, override-template, removal, or NSFW preconditions can reject the retry.",
+      "reviewTags": [
+        "auth",
+        "idempotency"
+      ],
+      "sourceFiles": [
+        "src/routes/enforcementSubmit.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/idempotency.ts"
+      ],
+      "testFiles": [
+        "src/routes/enforcementSubmit.test.ts",
+        "src/core/ledgerRepository.test.ts",
+        "src/core/idempotency.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/workflows/enforcement.md",
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/hotspots/enforcementSubmit.md",
+        "docs/knowledge-graph/hotspots/ledgerRepository.md"
+      ],
+      "routeIds": [
+        "route:POST /internal/form/enforcement-submit"
+      ],
+      "platformFactIds": []
+    },
+    {
+      "id": "transient-identity-cleanup-bounded",
+      "title": "Transient Identity Cleanup Bounded",
+      "description": "Form nonce and dashboard view-context author snapshots must be indexed by tracked t2 user ID, cleaned in bounded account-deletion runs, and retried promptly when a run exhausts its per-user budget.",
+      "reviewTags": [
+        "privacy-retention",
+        "scheduler-bounds"
+      ],
+      "sourceFiles": [
+        "src/core/accountDeletion.ts",
+        "src/core/dashboard.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/userIdentityIndexes.ts",
+        "src/routes/scheduler.ts"
+      ],
+      "testFiles": [
+        "src/core/accountDeletion.test.ts",
+        "src/core/dashboard.test.ts",
+        "src/core/ledgerRepository.test.ts",
+        "src/routes/scheduler.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/hotspots/ledgerRepository.md"
+      ],
+      "routeIds": [
+        "route:POST /internal/scheduler/account-deletion-check"
+      ],
+      "platformFactIds": [
+        "devvit-endpoint-configuration"
+      ]
+    },
+    {
+      "id": "deleted-target-scrub-is-bounded",
+      "title": "Deleted Target Scrub Is Bounded",
+      "description": "Post/comment delete triggers must scrub stored target permalinks in bounded pages and save continuation state for the scheduled targetDeleteScrub task instead of scanning all indexed entries in one trigger.",
+      "reviewTags": [
+        "devvit-manifest",
+        "privacy-retention",
+        "scheduler-bounds"
+      ],
+      "sourceFiles": [
+        "devvit.json",
+        "src/core/ledgerRepository.ts",
+        "src/routes/scheduler.ts",
+        "src/routes/triggers.ts"
+      ],
+      "testFiles": [
+        "src/core/ledgerRepository.test.ts",
+        "src/routes/scheduler.test.ts",
+        "src/routes/triggers.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/hotspots/ledgerRepository.md"
+      ],
+      "routeIds": [
+        "route:POST /internal/scheduler/target-delete-scrub",
+        "route:POST /internal/triggers/on-comment-delete",
+        "route:POST /internal/triggers/on-post-delete"
+      ],
+      "platformFactIds": [
+        "devvit-endpoint-configuration"
+      ]
+    },
+    {
+      "id": "settings-audit-readable-by-moderators",
+      "title": "Settings Audit Readable By Moderators",
+      "description": "Settings audit history is read-only moderator dashboard context: ordinary moderators may read it, while rule imports, saves, cleanup, recalculation, and reversal remain gated on manage permissions.",
+      "reviewTags": [
+        "auth",
+        "settings-audit"
+      ],
+      "sourceFiles": [
+        "src/core/configRepository.ts",
+        "src/routes/api.ts",
+        "src/routes/permissions.ts"
+      ],
+      "testFiles": [
+        "src/core/configRepository.test.ts",
+        "src/routes/api.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/workflows/settings.md",
+        "docs/knowledge-graph/modules/core-config.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/hotspots/api-routes.md"
+      ],
+      "routeIds": [
+        "route:GET /api/settings/audit"
+      ],
+      "platformFactIds": []
+    },
+    {
       "id": "devvit-manifest-routes-match-generated-routes",
       "title": "Devvit Manifest Routes Match Generated Routes",
       "description": "Every endpoint path declared in devvit.json for Devvit-backed surfaces must have a generated local POST route node, so manifest drift is caught before publish/playtest.",
+      "reviewTags": [
+        "devvit-manifest"
+      ],
       "sourceFiles": [
         "devvit.json",
         "scripts/generate-knowledge-graph.mjs",
@@ -581,6 +778,7 @@
         "route:POST /internal/menu/warn-remove-post",
         "route:POST /internal/scheduler/account-deletion-check",
         "route:POST /internal/scheduler/ledger-cleanup",
+        "route:POST /internal/scheduler/target-delete-scrub",
         "route:POST /internal/settings/validate-days",
         "route:POST /internal/settings/validate-decay-amount",
         "route:POST /internal/settings/validate-private-template",
@@ -603,11 +801,166 @@
       ]
     }
   ],
+  "criticalPaths": [
+    {
+      "id": "enforcement-idempotent-submit",
+      "title": "Enforcement Idempotent Submit Critical Path",
+      "summary": "Start here when reviewing warning form submit, nonce replay, duplicate suppression, moderator authorization, and post-ledger Reddit side effects.",
+      "reviewTags": [
+        "auth",
+        "idempotency"
+      ],
+      "documents": [
+        "docs/knowledge-graph/workflows/enforcement.md",
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/hotspots/enforcementSubmit.md",
+        "docs/knowledge-graph/hotspots/ledgerRepository.md"
+      ],
+      "sourceFiles": [
+        "src/core/idempotency.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/sideEffects.ts",
+        "src/routes/enforcementSubmit.ts",
+        "src/routes/forms.ts",
+        "src/routes/menu.ts",
+        "src/routes/permissions.ts"
+      ],
+      "testFiles": [
+        "src/core/idempotency.test.ts",
+        "src/core/ledgerRepository.test.ts",
+        "src/core/sideEffects.test.ts",
+        "src/routes/enforcementSubmit.test.ts",
+        "src/routes/forms.test.ts",
+        "src/routes/menu.test.ts"
+      ],
+      "routeIds": [
+        "route:POST /internal/form/enforcement-submit"
+      ],
+      "invariantIds": [
+        "enforcement-server-side-authorization",
+        "nonce-replay-before-mutable-target-checks"
+      ],
+      "platformFactIds": [
+        "devvit-menu-client-effects"
+      ]
+    },
+    {
+      "id": "account-deletion-transient-cleanup",
+      "title": "Account Deletion Transient Cleanup Critical Path",
+      "summary": "Start here when reviewing tracked t2 user IDs, expired nonce/view-context cleanup, per-user budgets, failed lookup retry behavior, and account deletion scheduler bounds.",
+      "reviewTags": [
+        "privacy-retention",
+        "scheduler-bounds"
+      ],
+      "documents": [
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/hotspots/ledgerRepository.md"
+      ],
+      "sourceFiles": [
+        "src/core/accountDeletion.ts",
+        "src/core/dashboard.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/userIdentityIndexes.ts",
+        "src/routes/scheduler.ts"
+      ],
+      "testFiles": [
+        "src/core/accountDeletion.test.ts",
+        "src/core/dashboard.test.ts",
+        "src/core/ledgerRepository.test.ts",
+        "src/routes/scheduler.test.ts"
+      ],
+      "routeIds": [
+        "route:POST /internal/scheduler/account-deletion-check"
+      ],
+      "invariantIds": [
+        "transient-identity-cleanup-bounded"
+      ],
+      "platformFactIds": [
+        "devvit-endpoint-configuration"
+      ]
+    },
+    {
+      "id": "deleted-target-scrub-continuation",
+      "title": "Deleted Target Scrub Continuation Critical Path",
+      "summary": "Start here when reviewing onPostDelete/onCommentDelete scrubbing, post:{postId}:entries indexing, targetDeleteScrub scheduler continuation, and Devvit manifest wiring.",
+      "reviewTags": [
+        "devvit-manifest",
+        "privacy-retention",
+        "scheduler-bounds"
+      ],
+      "documents": [
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/hotspots/ledgerRepository.md"
+      ],
+      "sourceFiles": [
+        "devvit.json",
+        "src/core/ledgerRepository.ts",
+        "src/routes/scheduler.ts",
+        "src/routes/triggers.ts"
+      ],
+      "testFiles": [
+        "src/core/ledgerRepository.test.ts",
+        "src/routes/scheduler.test.ts",
+        "src/routes/triggers.test.ts"
+      ],
+      "routeIds": [
+        "route:POST /internal/scheduler/target-delete-scrub",
+        "route:POST /internal/triggers/on-comment-delete",
+        "route:POST /internal/triggers/on-post-delete"
+      ],
+      "invariantIds": [
+        "deleted-target-scrub-is-bounded",
+        "devvit-manifest-routes-match-generated-routes"
+      ],
+      "platformFactIds": [
+        "devvit-endpoint-configuration"
+      ]
+    },
+    {
+      "id": "settings-audit-permission-gate",
+      "title": "Settings Audit Permission Gate Critical Path",
+      "summary": "Start here when reviewing settings audit history access, moderator read permissions, and manage-gated settings/admin mutations.",
+      "reviewTags": [
+        "auth",
+        "settings-audit"
+      ],
+      "documents": [
+        "docs/knowledge-graph/workflows/settings.md",
+        "docs/knowledge-graph/modules/core-config.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/hotspots/api-routes.md"
+      ],
+      "sourceFiles": [
+        "src/core/configRepository.ts",
+        "src/routes/api.ts",
+        "src/routes/permissions.ts"
+      ],
+      "testFiles": [
+        "src/core/configRepository.test.ts",
+        "src/routes/api.test.ts"
+      ],
+      "routeIds": [
+        "route:GET /api/settings/audit"
+      ],
+      "invariantIds": [
+        "settings-audit-readable-by-moderators"
+      ],
+      "platformFactIds": []
+    }
+  ],
   "reviewPacks": [
     {
       "id": "dashboard-launch",
       "title": "Dashboard Launch Review Pack",
       "summary": "Read this pack before changes to inline launchers, expanded bootstrap, pending dashboard context, or limited dashboard access. Review duplicate mode callbacks, stale async renders, inline overflow, authorization, and Devvit entrypoint compatibility.",
+      "reviewTags": [
+        "auth",
+        "launch-surface"
+      ],
       "documents": [
         "docs/knowledge-graph/workflows/dashboard.md",
         "docs/knowledge-graph/modules/client-dashboard.md",
@@ -648,6 +1001,9 @@
       "id": "manifest-route-drift",
       "title": "Manifest Route Drift Review Pack",
       "summary": "Read this pack before changing devvit.json, generated settings, Devvit route mounts, or manifest endpoint validation.",
+      "reviewTags": [
+        "devvit-manifest"
+      ],
       "documents": [
         "docs/knowledge-graph/modules/routes.md",
         "docs/knowledge-graph/workflows/settings.md",

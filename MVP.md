@@ -610,15 +610,17 @@ dashboard_post_id
 dashboard_bootstrap:{subredditName}:{moderatorUsername}
 duplicate:{targetId}:{action}:{ruleId}
 retry:{targetId}:{action}:{ruleId}:{moderatorUsername}:{bucket}
+target_delete_scrub:{targetKind}:{targetId}
+target_delete_scrub:pending
 ```
 
-`ledger_entry:{entryId}` stores the full JSON ledger entry. `user:{userKey}:ledger` is a sorted set where the score is `createdAtMs` and the member is `entryId`. `users:tracked` is a sorted set of `t2_*` user IDs where the score is the last account-deletion check time or first ledger creation time. `target:{targetId}:entries` is a sorted set for target lookups. `post:{postId}:entries` lets post deletion scrub the post entry and indexed comment entries without scanning all ledger entries. `user:{userKey}:form_nonces` and `user:{userKey}:view_contexts` let account deletion cleanup remove short-lived author snapshots without scanning Redis. `config` stores Redis-owned rule configuration JSON. `user:{userKey}:active_total` and `user:{userKey}:post_score_summary` are rebuildable caches.
+`ledger_entry:{entryId}` stores the full JSON ledger entry. `user:{userKey}:ledger` is a sorted set where the score is `createdAtMs` and the member is `entryId`. `users:tracked` is a sorted set of `t2_*` user IDs where the score is the last account-deletion check time or first ledger creation time. `target:{targetId}:entries` is a sorted set for target lookups. `post:{postId}:entries` lets post deletion scrub the post entry and indexed comment entries without scanning all ledger entries. `target_delete_scrub:{targetKind}:{targetId}` and `target_delete_scrub:pending` store bounded delete-scrub continuation state. `user:{userKey}:form_nonces` and `user:{userKey}:view_contexts` let account deletion cleanup remove short-lived author snapshots without scanning Redis. `config` stores Redis-owned rule configuration JSON. `user:{userKey}:active_total` and `user:{userKey}:post_score_summary` are rebuildable caches.
 
 Ledger creation must write the durable entry, consumed nonce, duplicate claim, retry claim, and indexes in one Redis transaction. Use Redis `watch` semantics around the keys that decide whether creation can proceed:
 
 - `form_nonce:{nonce}`
 - `duplicate:{targetId}:{action}:{ruleId}`
-- `retry:{targetId}:{action}:{ruleId}:{moderatorUsername}:{bucket}`
+- `retry:{targetId}:{action}:{ruleId}:{moderatorUsername}:{bucket}` for the current and previous retry buckets
 - `ledger_entry:{entryId}`
 
 The transaction validates the nonce, duplicate key, and retry key, then writes the pending ledger entry, user/target/post/subreddit indexes, `users:tracked`, consumed nonce, duplicate claim, and retry claim together. Reddit side effects run only after this transaction succeeds.
@@ -627,9 +629,9 @@ The active-total cache is rebuildable and must not be the reason durable ledger 
 
 Native Reddit mod notes are a secondary moderation trail, not the source of truth, because the app needs structured data for history, reversal, scoring, and settings audit.
 
-The app runs a scheduled account deletion check over `users:tracked`. For each due `t2_*` user ID, it calls Reddit by ID. If Reddit no longer resolves the user, the app deletes that user's ledger entries and related Redis indexes, including author-identifying fields such as user ID, username, profile/avatar/flair-like references if any are later added, active-total cache, consumed form nonces, and duplicate claims tied to those entries. Existing users are marked checked by updating their `users:tracked` score.
+The app runs a scheduled account deletion check over `users:tracked`. For each due `t2_*` user ID, it calls Reddit by ID. If Reddit no longer resolves the user, the app deletes that user's ledger entries and related Redis indexes, including author-identifying fields such as user ID, username, profile/avatar/flair-like references if any are later added, active-total cache, consumed form nonces, and duplicate claims tied to those entries. Existing users have expired transient form/view context snapshots removed, then are marked checked by updating their `users:tracked` score if any tracked state remains.
 
-The `onPostDelete` and `onCommentDelete` triggers are required Reddit compliance scrub paths. They must clear stored `targetPermalink` values and set `targetDeletedAtMs` for deleted target content while keeping the moderation audit entry. Post deletion must scrub both the post target and comment targets indexed under that post. Do not remove these trigger registrations unless an equivalent compliance scrub path replaces them.
+The `onPostDelete` and `onCommentDelete` triggers are required Reddit compliance scrub paths. They must clear stored `targetPermalink` values and set `targetDeletedAtMs` for deleted target content while keeping the moderation audit entry. Post deletion must scrub both the post target and comment targets indexed under that post. Delete-trigger work must be bounded; if a deleted target has more indexed entries than the trigger page can scrub, the scheduled `targetDeleteScrub` task continues from saved cursor state. Do not remove these trigger registrations unless an equivalent compliance scrub path replaces them.
 
 Redis data is app-installation scoped. Cleanup deletes old reversed entries and old entries with no active points after the configured retention window; entries that still contribute active points are retained unless the account deletion check determines that the author account was deleted. Because bulk ledger export is not in MVP, launch documentation must warn moderators that uninstalling or reinstalling the app may remove or orphan ledger history unless Reddit provides a documented retention path.
 

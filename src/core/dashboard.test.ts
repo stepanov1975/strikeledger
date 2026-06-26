@@ -49,6 +49,7 @@ describe('DashboardRepository', () => {
     expect(store.transactionWatchKeys).toContainEqual([
       'view_context:view-token',
       'user:id:t2_user:view_contexts',
+      'users:tracked',
     ]);
     await expect(repo.getViewContext('view-token')).resolves.toMatchObject({
       userKey: 'id:t2_user',
@@ -56,6 +57,9 @@ describe('DashboardRepository', () => {
     await expect(
       store.zRange('user:id:t2_user:view_contexts', 0, -1)
     ).resolves.toEqual(['view-token']);
+    await expect(store.zRange('users:tracked', 0, -1)).resolves.toEqual([
+      't2_user',
+    ]);
   });
 
   it('expires read-only view context tokens after fifteen minutes', async () => {

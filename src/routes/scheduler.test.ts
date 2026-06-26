@@ -137,7 +137,10 @@ class SchedulerRedisMock {
   }
 }
 
-const buildEntry = (createdAtMs: number): LedgerEntry => ({
+const buildEntry = (
+  createdAtMs: number,
+  overrides: Partial<LedgerEntry> = {}
+): LedgerEntry => ({
   schemaVersion: SCHEMA_VERSION,
   entryId: 'old-inactive',
   subredditName: 'testsub',
@@ -160,6 +163,7 @@ const buildEntry = (createdAtMs: number): LedgerEntry => ({
   idempotencyInputs: {},
   formNonce: 'nonce-1',
   sideEffects: { ...EMPTY_SIDE_EFFECTS },
+  ...overrides,
 });
 
 const loadScheduler = async () => {
@@ -292,6 +296,78 @@ describe('scheduler routes', () => {
     expect(await redis.zRange('users:tracked', 0, -1)).toEqual([]);
   });
 
+  it('runs scheduled deleted-target scrub continuations', async () => {
+    const nowMs = Date.UTC(2026, 0, 1);
+    vi.useFakeTimers();
+    vi.setSystemTime(nowMs);
+    const oldMs = nowMs - 60_000;
+    const deletedAtMs = nowMs - 30_000;
+    const { redis, schedulerRoutes } = await loadScheduler();
+    const firstEntry = buildEntry(oldMs, {
+      entryId: 'entry-1',
+      targetId: 't3_post',
+      targetKind: 'post',
+      targetPostId: 't3_post',
+      targetPermalink: '',
+      targetDeletedAtMs: deletedAtMs,
+    });
+    const secondEntry = buildEntry(oldMs + 1, {
+      entryId: 'entry-2',
+      targetId: 't1_comment',
+      targetKind: 'comment',
+      targetPostId: 't3_post',
+      targetPermalink: '/r/testsub/comments/target/_/comment',
+    });
+
+    await redis.set('ledger_entry:entry-1', JSON.stringify(firstEntry));
+    await redis.set('ledger_entry:entry-2', JSON.stringify(secondEntry));
+    await redis.zAdd('post:t3_post:entries', {
+      member: 'entry-2',
+      score: secondEntry.createdAtMs,
+    });
+    await redis.set(
+      'target_delete_scrub:post:t3_post',
+      JSON.stringify({
+        targetId: 't3_post',
+        targetKind: 'post',
+        subredditName: 'testsub',
+        deletedAtMs,
+        cursor: 0,
+        updatedAtMs: oldMs,
+      })
+    );
+    await redis.zAdd('target_delete_scrub:pending', {
+      member: 'target_delete_scrub:post:t3_post',
+      score: oldMs,
+    });
+
+    const response = await schedulerRoutes.request('/target-delete-scrub', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'targetDeleteScrub',
+        data: {
+          maxTargets: 1,
+          maxEntriesPerTarget: 1,
+          maxRuntimeMs: 1000,
+        },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({});
+    expect(
+      JSON.parse(redis.values.get('ledger_entry:entry-2') ?? '{}')
+    ).toMatchObject({
+      targetPermalink: '',
+      targetDeletedAtMs: deletedAtMs,
+    });
+    expect(redis.values.has('target_delete_scrub:post:t3_post')).toBe(false);
+    expect(await redis.zRange('target_delete_scrub:pending', 0, -1)).toEqual(
+      []
+    );
+  });
+
   it('registers scheduled tasks in Devvit config', () => {
     const config = JSON.parse(readFileSync('devvit.json', 'utf8')) as {
       scheduler?: {
@@ -323,6 +399,15 @@ describe('scheduler routes', () => {
         maxUsers: 50,
         maxEntriesPerUser: 200,
         maxEntriesPerRun: 1000,
+        maxRuntimeMs: 10000,
+      },
+    });
+    expect(config.scheduler?.tasks?.targetDeleteScrub).toEqual({
+      endpoint: '/internal/scheduler/target-delete-scrub',
+      cron: '47 * * * *',
+      data: {
+        maxTargets: 25,
+        maxEntriesPerTarget: 200,
         maxRuntimeMs: 10000,
       },
     });

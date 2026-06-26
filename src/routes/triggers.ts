@@ -59,6 +59,8 @@ triggers.post('/on-post-delete', async (c) => {
       targetId: input.postId,
       scanned: result.scanned,
       updated: result.updated,
+      remaining: result.remaining,
+      stoppedEarly: Boolean(result.stoppedEarly),
     });
   }
 
@@ -79,6 +81,8 @@ triggers.post('/on-comment-delete', async (c) => {
       targetId: input.commentId,
       scanned: result.scanned,
       updated: result.updated,
+      remaining: result.remaining,
+      stoppedEarly: Boolean(result.stoppedEarly),
     });
   }
 

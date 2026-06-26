@@ -73,6 +73,8 @@ const platformFactNodeId = (id) => `platform-fact:${id}`;
 
 const invariantNodeId = (id) => `invariant:${id}`;
 
+const criticalPathNodeId = (id) => `critical-path:${id}`;
+
 const reviewPackNodeId = (id) => `review-pack:${id}`;
 
 const getStaticString = (node) => {
@@ -493,6 +495,7 @@ const readAnnotations = async (rootDir) => {
       documents: [],
       platformFacts: [],
       invariants: [],
+      criticalPaths: [],
       reviewPacks: [],
     };
   }
@@ -516,6 +519,7 @@ const readAnnotations = async (rootDir) => {
       path: document.path,
       kind: document.kind,
       title: document.title,
+      reviewTags: sortStrings(document.reviewTags ?? []),
       mvpSections: sortStrings(document.mvpSections ?? []),
       sourceFiles: sortStrings(document.sourceFiles ?? []),
       testFiles: sortStrings(document.testFiles ?? []),
@@ -541,11 +545,25 @@ const readAnnotations = async (rootDir) => {
       documentPaths: sortStrings(invariant.documentPaths ?? []),
       routeIds: sortStrings(invariant.routeIds ?? []),
       platformFactIds: sortStrings(invariant.platformFactIds ?? []),
+      reviewTags: sortStrings(invariant.reviewTags ?? []),
+    })),
+    criticalPaths: (parsed.criticalPaths ?? []).map((criticalPath) => ({
+      id: criticalPath.id,
+      title: criticalPath.title,
+      summary: criticalPath.summary,
+      reviewTags: sortStrings(criticalPath.reviewTags ?? []),
+      documents: sortStrings(criticalPath.documents ?? []),
+      sourceFiles: sortStrings(criticalPath.sourceFiles ?? []),
+      testFiles: sortStrings(criticalPath.testFiles ?? []),
+      routeIds: sortStrings(criticalPath.routeIds ?? []),
+      invariantIds: sortStrings(criticalPath.invariantIds ?? []),
+      platformFactIds: sortStrings(criticalPath.platformFactIds ?? []),
     })),
     reviewPacks: (parsed.reviewPacks ?? []).map((pack) => ({
       id: pack.id,
       title: pack.title,
       summary: pack.summary,
+      reviewTags: sortStrings(pack.reviewTags ?? []),
       documents: sortStrings(pack.documents ?? []),
       sourceFiles: sortStrings(pack.sourceFiles ?? []),
       testFiles: sortStrings(pack.testFiles ?? []),
@@ -558,6 +576,7 @@ const readAnnotations = async (rootDir) => {
 const isExplicitNodeReference = (reference) =>
   reference.startsWith('route:') ||
   reference.startsWith('invariant:') ||
+  reference.startsWith('critical-path:') ||
   reference.startsWith('platform-fact:') ||
   reference.startsWith('review-pack:');
 
@@ -583,6 +602,12 @@ const collectAnnotatedFileReferences = (annotations) => {
 
   for (const invariant of annotations.invariants) {
     for (const file of [...invariant.sourceFiles, ...invariant.testFiles]) {
+      addFile(file);
+    }
+  }
+
+  for (const criticalPath of annotations.criticalPaths) {
+    for (const file of [...criticalPath.sourceFiles, ...criticalPath.testFiles]) {
       addFile(file);
     }
   }
@@ -656,6 +681,21 @@ const validateAnnotationReferences = (annotations, nodes) => {
         ...invariant.documentPaths,
         ...invariant.routeIds,
         ...invariant.platformFactIds.map(platformFactNodeId),
+      ],
+      nodeIds,
+    );
+  }
+
+  for (const criticalPath of annotations.criticalPaths) {
+    requireGraphNodes(
+      `critical path ${criticalPath.id}`,
+      [
+        ...criticalPath.documents,
+        ...criticalPath.sourceFiles,
+        ...criticalPath.testFiles,
+        ...criticalPath.routeIds,
+        ...criticalPath.invariantIds.map(invariantNodeId),
+        ...criticalPath.platformFactIds.map(platformFactNodeId),
       ],
       nodeIds,
     );
@@ -739,6 +779,7 @@ export async function buildKnowledgeGraph(rootDir, options = {}) {
       kind: 'document',
       documentKind: document.kind,
       title: document.title,
+      reviewTags: document.reviewTags,
       mvpSections: document.mvpSections,
     });
 
@@ -789,6 +830,7 @@ export async function buildKnowledgeGraph(rootDir, options = {}) {
       documentPaths: invariant.documentPaths,
       routeIds: invariant.routeIds,
       platformFacts,
+      reviewTags: invariant.reviewTags,
     });
 
     for (const file of invariant.sourceFiles) {
@@ -808,6 +850,60 @@ export async function buildKnowledgeGraph(rootDir, options = {}) {
     }
   }
 
+  for (const criticalPath of annotations.criticalPaths) {
+    const criticalPathId = criticalPathNodeId(criticalPath.id);
+    const invariants = criticalPath.invariantIds.map(invariantNodeId);
+    const platformFacts = criticalPath.platformFactIds.map(platformFactNodeId);
+    nodes.push({
+      id: criticalPathId,
+      kind: 'criticalPath',
+      title: criticalPath.title,
+      summary: criticalPath.summary,
+      reviewTags: criticalPath.reviewTags,
+      documents: criticalPath.documents,
+      sourceFiles: criticalPath.sourceFiles,
+      testFiles: criticalPath.testFiles,
+      routeIds: criticalPath.routeIds,
+      invariants,
+      platformFacts,
+    });
+
+    for (const documentPath of criticalPath.documents) {
+      edges.push({
+        from: criticalPathId,
+        to: documentPath,
+        kind: 'pathIncludesDocument',
+      });
+    }
+    for (const file of criticalPath.sourceFiles) {
+      edges.push({ from: criticalPathId, to: file, kind: 'pathIncludesSource' });
+    }
+    for (const testFile of criticalPath.testFiles) {
+      edges.push({
+        from: criticalPathId,
+        to: testFile,
+        kind: 'pathIncludesTest',
+      });
+    }
+    for (const routeId of criticalPath.routeIds) {
+      edges.push({ from: criticalPathId, to: routeId, kind: 'pathIncludesRoute' });
+    }
+    for (const invariantId of invariants) {
+      edges.push({
+        from: criticalPathId,
+        to: invariantId,
+        kind: 'pathIncludesInvariant',
+      });
+    }
+    for (const factId of platformFacts) {
+      edges.push({
+        from: criticalPathId,
+        to: factId,
+        kind: 'pathIncludesPlatformFact',
+      });
+    }
+  }
+
   for (const pack of annotations.reviewPacks) {
     const packId = reviewPackNodeId(pack.id);
     const invariants = pack.invariantIds.map(invariantNodeId);
@@ -822,6 +918,7 @@ export async function buildKnowledgeGraph(rootDir, options = {}) {
       testFiles: pack.testFiles,
       invariants,
       platformFacts,
+      reviewTags: pack.reviewTags,
     });
 
     for (const documentPath of pack.documents) {
@@ -1001,6 +1098,12 @@ const pushOptionalList = (lines, label, values) => {
   }
 };
 
+const pushOptionalTags = (lines, tags = []) => {
+  if (tags.length > 0) {
+    lines.push(`- Tags: ${tags.join(', ')}`);
+  }
+};
+
 export function buildKnowledgeGraphSummary(graph) {
   const counts = new Map();
   for (const node of graph.nodes) {
@@ -1020,6 +1123,52 @@ export function buildKnowledgeGraphSummary(graph) {
     '',
   ];
 
+  const criticalPaths = graph.nodes
+    .filter((node) => node.kind === 'criticalPath')
+    .sort(sortById);
+  if (criticalPaths.length > 0) {
+    lines.push('## Critical Paths', '');
+    for (const criticalPath of criticalPaths) {
+      lines.push(`### ${criticalPath.title}`, '');
+      lines.push(`- Node: ${formatReference(criticalPath.id)}`);
+      if (criticalPath.summary) {
+        lines.push(`- Summary: ${criticalPath.summary}`);
+      }
+      pushOptionalTags(lines, criticalPath.reviewTags);
+      pushOptionalList(
+        lines,
+        'Documents',
+        getEdgeTargets(graph, criticalPath.id, 'pathIncludesDocument'),
+      );
+      pushOptionalList(
+        lines,
+        'Sources',
+        getEdgeTargets(graph, criticalPath.id, 'pathIncludesSource'),
+      );
+      pushOptionalList(
+        lines,
+        'Tests',
+        getEdgeTargets(graph, criticalPath.id, 'pathIncludesTest'),
+      );
+      pushOptionalList(
+        lines,
+        'Routes',
+        getEdgeTargets(graph, criticalPath.id, 'pathIncludesRoute'),
+      );
+      pushOptionalList(
+        lines,
+        'Invariants',
+        getEdgeTargets(graph, criticalPath.id, 'pathIncludesInvariant'),
+      );
+      pushOptionalList(
+        lines,
+        'Platform facts',
+        getEdgeTargets(graph, criticalPath.id, 'pathIncludesPlatformFact'),
+      );
+      lines.push('');
+    }
+  }
+
   const reviewPacks = graph.nodes
     .filter((node) => node.kind === 'reviewPack')
     .sort(sortById);
@@ -1031,6 +1180,7 @@ export function buildKnowledgeGraphSummary(graph) {
       if (pack.summary) {
         lines.push(`- Summary: ${pack.summary}`);
       }
+      pushOptionalTags(lines, pack.reviewTags);
       pushOptionalList(lines, 'Documents', getEdgeTargets(graph, pack.id, 'includesDocument'));
       pushOptionalList(lines, 'Sources', getEdgeTargets(graph, pack.id, 'includesSource'));
       pushOptionalList(lines, 'Tests', getEdgeTargets(graph, pack.id, 'includesTest'));
@@ -1059,6 +1209,7 @@ export function buildKnowledgeGraphSummary(graph) {
       if (invariant.description) {
         lines.push(`- Description: ${invariant.description}`);
       }
+      pushOptionalTags(lines, invariant.reviewTags);
       pushOptionalList(lines, 'Sources', getEdgeTargets(graph, invariant.id, 'guards'));
       pushOptionalList(lines, 'Tests', getEdgeTargets(graph, invariant.id, 'coveredBy'));
       pushOptionalList(lines, 'Docs', getEdgeTargets(graph, invariant.id, 'documentedBy'));

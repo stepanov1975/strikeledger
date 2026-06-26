@@ -12,14 +12,8 @@ import {
   getDuplicateClaimKey,
   getRetryClaimKey,
 } from './idempotency';
-import {
-  DashboardRepository,
-  type ViewContextRecord,
-} from './dashboard';
-import {
-  LedgerRepository,
-  type FormNonceRecord,
-} from './ledgerRepository';
+import { DashboardRepository, type ViewContextRecord } from './dashboard';
+import { LedgerRepository, type FormNonceRecord } from './ledgerRepository';
 import {
   FakeRedisStore,
   RedisTransactionConflictError,
@@ -114,7 +108,8 @@ const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => {
     createdAtMs: submittedAtMs,
     status: overrides.status ?? 'pending',
     duplicateKey:
-      overrides.duplicateKey ?? createDuplicateKey({ targetId, action, ruleId }),
+      overrides.duplicateKey ??
+      createDuplicateKey({ targetId, action, ruleId }),
     moderatorRetryKey:
       overrides.moderatorRetryKey ??
       createModeratorRetryKey({
@@ -172,7 +167,9 @@ const buildEntry = (overrides: Partial<LedgerEntry> = {}): LedgerEntry => {
   };
 };
 
-const buildNonce = (overrides: Partial<FormNonceRecord> = {}): FormNonceRecord => ({
+const buildNonce = (
+  overrides: Partial<FormNonceRecord> = {}
+): FormNonceRecord => ({
   nonce: overrides.nonce ?? 'nonce-1',
   targetId: overrides.targetId ?? 't3_target',
   targetKind: overrides.targetKind ?? 'post',
@@ -242,11 +239,15 @@ describe('LedgerRepository', () => {
     expect(store.transactionWatchKeys).toContainEqual([
       'form_nonce:open-nonce',
       'user:id:t2_user:form_nonces',
+      'users:tracked',
     ]);
     await expect(store.get('form_nonce:open-nonce')).resolves.not.toBeNull();
     await expect(
       store.zRange('user:id:t2_user:form_nonces', 0, -1)
     ).resolves.toEqual(['open-nonce']);
+    await expect(store.zRange('users:tracked', 0, -1)).resolves.toEqual([
+      't2_user',
+    ]);
   });
 
   it('creates a pending ledger entry, consumes nonce, indexes, and caches total', async () => {
@@ -276,6 +277,13 @@ describe('LedgerRepository', () => {
         ruleId: entry.ruleId,
         moderatorUsername: entry.moderatorUsername,
         submittedAtMs: nowMs,
+      }),
+      getRetryClaimKey({
+        targetId: entry.targetId,
+        action: entry.action,
+        ruleId: entry.ruleId,
+        moderatorUsername: entry.moderatorUsername,
+        submittedAtMs: nowMs - 10 * 60 * 1000,
       }),
       'ledger_entry:entry-1',
     ]);
@@ -323,28 +331,32 @@ describe('LedgerRepository', () => {
     );
     await store.set('form_nonce:nonce-1', JSON.stringify(buildNonce()));
 
-    await expect(store.zRange('post:t3_target:entries', 0, -1)).resolves.toEqual([
-      entry.entryId,
-    ]);
+    await expect(
+      store.zRange('post:t3_target:entries', 0, -1)
+    ).resolves.toEqual([entry.entryId]);
     await expect(store.get('form_nonce:nonce-1')).resolves.not.toBeNull();
-    await expect(repo.deleteUserLedgerByUserId('t2_user', 10)).resolves.toEqual({
-      scanned: 1,
-      deleted: 1,
-      remaining: 0,
-    });
+    await expect(repo.deleteUserLedgerByUserId('t2_user', 10)).resolves.toEqual(
+      {
+        scanned: 1,
+        deleted: 1,
+        remaining: 0,
+      }
+    );
 
     await expect(repo.getLedgerEntry(entry.entryId)).resolves.toBeNull();
-    await expect(store.zRange('user:id:t2_user:ledger', 0, -1)).resolves.toEqual(
-      []
-    );
+    await expect(
+      store.zRange('user:id:t2_user:ledger', 0, -1)
+    ).resolves.toEqual([]);
     await expect(store.get('user:id:t2_user:active_total')).resolves.toBeNull();
-    await expect(store.get('user:id:t2_user:ledger_version')).resolves.toBeNull();
-    await expect(store.zRange('target:t3_target:entries', 0, -1)).resolves.toEqual(
-      []
-    );
-    await expect(store.zRange('post:t3_target:entries', 0, -1)).resolves.toEqual(
-      []
-    );
+    await expect(
+      store.get('user:id:t2_user:ledger_version')
+    ).resolves.toBeNull();
+    await expect(
+      store.zRange('target:t3_target:entries', 0, -1)
+    ).resolves.toEqual([]);
+    await expect(
+      store.zRange('post:t3_target:entries', 0, -1)
+    ).resolves.toEqual([]);
     await expect(
       store.zRange('ledger:testsub:entries', 0, -1)
     ).resolves.toEqual([]);
@@ -377,17 +389,21 @@ describe('LedgerRepository', () => {
     const dashboard = new DashboardRepository(store);
 
     await repo.saveFormNonce(buildNonce({ nonce: 'open-nonce' }));
-    await dashboard.saveViewContext(buildViewContext({ token: 'open-context' }));
+    await dashboard.saveViewContext(
+      buildViewContext({ token: 'open-context' })
+    );
     await store.zAdd('users:tracked', {
       member: 't2_user',
       score: nowMs,
     });
 
-    await expect(repo.deleteUserLedgerByUserId('t2_user', 10)).resolves.toEqual({
-      scanned: 2,
-      deleted: 0,
-      remaining: 0,
-    });
+    await expect(repo.deleteUserLedgerByUserId('t2_user', 10)).resolves.toEqual(
+      {
+        scanned: 2,
+        deleted: 0,
+        remaining: 0,
+      }
+    );
 
     await expect(store.get('form_nonce:open-nonce')).resolves.toBeNull();
     await expect(store.get('view_context:open-context')).resolves.toBeNull();
@@ -424,16 +440,20 @@ describe('LedgerRepository', () => {
     await expect(store.get('form_nonce:open-nonce-1')).resolves.toBeNull();
     await expect(store.get('form_nonce:open-nonce-2')).resolves.toBeNull();
     await expect(store.get('form_nonce:open-nonce-3')).resolves.not.toBeNull();
-    await expect(store.get('view_context:open-context-1')).resolves.not.toBeNull();
+    await expect(
+      store.get('view_context:open-context-1')
+    ).resolves.not.toBeNull();
     await expect(store.zRange('users:tracked', 0, -1)).resolves.toEqual([
       't2_user',
     ]);
 
-    await expect(repo.deleteUserLedgerByUserId('t2_user', 10)).resolves.toEqual({
-      scanned: 4,
-      deleted: 0,
-      remaining: 0,
-    });
+    await expect(repo.deleteUserLedgerByUserId('t2_user', 10)).resolves.toEqual(
+      {
+        scanned: 4,
+        deleted: 0,
+        remaining: 0,
+      }
+    );
     await expect(store.zRange('users:tracked', 0, -1)).resolves.toEqual([]);
   });
 
@@ -459,7 +479,9 @@ describe('LedgerRepository', () => {
       store.zRange('user:id:t2_user:form_nonces', 0, -1)
     ).resolves.toEqual([]);
     await expect(store.get('user:id:t2_user:active_total')).resolves.toBeNull();
-    await expect(store.get('user:id:t2_user:ledger_version')).resolves.toBeNull();
+    await expect(
+      store.get('user:id:t2_user:ledger_version')
+    ).resolves.toBeNull();
     await expect(store.zRange('users:tracked', 0, -1)).resolves.toEqual([]);
   });
 
@@ -476,18 +498,22 @@ describe('LedgerRepository', () => {
     await store.set('user:id:t2_user:active_total', '1');
     await store.set('user:id:t2_user:ledger_version', '3');
 
-    await expect(repo.deleteUserLedgerByUserId('t2_user', 10)).resolves.toEqual({
-      scanned: 1,
-      deleted: 0,
-      remaining: 0,
-    });
-
-    await expect(store.zRange('user:id:t2_user:ledger', 0, -1)).resolves.toEqual(
-      []
+    await expect(repo.deleteUserLedgerByUserId('t2_user', 10)).resolves.toEqual(
+      {
+        scanned: 1,
+        deleted: 0,
+        remaining: 0,
+      }
     );
+
+    await expect(
+      store.zRange('user:id:t2_user:ledger', 0, -1)
+    ).resolves.toEqual([]);
     await expect(store.zRange('users:tracked', 0, -1)).resolves.toEqual([]);
     await expect(store.get('user:id:t2_user:active_total')).resolves.toBeNull();
-    await expect(store.get('user:id:t2_user:ledger_version')).resolves.toBeNull();
+    await expect(
+      store.get('user:id:t2_user:ledger_version')
+    ).resolves.toBeNull();
   });
 
   it('keeps deleted-user cleanup bounded for later runs', async () => {
@@ -947,7 +973,9 @@ describe('LedgerRepository', () => {
         }),
       ])
     );
-    await expect(repo.getCachedActiveTotal(firstEntry.userKey)).resolves.toBe(0);
+    await expect(repo.getCachedActiveTotal(firstEntry.userKey)).resolves.toBe(
+      0
+    );
     await expect(
       store.get(
         getDuplicateClaimKey({
@@ -958,7 +986,10 @@ describe('LedgerRepository', () => {
       )
     ).resolves.toBeNull();
 
-    const secondEntry = buildEntry({ entryId: 'entry-2', formNonce: 'nonce-2' });
+    const secondEntry = buildEntry({
+      entryId: 'entry-2',
+      formNonce: 'nonce-2',
+    });
     await repo.saveFormNonce(buildNonce({ nonce: 'nonce-2' }));
 
     await expect(
@@ -1041,7 +1072,10 @@ describe('LedgerRepository', () => {
     await repo.saveFormNonce(
       buildNonce({ nonce: 'nonce-2', subredditName: 'othersub' })
     );
-    const mismatchedEntry = buildEntry({ entryId: 'entry-2', formNonce: 'nonce-2' });
+    const mismatchedEntry = buildEntry({
+      entryId: 'entry-2',
+      formNonce: 'nonce-2',
+    });
 
     await expect(
       repo.createLedgerEntry({
@@ -1055,6 +1089,282 @@ describe('LedgerRepository', () => {
       status: 'blocked',
       reason: 'nonce_context_mismatch',
     });
+  });
+
+  it('blocks nonce author identity mismatches before ledger creation', async () => {
+    const { repo } = createRepo();
+    const entry = buildEntry();
+    await repo.saveFormNonce(buildNonce({ authorId: 't2_other' }));
+
+    await expect(
+      repo.createLedgerEntry({
+        entry,
+        formNonce: entry.formNonce,
+        submittedAtMs: nowMs,
+        nowMs,
+        config: DEFAULT_CONFIG,
+      })
+    ).resolves.toEqual({
+      status: 'blocked',
+      reason: 'nonce_context_mismatch',
+    });
+  });
+
+  it('limits deleted-post scrub work and records a continuation', async () => {
+    const { repo, store } = createRepo();
+    const deletedAtMs = nowMs + 1;
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'entry-1',
+        targetId: 't3_post',
+        targetKind: 'post',
+        targetPostId: 't3_post',
+      })
+    );
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'entry-2',
+        targetId: 't1_comment',
+        targetKind: 'comment',
+        targetPostId: 't3_post',
+      })
+    );
+
+    await expect(
+      repo.markTargetDeleted({
+        targetId: 't3_post',
+        targetKind: 'post',
+        subredditName: 'testsub',
+        deletedAtMs,
+        maxEntries: 1,
+      })
+    ).resolves.toEqual({
+      scanned: 1,
+      updated: 1,
+      remaining: 1,
+    });
+
+    await expect(repo.getLedgerEntry('entry-1')).resolves.toMatchObject({
+      targetPermalink: '',
+      targetDeletedAtMs: deletedAtMs,
+    });
+    const unsanitizedEntry = await repo.getLedgerEntry('entry-2');
+    expect(unsanitizedEntry).toMatchObject({
+      targetPermalink: '/r/testsub/comments/target',
+    });
+    expect(unsanitizedEntry).not.toHaveProperty('targetDeletedAtMs');
+    await expect(
+      store.get('target_delete_scrub:post:t3_post')
+    ).resolves.not.toBeNull();
+  });
+
+  it('continues deleted-target scrub from the saved cursor', async () => {
+    const { repo, store } = createRepo();
+    const deletedAtMs = nowMs + 1;
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'entry-1',
+        targetId: 't3_post',
+        targetKind: 'post',
+        targetPostId: 't3_post',
+      })
+    );
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'entry-2',
+        targetId: 't1_comment',
+        targetKind: 'comment',
+        targetPostId: 't3_post',
+      })
+    );
+    await repo.markTargetDeleted({
+      targetId: 't3_post',
+      targetKind: 'post',
+      subredditName: 'testsub',
+      deletedAtMs,
+      maxEntries: 1,
+    });
+
+    await expect(
+      repo.continueTargetDeletedScrub({
+        nowMs,
+        maxTargets: 1,
+        maxEntriesPerTarget: 1,
+      })
+    ).resolves.toEqual({
+      targets: 1,
+      scanned: 1,
+      updated: 1,
+      remainingTargets: 0,
+    });
+
+    await expect(repo.getLedgerEntry('entry-2')).resolves.toMatchObject({
+      targetPermalink: '',
+      targetDeletedAtMs: deletedAtMs,
+    });
+    await expect(
+      store.get('target_delete_scrub:post:t3_post')
+    ).resolves.toBeNull();
+    await expect(
+      store.zRange('target_delete_scrub:pending', 0, -1)
+    ).resolves.toEqual([]);
+  });
+
+  it('continues deleted-target scrub without skipping entries when source ranks shift', async () => {
+    const { repo, store } = createRepo();
+    const deletedAtMs = nowMs + 1;
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'entry-1',
+        targetId: 't3_post',
+        targetKind: 'post',
+        targetPostId: 't3_post',
+      })
+    );
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'entry-2',
+        targetId: 't1_comment_2',
+        targetKind: 'comment',
+        targetPostId: 't3_post',
+        createdAtMs: nowMs + 1,
+      })
+    );
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'entry-3',
+        targetId: 't1_comment_3',
+        targetKind: 'comment',
+        targetPostId: 't3_post',
+        createdAtMs: nowMs + 2,
+      })
+    );
+    await repo.markTargetDeleted({
+      targetId: 't3_post',
+      targetKind: 'post',
+      subredditName: 'testsub',
+      deletedAtMs,
+      maxEntries: 1,
+    });
+    await store.zRem('post:t3_post:entries', ['entry-1']);
+    await store.del('ledger_entry:entry-1');
+
+    await expect(
+      repo.continueTargetDeletedScrub({
+        nowMs,
+        maxTargets: 1,
+        maxEntriesPerTarget: 1,
+      })
+    ).resolves.toEqual({
+      targets: 1,
+      scanned: 1,
+      updated: 1,
+      remainingTargets: 1,
+    });
+
+    await expect(repo.getLedgerEntry('entry-2')).resolves.toMatchObject({
+      targetPermalink: '',
+      targetDeletedAtMs: deletedAtMs,
+    });
+    const unsanitizedEntry = await repo.getLedgerEntry('entry-3');
+    expect(unsanitizedEntry).toMatchObject({
+      targetPermalink: '/r/testsub/comments/target',
+    });
+    expect(unsanitizedEntry).not.toHaveProperty('targetDeletedAtMs');
+    await expect(
+      store.get('target_delete_scrub:post:t3_post')
+    ).resolves.not.toBeNull();
+  });
+
+  it('shares target-delete scrub runtime budget across pending targets', async () => {
+    const { repo, store } = createRepo();
+    const deletedAtMs = nowMs + 1;
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'entry-1',
+        targetId: 't3_first',
+        targetKind: 'post',
+        targetPostId: 't3_first',
+      })
+    );
+    await seedEntry(
+      store,
+      buildEntry({
+        entryId: 'entry-2',
+        targetId: 't3_second',
+        targetKind: 'post',
+        targetPostId: 't3_second',
+      })
+    );
+    await store.set(
+      'target_delete_scrub:post:t3_first',
+      JSON.stringify({
+        targetId: 't3_first',
+        targetKind: 'post',
+        subredditName: 'testsub',
+        deletedAtMs,
+        cursor: 0,
+        updatedAtMs: nowMs,
+      })
+    );
+    await store.zAdd('target_delete_scrub:pending', {
+      member: 'target_delete_scrub:post:t3_first',
+      score: nowMs,
+    });
+    await store.set(
+      'target_delete_scrub:post:t3_second',
+      JSON.stringify({
+        targetId: 't3_second',
+        targetKind: 'post',
+        subredditName: 'testsub',
+        deletedAtMs,
+        cursor: 0,
+        updatedAtMs: nowMs + 1,
+      })
+    );
+    await store.zAdd('target_delete_scrub:pending', {
+      member: 'target_delete_scrub:post:t3_second',
+      score: nowMs + 1,
+    });
+    const clock = [0, 0, 0, 0, 9, 9, 10];
+    const getNowMs = () => clock.shift() ?? 10;
+
+    await expect(
+      repo.continueTargetDeletedScrub({
+        nowMs,
+        maxTargets: 2,
+        maxEntriesPerTarget: 1,
+        maxRuntimeMs: 10,
+        getNowMs,
+      })
+    ).resolves.toEqual({
+      targets: 2,
+      scanned: 1,
+      updated: 1,
+      remainingTargets: 1,
+      stoppedEarly: true,
+    });
+
+    await expect(repo.getLedgerEntry('entry-1')).resolves.toMatchObject({
+      targetPermalink: '',
+      targetDeletedAtMs: deletedAtMs,
+    });
+    const unsanitizedEntry = await repo.getLedgerEntry('entry-2');
+    expect(unsanitizedEntry).toMatchObject({
+      targetPermalink: '/r/testsub/comments/target',
+    });
+    expect(unsanitizedEntry).not.toHaveProperty('targetDeletedAtMs');
+    await expect(
+      store.get('target_delete_scrub:post:t3_second')
+    ).resolves.not.toBeNull();
   });
 
   it('recalculates active totals with decay from indexed entries', async () => {
@@ -1247,7 +1557,10 @@ describe('LedgerRepository', () => {
     const { repo, store } = createRepo();
     const old = nowMs - 400 * MS_PER_DAY;
     const recent = nowMs - 10 * MS_PER_DAY;
-    const oldInactive = buildEntry({ entryId: 'old-inactive', createdAtMs: old });
+    const oldInactive = buildEntry({
+      entryId: 'old-inactive',
+      createdAtMs: old,
+    });
     const oldReversed = buildEntry({
       entryId: 'old-reversed',
       status: 'reversed',
@@ -1273,12 +1586,12 @@ describe('LedgerRepository', () => {
     expect(await repo.getLedgerEntry('old-inactive')).toBeNull();
     expect(await repo.getLedgerEntry('old-reversed')).toBeNull();
     expect(await repo.getLedgerEntry('recent-active')).not.toBeNull();
-    await expect(store.zRange('user:id:t2_user:ledger', 0, -1)).resolves.toEqual([
-      'recent-active',
-    ]);
-    await expect(store.zRange('target:t3_target:entries', 0, -1)).resolves.toEqual([
-      'recent-active',
-    ]);
+    await expect(
+      store.zRange('user:id:t2_user:ledger', 0, -1)
+    ).resolves.toEqual(['recent-active']);
+    await expect(
+      store.zRange('target:t3_target:entries', 0, -1)
+    ).resolves.toEqual(['recent-active']);
     await expect(
       store.zRange('ledger:testsub:entries', 0, -1)
     ).resolves.toEqual(['recent-active']);
@@ -1314,7 +1627,10 @@ describe('LedgerRepository', () => {
   it('deletes per-user ledger metadata when cleanup removes the last user entry', async () => {
     const { repo, store } = createRepo();
     const old = nowMs - 400 * MS_PER_DAY;
-    const oldInactive = buildEntry({ entryId: 'old-inactive', createdAtMs: old });
+    const oldInactive = buildEntry({
+      entryId: 'old-inactive',
+      createdAtMs: old,
+    });
     await seedEntry(store, oldInactive);
     await store.set('user:id:t2_user:ledger_version', '7');
     await store.set('user:id:t2_user:active_total', '1');
@@ -1327,14 +1643,16 @@ describe('LedgerRepository', () => {
       subredditName: 'testsub',
     });
 
-    await expect(store.get('user:id:t2_user:ledger_version')).resolves.toBeNull();
+    await expect(
+      store.get('user:id:t2_user:ledger_version')
+    ).resolves.toBeNull();
     await expect(store.get('user:id:t2_user:active_total')).resolves.toBeNull();
-    await expect(store.zRange('user:id:t2_user:ledger', 0, -1)).resolves.toEqual(
-      []
-    );
-    await expect(store.zRange('target:t3_target:entries', 0, -1)).resolves.toEqual(
-      []
-    );
+    await expect(
+      store.zRange('user:id:t2_user:ledger', 0, -1)
+    ).resolves.toEqual([]);
+    await expect(
+      store.zRange('target:t3_target:entries', 0, -1)
+    ).resolves.toEqual([]);
   });
 
   it('advances cleanup past old active entries', async () => {
@@ -1485,16 +1803,18 @@ describe('LedgerRepository', () => {
 
     expect(result).toEqual({ scanned: 2, deleted: 2 });
     await expect(store.get('ledger:testsub:cleanup_cursor')).resolves.toBe('0');
-    expect(store.transactionWatchKeys).toContainEqual(expect.arrayContaining([
-      'ledger_entry:old-inactive-1',
-      'form_nonce:nonce-1',
-      'duplicate:t3_old_inactive_1:warn:rule-general',
-      'users:tracked',
-      'user:id:t2_user:ledger',
-      'post:t3_old_inactive_1:entries',
-      'target:t3_old_inactive_1:entries',
-      'ledger:testsub:entries',
-    ]));
+    expect(store.transactionWatchKeys).toContainEqual(
+      expect.arrayContaining([
+        'ledger_entry:old-inactive-1',
+        'form_nonce:nonce-1',
+        'duplicate:t3_old_inactive_1:warn:rule-general',
+        'users:tracked',
+        'user:id:t2_user:ledger',
+        'post:t3_old_inactive_1:entries',
+        'target:t3_old_inactive_1:entries',
+        'ledger:testsub:entries',
+      ])
+    );
   });
 
   it('reads and recalculates across explicitly provided user keys', async () => {

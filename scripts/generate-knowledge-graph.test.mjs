@@ -378,6 +378,7 @@ test('builds invariants, platform facts, review packs, and summary text', async 
             path: 'docs/knowledge-graph/workflows/dashboard.md',
             kind: 'workflow',
             title: 'Dashboard Workflow',
+            reviewTags: ['launch-surface'],
             mvpSections: ['Web UI Surfaces'],
             sourceFiles: ['src/routes/api.ts', 'src/client/dashboard.ts'],
             testFiles: ['src/routes/api.test.ts'],
@@ -409,6 +410,21 @@ test('builds invariants, platform facts, review packs, and summary text', async 
             documentPaths: ['docs/knowledge-graph/workflows/dashboard.md'],
             routeIds: ['route:GET /api/bootstrap'],
             platformFactIds: ['devvit-view-modes'],
+            reviewTags: ['launch-surface', 'idempotency'],
+          },
+        ],
+        criticalPaths: [
+          {
+            id: 'dashboard-bootstrap',
+            title: 'Dashboard Bootstrap Critical Path',
+            summary: 'Expanded launch consumes bootstrap state exactly once.',
+            reviewTags: ['launch-surface', 'auth'],
+            documents: ['docs/knowledge-graph/workflows/dashboard.md'],
+            sourceFiles: ['src/client/dashboard.ts', 'src/routes/api.ts'],
+            testFiles: ['src/routes/api.test.ts'],
+            routeIds: ['route:GET /api/bootstrap'],
+            invariantIds: ['inline-bootstrap-boundary'],
+            platformFactIds: ['devvit-view-modes'],
           },
         ],
         reviewPacks: [
@@ -416,6 +432,7 @@ test('builds invariants, platform facts, review packs, and summary text', async 
             id: 'dashboard-launch',
             title: 'Dashboard Launch Review Pack',
             summary: 'Files and invariants for launch-surface reviews.',
+            reviewTags: ['launch-surface'],
             documents: ['docs/knowledge-graph/workflows/dashboard.md'],
             sourceFiles: [
               'devvit.json',
@@ -446,6 +463,13 @@ test('builds invariants, platform facts, review packs, and summary text', async 
   assert.ok(
     graph.nodes.some((node) => node.id === 'review-pack:dashboard-launch'),
   );
+  assert.ok(
+    graph.nodes.some((node) => node.id === 'critical-path:dashboard-bootstrap'),
+  );
+  const criticalPath = graph.nodes.find(
+    (node) => node.id === 'critical-path:dashboard-bootstrap',
+  );
+  assert.deepEqual(criticalPath.reviewTags, ['auth', 'launch-surface']);
   const devvitFile = graph.nodes.find((node) => node.id === 'devvit.json');
   assert.ok(devvitFile);
   assert.equal(devvitFile.kind, 'file');
@@ -469,12 +493,23 @@ test('builds invariants, platform facts, review packs, and summary text', async 
     graph.edges.some(
       (edge) =>
         edge.kind === 'includesInvariant' &&
-        edge.from === 'review-pack:dashboard-launch' &&
-        edge.to === 'invariant:inline-bootstrap-boundary',
+      edge.from === 'review-pack:dashboard-launch' &&
+      edge.to === 'invariant:inline-bootstrap-boundary',
+    ),
+  );
+  assert.ok(
+    graph.edges.some(
+      (edge) =>
+        edge.kind === 'pathIncludesRoute' &&
+        edge.from === 'critical-path:dashboard-bootstrap' &&
+        edge.to === 'route:GET /api/bootstrap',
     ),
   );
 
   const summary = buildKnowledgeGraphSummary(graph);
+  assert.match(summary, /## Critical Paths/);
+  assert.match(summary, /critical-path:dashboard-bootstrap/);
+  assert.match(summary, /Tags: auth, launch-surface/);
   assert.match(summary, /## Review Packs/);
   assert.match(summary, /review-pack:dashboard-launch/);
   assert.match(summary, /invariant:inline-bootstrap-boundary/);
@@ -550,6 +585,40 @@ test('rejects review packs that reference missing invariants', async (t) => {
   await assert.rejects(
     () => buildKnowledgeGraph(rootDir),
     /review pack missing-invariant-pack references missing graph node "invariant:missing-invariant"/,
+  );
+});
+
+test('rejects critical paths that reference missing graph nodes', async (t) => {
+  const rootDir = await mkdtemp(path.join(tmpdir(), 'strikeledger-kg-'));
+  t.after(async () => {
+    await rm(rootDir, { recursive: true, force: true });
+  });
+
+  await writeFixtureFile(rootDir, 'MVP.md', '# MVP\n\n## Web UI Surfaces\n');
+  await writeFixtureFile(
+    rootDir,
+    'docs/knowledge-graph/annotations.json',
+    JSON.stringify(
+      {
+        version: 1,
+        documents: [],
+        criticalPaths: [
+          {
+            id: 'missing-route-path',
+            title: 'Missing Route Path',
+            summary: 'This path points at a missing route.',
+            routeIds: ['route:GET /api/missing'],
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
+
+  await assert.rejects(
+    () => buildKnowledgeGraph(rootDir),
+    /critical path missing-route-path references missing graph node "route:GET \/api\/missing"/,
   );
 });
 

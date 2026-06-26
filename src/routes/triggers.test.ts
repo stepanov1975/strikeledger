@@ -317,7 +317,13 @@ describe('trigger routes', () => {
       {
         key: 'post:t3_post:entries',
         start: 0,
-        stop: 199,
+        stop: 200,
+        options: { by: 'rank' },
+      },
+      {
+        key: 'post:t3_post:entries',
+        start: 0,
+        stop: 0,
         options: { by: 'rank' },
       },
     ]);

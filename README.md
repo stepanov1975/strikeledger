@@ -197,7 +197,7 @@ Click `Load audit` in Admin to view recent settings audit records. Audit rows sh
 
 ## Permissions
 
-Moderator access is required for moderator dashboard data. The `posts` or `all` permission is required for enforcement actions and reversals. Full `all` permission is required for Admin rule changes, Reddit rule import, Rules JSON import, dashboard creation, direct user lookup, settings audit, ledger cleanup, and manual recalculation. Logged-in non-moderators can open only the limited self dashboard.
+Moderator access is required for moderator dashboard data. The `posts` or `all` permission is required for enforcement actions and reversals. Any moderator can read compact settings audit records. Full `all` permission is required for Admin rule changes, Reddit rule import, Rules JSON import, dashboard creation, direct user lookup, ledger cleanup, and manual recalculation. Logged-in non-moderators can open only the limited self dashboard.
 
 If a moderator can open the dashboard but cannot edit Admin settings, the Admin view shows read-only rule information.
 
@@ -218,7 +218,7 @@ The app runs an hourly cleanup job. Cleanup deletes old reversed entries and old
 
 The app also runs an hourly account deletion check. When Reddit no longer resolves a stored Reddit user ID, StrikeLedger removes that user's ledger records, active-total cache, and related author-identifying stored data.
 
-Reddit delete-event triggers are also part of the compliance path. `onPostDelete` and `onCommentDelete` scrub stored target permalinks because Reddit permalinks can include author-identifying or content-derived URL text. They keep the moderation audit entry but clear the permalink and record when the target was deleted; do not remove these trigger registrations without replacing the scrub path.
+Reddit delete-event triggers are also part of the compliance path. `onPostDelete` and `onCommentDelete` scrub stored target permalinks because Reddit permalinks can include author-identifying or content-derived URL text. They keep the moderation audit entry but clear the permalink and record when the target was deleted.
 
 Uninstalling or reinstalling the app may remove or orphan stored data. Treat uninstall and reinstall actions as data-retention events.
 

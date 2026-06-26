@@ -10,6 +10,19 @@ import { logInfo } from '../core/logging';
 
 export const schedulerRoutes = new Hono();
 
+const boundedInteger = (
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number
+): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.min(max, Math.max(min, Math.floor(value)));
+};
+
 schedulerRoutes.post('/ledger-cleanup', async (c) => {
   const task = await c.req.json<Partial<TaskRequest>>().catch(() => null);
   if (task?.name !== 'ledgerCleanup') {
@@ -37,6 +50,47 @@ schedulerRoutes.post('/ledger-cleanup', async (c) => {
     maxRuntimeMs: result.maxRuntimeMs,
     scanned: result.scanned,
     deleted: result.deleted,
+    stoppedEarly: Boolean(result.stoppedEarly),
+  });
+
+  return c.json<TaskResponse>({}, 200);
+});
+
+schedulerRoutes.post('/target-delete-scrub', async (c) => {
+  const task = await c.req.json<Partial<TaskRequest>>().catch(() => null);
+  if (task?.name !== 'targetDeleteScrub') {
+    return c.json<TaskResponse>({}, 400);
+  }
+  const payload =
+    task.data && typeof task.data === 'object'
+      ? (task.data as Record<string, unknown>)
+      : {};
+  const maxTargets = boundedInteger(payload.maxTargets, 25, 1, 100);
+  const maxEntriesPerTarget = boundedInteger(
+    payload.maxEntriesPerTarget,
+    200,
+    1,
+    1_000
+  );
+  const maxRuntimeMs = boundedInteger(payload.maxRuntimeMs, 10_000, 1, 30_000);
+
+  const result = await new LedgerRepository(
+    new DevvitRedisStore(redis)
+  ).continueTargetDeletedScrub({
+    nowMs: Date.now(),
+    maxTargets,
+    maxEntriesPerTarget,
+    maxRuntimeMs,
+  });
+
+  logInfo('scheduler.target_delete_scrub.ok', {
+    maxTargets,
+    maxEntriesPerTarget,
+    maxRuntimeMs,
+    targets: result.targets,
+    scanned: result.scanned,
+    updated: result.updated,
+    remainingTargets: result.remainingTargets,
     stoppedEarly: Boolean(result.stoppedEarly),
   });
 

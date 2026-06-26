@@ -1,6 +1,10 @@
 import type { TargetKind } from './domain';
 import type { RedisStore } from './redisStore';
-import { userViewContextIndexKey, viewContextKey } from './userIdentityIndexes';
+import {
+  trackedUsersKey,
+  userViewContextIndexKey,
+  viewContextKey,
+} from './userIdentityIndexes';
 
 export const DASHBOARD_CONTEXT_TTL_MS = 15 * 60 * 1000;
 
@@ -62,6 +66,9 @@ const getViewContextUserKey = (record: ViewContextRecord): string | null => {
   return record.authorId?.trim() ? `id:${record.authorId.trim()}` : null;
 };
 
+const getViewContextAuthorId = (record: ViewContextRecord): string | null =>
+  record.authorId?.trim() || null;
+
 export class DashboardRepository {
   constructor(private readonly store: RedisStore) {}
 
@@ -92,23 +99,34 @@ export class DashboardRepository {
   async saveViewContext(record: ViewContextRecord): Promise<void> {
     const recordKey = viewContextKey(record.token);
     const userKey = getViewContextUserKey(record);
+    const authorId = getViewContextAuthorId(record);
     const indexKey = userKey ? userViewContextIndexKey(userKey) : null;
-    await this.store.runTransaction(
-      indexKey ? [recordKey, indexKey] : [recordKey],
-      async () => {
-        await this.store.set(recordKey, JSON.stringify(record), {
-          expiresAtMs: record.expiresAtMs,
-        });
-        if (!indexKey) {
-          return;
-        }
-
+    const watchedKeys = [
+      recordKey,
+      ...(indexKey ? [indexKey] : []),
+      ...(authorId ? [trackedUsersKey()] : []),
+    ];
+    await this.store.runTransaction(watchedKeys, async () => {
+      await this.store.set(recordKey, JSON.stringify(record), {
+        expiresAtMs: record.expiresAtMs,
+      });
+      if (indexKey) {
         await this.store.zAdd(indexKey, {
           member: record.token,
           score: record.expiresAtMs,
         });
       }
-    );
+
+      if (
+        authorId &&
+        (await this.store.zScore(trackedUsersKey(), authorId)) === null
+      ) {
+        await this.store.zAdd(trackedUsersKey(), {
+          member: authorId,
+          score: record.createdAtMs,
+        });
+      }
+    });
   }
 
   async getViewContext(token: string): Promise<ViewContextRecord | null> {

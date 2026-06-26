@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Comment, Post } from '@devvit/web/server';
 import { DEFAULT_CONFIG } from '../core/config';
-import { LedgerRepository, type FormNonceRecord } from '../core/ledgerRepository';
+import {
+  LedgerRepository,
+  type FormNonceRecord,
+} from '../core/ledgerRepository';
 import { FakeRedisStore } from '../core/redisStore';
 import {
   handleEnforcementSubmit,
@@ -94,13 +97,15 @@ const buildNonce = (
   ...(overrides.entryId !== undefined ? { entryId: overrides.entryId } : {}),
 });
 
-const createHarness = (options: {
-  post?: Post;
-  comment?: Comment;
-  parentPost?: Post;
-  moderatorUsername?: string;
-  permissions?: string[];
-} = {}) => {
+const createHarness = (
+  options: {
+    post?: Post;
+    comment?: Comment;
+    parentPost?: Post;
+    moderatorUsername?: string;
+    permissions?: string[];
+  } = {}
+) => {
   const store = new FakeRedisStore();
   store.nowMs = nowMs;
   const repository = new LedgerRepository(store);
@@ -187,7 +192,9 @@ describe('handleEnforcementSubmit', () => {
     });
     expect(harness.post.addComment).toHaveBeenCalledTimes(1);
     expect(harness.post.remove).toHaveBeenCalledTimes(1);
-    await expect(harness.repository.getLedgerEntry('entry-1')).resolves.toMatchObject({
+    await expect(
+      harness.repository.getLedgerEntry('entry-1')
+    ).resolves.toMatchObject({
       entryId: 'entry-1',
       targetId: 't3_target',
       userKey: 'id:t2_user',
@@ -196,6 +203,103 @@ describe('handleEnforcementSubmit', () => {
       modNoteId: 'mod-note-1',
       userNoticeId: 'modmail-1',
     });
+  });
+
+  it('returns an existing warn-and-remove entry when a retry sees removed content', async () => {
+    const harness = createHarness();
+    await harness.repository.saveFormNonce(buildNonce());
+
+    const firstResponse = await handleEnforcementSubmit(
+      { formNonce: 'nonce-1', ruleId: 'rule-general' },
+      harness.dependencies
+    );
+    Object.assign(harness.post, { removed: true });
+
+    const retryResponse = await handleEnforcementSubmit(
+      { formNonce: 'nonce-1', ruleId: 'rule-general' },
+      harness.dependencies
+    );
+
+    expect(firstResponse.showToast).toContain('Strike recorded');
+    expect(retryResponse.showToast).toContain('Strike already recorded');
+    expect(harness.post.addComment).toHaveBeenCalledTimes(1);
+    expect(harness.post.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns an existing warn-and-mark-NSFW entry when a retry sees NSFW content', async () => {
+    const harness = createHarness();
+    await harness.repository.saveFormNonce(buildNonce({ action: 'warn_nsfw' }));
+
+    const firstResponse = await handleEnforcementSubmit(
+      { formNonce: 'nonce-1', ruleId: 'rule-general' },
+      harness.dependencies
+    );
+    Object.assign(harness.post, { nsfw: true });
+
+    const retryResponse = await handleEnforcementSubmit(
+      { formNonce: 'nonce-1', ruleId: 'rule-general' },
+      harness.dependencies
+    );
+
+    expect(firstResponse.showToast).toContain('Strike recorded');
+    expect(retryResponse.showToast).toContain('Strike already recorded');
+    expect(harness.post.addComment).toHaveBeenCalledTimes(1);
+    expect(harness.post.markAsNsfw).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns an existing entry even if the submitted rule is now disabled', async () => {
+    const harness = createHarness();
+    await harness.repository.saveFormNonce(buildNonce());
+    const getConfig = vi
+      .fn()
+      .mockResolvedValueOnce(DEFAULT_CONFIG)
+      .mockResolvedValue({
+        ...DEFAULT_CONFIG,
+        rules: DEFAULT_CONFIG.rules.map((rule) => ({
+          ...rule,
+          enabled: false,
+        })),
+      });
+    harness.dependencies.configRepository = { getConfig };
+
+    const firstResponse = await handleEnforcementSubmit(
+      { formNonce: 'nonce-1', ruleId: 'rule-general' },
+      harness.dependencies
+    );
+
+    const retryResponse = await handleEnforcementSubmit(
+      { formNonce: 'nonce-1', ruleId: 'rule-general' },
+      harness.dependencies
+    );
+
+    expect(firstResponse.showToast).toContain('Strike recorded');
+    expect(retryResponse.showToast).toContain('Strike already recorded');
+    expect(harness.post.addComment).toHaveBeenCalledTimes(1);
+    expect(harness.post.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns an existing entry before validating a changed public override', async () => {
+    const harness = createHarness();
+    await harness.repository.saveFormNonce(buildNonce());
+
+    const firstResponse = await handleEnforcementSubmit(
+      { formNonce: 'nonce-1', ruleId: 'rule-general' },
+      harness.dependencies
+    );
+
+    const retryResponse = await handleEnforcementSubmit(
+      {
+        formNonce: 'nonce-1',
+        ruleId: 'rule-general',
+        publicCommentOverride: 'Active total: {activeTotal}',
+      },
+      harness.dependencies
+    );
+
+    expect(firstResponse.showToast).toContain('Strike recorded');
+    expect(retryResponse.showToast).toContain('Strike already recorded');
+    expect(harness.post.addComment).toHaveBeenCalledTimes(1);
+    expect(harness.post.remove).toHaveBeenCalledTimes(1);
   });
 
   it('blocks when the refetched target author no longer has a Reddit user ID', async () => {
@@ -216,7 +320,9 @@ describe('handleEnforcementSubmit', () => {
       'Selected content no longer matches this StrikeLedger form. Reopen the action.'
     );
     expect(post.addComment).not.toHaveBeenCalled();
-    await expect(harness.repository.getLedgerEntry('entry-1')).resolves.toBeNull();
+    await expect(
+      harness.repository.getLedgerEntry('entry-1')
+    ).resolves.toBeNull();
   });
 
   it('blocks when the refetched target ID no longer matches the nonce', async () => {
@@ -234,7 +340,9 @@ describe('handleEnforcementSubmit', () => {
       'Selected content no longer matches this StrikeLedger form. Reopen the action.'
     );
     expect(post.addComment).not.toHaveBeenCalled();
-    await expect(harness.repository.getLedgerEntry('entry-1')).resolves.toBeNull();
+    await expect(
+      harness.repository.getLedgerEntry('entry-1')
+    ).resolves.toBeNull();
   });
 
   it('blocks when the refetched target kind does not match the nonce', async () => {
@@ -257,7 +365,9 @@ describe('handleEnforcementSubmit', () => {
       'Selected content no longer matches this StrikeLedger form. Reopen the action.'
     );
     expect(comment.reply).not.toHaveBeenCalled();
-    await expect(harness.repository.getLedgerEntry('entry-1')).resolves.toBeNull();
+    await expect(
+      harness.repository.getLedgerEntry('entry-1')
+    ).resolves.toBeNull();
   });
 
   it('blocks when the refetched target subreddit no longer matches the nonce', async () => {
@@ -275,7 +385,9 @@ describe('handleEnforcementSubmit', () => {
       'Selected content no longer matches this StrikeLedger form. Reopen the action.'
     );
     expect(post.addComment).not.toHaveBeenCalled();
-    await expect(harness.repository.getLedgerEntry('entry-1')).resolves.toBeNull();
+    await expect(
+      harness.repository.getLedgerEntry('entry-1')
+    ).resolves.toBeNull();
   });
 
   it('blocks when the refetched author identity no longer matches the nonce', async () => {
@@ -296,7 +408,9 @@ describe('handleEnforcementSubmit', () => {
       'Selected content no longer matches this StrikeLedger form. Reopen the action.'
     );
     expect(post.addComment).not.toHaveBeenCalled();
-    await expect(harness.repository.getLedgerEntry('entry-1')).resolves.toBeNull();
+    await expect(
+      harness.repository.getLedgerEntry('entry-1')
+    ).resolves.toBeNull();
   });
 
   it('blocks a submission from a different moderator before ledger creation', async () => {
@@ -311,7 +425,9 @@ describe('handleEnforcementSubmit', () => {
     expect(response.showToast).toContain(
       'can only be submitted by the moderator who opened it'
     );
-    await expect(harness.repository.getLedgerEntry('entry-1')).resolves.toBeNull();
+    await expect(
+      harness.repository.getLedgerEntry('entry-1')
+    ).resolves.toBeNull();
   });
 
   it('blocks comments on locked parent posts before ledger creation', async () => {
@@ -333,9 +449,13 @@ describe('handleEnforcementSubmit', () => {
       harness.dependencies
     );
 
-    expect(response.showToast).toBe('Comments on locked posts cannot be warned.');
+    expect(response.showToast).toBe(
+      'Comments on locked posts cannot be warned.'
+    );
     expect(harness.comment.remove).not.toHaveBeenCalled();
-    await expect(harness.repository.getLedgerEntry('entry-1')).resolves.toBeNull();
+    await expect(
+      harness.repository.getLedgerEntry('entry-1')
+    ).resolves.toBeNull();
   });
 
   it('rejects public overrides that expose private placeholders', async () => {
@@ -355,13 +475,18 @@ describe('handleEnforcementSubmit', () => {
       'Public comment override contains a private or unsupported placeholder.'
     );
     expect(harness.post.addComment).not.toHaveBeenCalled();
-    await expect(harness.repository.getLedgerEntry('entry-1')).resolves.toBeNull();
+    await expect(
+      harness.repository.getLedgerEntry('entry-1')
+    ).resolves.toBeNull();
   });
 
   it('returns a moderator-facing message if the ledger transaction stays conflicted', async () => {
     const harness = createHarness();
     const repository = {
       getFormNonce: vi.fn(async () => buildNonce()),
+      resolveExistingLedgerSubmission: vi.fn(async () => ({
+        status: 'none' as const,
+      })),
       createLedgerEntry: vi.fn(async () => ({
         status: 'blocked' as const,
         reason: 'transaction_conflict' as const,

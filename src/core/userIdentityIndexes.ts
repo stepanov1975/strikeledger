@@ -8,3 +8,5 @@ export const userFormNonceIndexKey = (userKey: string): string =>
 
 export const userViewContextIndexKey = (userKey: string): string =>
   `user:${userKey}:view_contexts`;
+
+export const trackedUsersKey = (): string => 'users:tracked';

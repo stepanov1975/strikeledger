@@ -683,19 +683,12 @@ api.get('/settings/audit', async (c) => {
     return c.json({ error: 'moderator_required' }, 403);
   }
 
-  if (!apiAccess.access.canManage) {
-    logWarn('api.settings.audit.denied', {
-      subredditName: apiAccess.subredditName,
-      moderatorUsername: apiAccess.access.username,
-    });
-    return c.json({ error: 'all_permission_required' }, 403);
-  }
-
   const { configRepository } = getRepositories();
   const records = await configRepository.getSettingsAudit();
   logInfo('api.settings.audit.ok', {
     subredditName: apiAccess.subredditName,
     moderatorUsername: apiAccess.access.username,
+    canManage: apiAccess.access.canManage,
     recordCount: records.length,
   });
 

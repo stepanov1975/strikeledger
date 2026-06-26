@@ -23,6 +23,7 @@ import {
 } from './scoring';
 import {
   formNonceKey,
+  trackedUsersKey,
   userFormNonceIndexKey,
   userViewContextIndexKey,
   viewContextKey,
@@ -52,6 +53,19 @@ export type CreateLedgerEntryRequest = {
   config: StrikeLedgerConfig;
 };
 
+export type ExistingLedgerSubmissionRequest = {
+  formNonce: string;
+  targetId: string;
+  targetKind: TargetKind;
+  subredditName: string;
+  action: LedgerEntry['action'];
+  ruleId: string;
+  moderatorUsername: string;
+  submittedAtMs: number;
+  nowMs: number;
+  config: StrikeLedgerConfig;
+};
+
 export type CreateLedgerEntryResult =
   | {
       status: 'created' | 'idempotent';
@@ -72,10 +86,32 @@ export type CreateLedgerEntryResult =
         | 'transaction_conflict';
     };
 
+export type ExistingLedgerSubmissionResult =
+  | {
+      status: 'none';
+    }
+  | {
+      status: 'idempotent';
+      entry: LedgerEntry;
+      activeTotal: number;
+    }
+  | Extract<CreateLedgerEntryResult, { status: 'duplicate' }>
+  | Extract<CreateLedgerEntryResult, { status: 'blocked' }>;
+
 type CreateLedgerEntryTransactionResult =
   | {
       status: 'created';
       entry: LedgerEntry;
+    }
+  | {
+      status: 'idempotent';
+      entry: LedgerEntry;
+    }
+  | Extract<CreateLedgerEntryResult, { status: 'duplicate' | 'blocked' }>;
+
+type ExistingLedgerSubmissionTransactionResult =
+  | {
+      status: 'none';
     }
   | {
       status: 'idempotent';
@@ -125,6 +161,11 @@ export type DeleteUserLedgerResult = {
   remaining: number;
 };
 
+export type CleanupTrackedUserTransientIdentityResult = {
+  scanned: number;
+  remaining: number;
+};
+
 type TransientIdentityCleanupResult = {
   scanned: number;
   remaining: number;
@@ -135,11 +176,41 @@ export type MarkTargetDeletedRequest = {
   targetKind: TargetKind;
   subredditName?: string;
   deletedAtMs: number;
+  maxEntries?: number;
+  maxRuntimeMs?: number;
+  getNowMs?: () => number;
 };
 
 export type MarkTargetDeletedResult = {
   scanned: number;
   updated: number;
+  remaining: number;
+  stoppedEarly?: true;
+};
+
+export type ContinueTargetDeletedScrubRequest = {
+  nowMs: number;
+  maxTargets: number;
+  maxEntriesPerTarget: number;
+  maxRuntimeMs?: number;
+  getNowMs?: () => number;
+};
+
+export type ContinueTargetDeletedScrubResult = {
+  targets: number;
+  scanned: number;
+  updated: number;
+  remainingTargets: number;
+  stoppedEarly?: true;
+};
+
+type TargetDeleteScrubRecord = {
+  targetId: string;
+  targetKind: TargetKind;
+  subredditName?: string;
+  deletedAtMs: number;
+  cursor: number;
+  updatedAtMs: number;
 };
 
 type MarkTargetDeletedEntryResult =
@@ -186,11 +257,15 @@ const activeTotalKey = (userKey: string): string =>
   `user:${userKey}:active_total`;
 const userLedgerVersionKey = (userKey: string): string =>
   `user:${userKey}:ledger_version`;
-const trackedUsersKey = (): string => 'users:tracked';
 const ledgerEntriesKey = (subredditName: string): string =>
   `ledger:${subredditName.trim().toLowerCase()}:entries`;
 const cleanupCursorKey = (subredditName: string): string =>
   `ledger:${subredditName.trim().toLowerCase()}:cleanup_cursor`;
+const targetDeleteScrubPendingKey = (): string => 'target_delete_scrub:pending';
+const targetDeleteScrubRecordKey = (
+  targetKind: TargetKind,
+  targetId: string
+): string => `target_delete_scrub:${targetKind}:${targetId}`;
 const ACTIVE_TOTAL_PAGE_SIZE = 100;
 const ACTIVE_TOTAL_RECALC_ATTEMPTS = 3;
 const ACTIVE_TOTAL_CACHE_TTL_MS = 366 * MS_PER_DAY;
@@ -343,15 +418,19 @@ export class LedgerRepository {
   async saveFormNonce(record: FormNonceRecord): Promise<void> {
     const recordKey = formNonceKey(record.nonce);
     const indexKey = userFormNonceIndexKey(getFormNonceUserKey(record));
-    await this.store.runTransaction([recordKey, indexKey], async () => {
-      await this.store.set(recordKey, JSON.stringify(record), {
-        expiresAtMs: record.expiresAtMs,
-      });
-      await this.store.zAdd(indexKey, {
-        member: record.nonce,
-        score: record.expiresAtMs,
-      });
-    });
+    await this.store.runTransaction(
+      [recordKey, indexKey, trackedUsersKey()],
+      async () => {
+        await this.store.set(recordKey, JSON.stringify(record), {
+          expiresAtMs: record.expiresAtMs,
+        });
+        await this.store.zAdd(indexKey, {
+          member: record.nonce,
+          score: record.expiresAtMs,
+        });
+        await this.addTrackedUserIfMissing(record.authorId, record.createdAtMs);
+      }
+    );
   }
 
   async getFormNonce(nonce: string): Promise<FormNonceRecord | null> {
@@ -389,7 +468,9 @@ export class LedgerRepository {
             ? { publicCommentId: checkpoint.publicCommentId }
             : {}),
           ...(checkpoint.publicCorrectionCommentId !== undefined
-            ? { publicCorrectionCommentId: checkpoint.publicCorrectionCommentId }
+            ? {
+                publicCorrectionCommentId: checkpoint.publicCorrectionCommentId,
+              }
             : {}),
           ...(checkpoint.modNoteId !== undefined
             ? { modNoteId: checkpoint.modNoteId }
@@ -572,6 +653,80 @@ export class LedgerRepository {
     return rawTotal === null ? null : Number(rawTotal);
   }
 
+  async resolveExistingLedgerSubmission(
+    request: ExistingLedgerSubmissionRequest
+  ): Promise<ExistingLedgerSubmissionResult> {
+    let result: ExistingLedgerSubmissionTransactionResult;
+    try {
+      result = await this.store.runTransaction(
+        this.getExistingSubmissionWatchedKeys(request),
+        async (): Promise<ExistingLedgerSubmissionTransactionResult> => {
+          const nonce = await this.getValidSubmissionNonce(request);
+          if (nonce.status === 'blocked') {
+            return nonce;
+          }
+
+          if (nonce.status === 'consumed') {
+            const entry = await this.getLedgerEntry(nonce.entryId);
+            if (!entry) {
+              return {
+                status: 'blocked',
+                reason: 'nonce_consumed_without_entry',
+              };
+            }
+
+            return {
+              status: 'idempotent',
+              entry,
+            };
+          }
+
+          const retryEntry = await this.getRetryEntryForSubmission(request);
+          if (retryEntry && retryEntry.status !== 'reversed') {
+            await this.consumeNonce(
+              nonce.record,
+              retryEntry.entryId,
+              request.nowMs
+            );
+            return {
+              status: 'idempotent',
+              entry: retryEntry,
+            };
+          }
+
+          const duplicateEntry =
+            await this.getDuplicateEntryForSubmission(request);
+          if (duplicateEntry && duplicateEntry.status !== 'reversed') {
+            return { status: 'duplicate', existingEntry: duplicateEntry };
+          }
+
+          return { status: 'none' };
+        }
+      );
+    } catch (error) {
+      if (isRedisTransactionConflictError(error)) {
+        return { status: 'blocked', reason: 'transaction_conflict' };
+      }
+
+      throw error;
+    }
+
+    if (result.status === 'idempotent') {
+      return {
+        ...result,
+        activeTotal: await this.recalculateActiveTotalForKeys(
+          getLedgerEntryUserKeys(result.entry),
+          result.entry.userKey,
+          request.config,
+          request.nowMs,
+          result.entry.subredditName
+        ),
+      };
+    }
+
+    return result;
+  }
+
   async createLedgerEntry(
     request: CreateLedgerEntryRequest
   ): Promise<CreateLedgerEntryResult> {
@@ -733,7 +888,8 @@ export class LedgerRepository {
         : undefined;
     const startedAtMs = getNowMs();
 
-    const cutoffMs = request.nowMs - request.retentionDays * 24 * 60 * 60 * 1000;
+    const cutoffMs =
+      request.nowMs - request.retentionDays * 24 * 60 * 60 * 1000;
     const ledgerIndexKey = ledgerEntriesKey(request.subredditName);
     const cursorKey = cleanupCursorKey(request.subredditName);
     let cursor = parseCleanupCursor(await this.store.get(cursorKey));
@@ -818,7 +974,10 @@ export class LedgerRepository {
     return userIds;
   }
 
-  async markTrackedUserChecked(userId: string, checkedAtMs: number): Promise<void> {
+  async markTrackedUserChecked(
+    userId: string,
+    checkedAtMs: number
+  ): Promise<void> {
     await this.store.zAdd(trackedUsersKey(), {
       member: userId,
       score: checkedAtMs,
@@ -851,7 +1010,10 @@ export class LedgerRepository {
       return { scanned: 0, deleted: 0, remaining };
     }
 
-    const transientResult = await this.deleteTransientUserIdentity(userKey, max);
+    const transientResult = await this.deleteTransientUserIdentity(
+      userKey,
+      max
+    );
     const entryBudget = Math.max(0, max - transientResult.scanned);
     if (entryBudget === 0) {
       return {
@@ -893,6 +1055,27 @@ export class LedgerRepository {
     };
   }
 
+  async cleanupTrackedUserTransientIdentity(
+    userId: string,
+    nowMs: number,
+    maxItems: number
+  ): Promise<CleanupTrackedUserTransientIdentityResult> {
+    const trimmedUserId = userId.trim();
+    const userKey = userKeyFromUserId(trimmedUserId);
+    const result = await this.deleteExpiredTransientUserIdentity(
+      userKey,
+      nowMs,
+      Math.max(0, maxItems)
+    );
+    return {
+      scanned: result.scanned,
+      remaining: await this.finalizeDeletedUserIfComplete(
+        trimmedUserId,
+        userKey
+      ),
+    };
+  }
+
   async markTargetDeleted(
     request: MarkTargetDeletedRequest
   ): Promise<MarkTargetDeletedResult> {
@@ -900,37 +1083,155 @@ export class LedgerRepository {
       request.targetKind === 'post'
         ? postEntriesKey(request.targetId)
         : targetEntriesKey(request.targetId);
+    const recordKey = targetDeleteScrubRecordKey(
+      request.targetKind,
+      request.targetId
+    );
+    const maxEntries = Math.max(
+      1,
+      request.maxEntries ?? TARGET_DELETE_SCRUB_PAGE_SIZE
+    );
+    const maxRuntimeMs =
+      request.maxRuntimeMs === undefined
+        ? Number.POSITIVE_INFINITY
+        : Math.max(0, request.maxRuntimeMs);
+    const getNowMs = request.getNowMs ?? Date.now;
+    const startedAtMs = getNowMs();
+    const runtimeExceeded = (): boolean =>
+      getNowMs() - startedAtMs >= maxRuntimeMs;
     let scanned = 0;
     let updated = 0;
-    let offset = 0;
+    let stoppedEarly = false;
+    const processedEntryIds: string[] = [];
 
-    while (true) {
-      const entryIds = await this.store.zRange(
-        sourceKey,
-        offset,
-        offset + TARGET_DELETE_SCRUB_PAGE_SIZE - 1
-      );
-      if (entryIds.length === 0) {
+    const entryIds = await this.store.zRange(
+      sourceKey,
+      0,
+      maxEntries,
+      { by: 'rank' }
+    );
+    const pageEntryIds = entryIds.slice(0, maxEntries);
+    for (const entryId of pageEntryIds) {
+      if (runtimeExceeded()) {
+        stoppedEarly = true;
         break;
       }
 
-      for (const entryId of uniqueUserKeys(entryIds)) {
-        const result = await this.markTargetDeletedEntry(entryId, request);
-        if (result !== 'missing' && result !== 'unrelated') {
-          scanned += 1;
-        }
-        if (result === 'updated') {
-          updated += 1;
-        }
+      processedEntryIds.push(entryId);
+      const result = await this.markTargetDeletedEntry(entryId, request);
+      if (result !== 'missing' && result !== 'unrelated') {
+        scanned += 1;
       }
-
-      if (entryIds.length < TARGET_DELETE_SCRUB_PAGE_SIZE) {
-        break;
+      if (result === 'updated') {
+        updated += 1;
       }
-      offset += entryIds.length;
     }
 
-    return { scanned, updated };
+    if (processedEntryIds.length > 0) {
+      await this.store.zRem(sourceKey, processedEntryIds);
+    }
+
+    const remaining =
+      stoppedEarly || (await this.store.zRange(sourceKey, 0, 0)).length > 0
+        ? 1
+        : 0;
+    if (remaining > 0) {
+      await this.saveTargetDeleteScrubContinuation(recordKey, {
+        targetId: request.targetId,
+        targetKind: request.targetKind,
+        ...(request.subredditName !== undefined
+          ? { subredditName: request.subredditName }
+          : {}),
+        deletedAtMs: request.deletedAtMs,
+        cursor: 0,
+        updatedAtMs: getNowMs(),
+      });
+    } else {
+      await this.clearTargetDeleteScrubContinuation(recordKey);
+    }
+
+    return {
+      scanned,
+      updated,
+      remaining,
+      ...(stoppedEarly ? { stoppedEarly } : {}),
+    };
+  }
+
+  async continueTargetDeletedScrub(
+    request: ContinueTargetDeletedScrubRequest
+  ): Promise<ContinueTargetDeletedScrubResult> {
+    const maxTargets = Math.max(0, request.maxTargets);
+    const maxEntriesPerTarget = Math.max(1, request.maxEntriesPerTarget);
+    const maxRuntimeMs =
+      request.maxRuntimeMs === undefined
+        ? Number.POSITIVE_INFINITY
+        : Math.max(0, request.maxRuntimeMs);
+    const getNowMs = request.getNowMs ?? Date.now;
+    const startedAtMs = getNowMs();
+    let targets = 0;
+    let scanned = 0;
+    let updated = 0;
+    let stoppedEarly = false;
+    const getRemainingRuntimeMs = (): number =>
+      maxRuntimeMs === Number.POSITIVE_INFINITY
+        ? Number.POSITIVE_INFINITY
+        : Math.max(0, maxRuntimeMs - (getNowMs() - startedAtMs));
+
+    const recordKeys =
+      maxTargets > 0
+        ? await this.store.zRange(
+            targetDeleteScrubPendingKey(),
+            0,
+            maxTargets - 1
+          )
+        : [];
+
+    for (const recordKey of recordKeys) {
+      const remainingRuntimeMs = getRemainingRuntimeMs();
+      if (remainingRuntimeMs <= 0) {
+        stoppedEarly = true;
+        break;
+      }
+
+      const record = parseJson<TargetDeleteScrubRecord>(
+        await this.store.get(recordKey)
+      );
+      if (!record) {
+        await this.store.zRem(targetDeleteScrubPendingKey(), [recordKey]);
+        continue;
+      }
+
+      const result = await this.markTargetDeleted({
+        targetId: record.targetId,
+        targetKind: record.targetKind,
+        ...(record.subredditName !== undefined
+          ? { subredditName: record.subredditName }
+          : {}),
+        deletedAtMs: record.deletedAtMs,
+        maxEntries: maxEntriesPerTarget,
+        maxRuntimeMs: remainingRuntimeMs,
+        getNowMs,
+      });
+      targets += 1;
+      scanned += result.scanned;
+      updated += result.updated;
+      if (result.stoppedEarly) {
+        stoppedEarly = true;
+        break;
+      }
+    }
+
+    const remainingTargets = (
+      await this.store.zRange(targetDeleteScrubPendingKey(), 0, 0)
+    ).length;
+    return {
+      targets,
+      scanned,
+      updated,
+      remainingTargets,
+      ...(stoppedEarly ? { stoppedEarly } : {}),
+    };
   }
 
   async recalculateActiveTotal(
@@ -1124,7 +1425,41 @@ export class LedgerRepository {
         moderatorUsername: request.entry.moderatorUsername,
         submittedAtMs: request.submittedAtMs,
       }),
+      getRetryClaimKey({
+        targetId: request.entry.targetId,
+        action: request.entry.action,
+        ruleId: request.entry.ruleId,
+        moderatorUsername: request.entry.moderatorUsername,
+        submittedAtMs: request.submittedAtMs - RETRY_WINDOW_MS,
+      }),
       ledgerEntryKey(request.entry.entryId),
+    ];
+  }
+
+  private getExistingSubmissionWatchedKeys(
+    request: ExistingLedgerSubmissionRequest
+  ): string[] {
+    return [
+      formNonceKey(request.formNonce),
+      getDuplicateClaimKey({
+        targetId: request.targetId,
+        action: request.action,
+        ruleId: request.ruleId,
+      }),
+      getRetryClaimKey({
+        targetId: request.targetId,
+        action: request.action,
+        ruleId: request.ruleId,
+        moderatorUsername: request.moderatorUsername,
+        submittedAtMs: request.submittedAtMs,
+      }),
+      getRetryClaimKey({
+        targetId: request.targetId,
+        action: request.action,
+        ruleId: request.ruleId,
+        moderatorUsername: request.moderatorUsername,
+        submittedAtMs: request.submittedAtMs - RETRY_WINDOW_MS,
+      }),
     ];
   }
 
@@ -1153,6 +1488,44 @@ export class LedgerRepository {
     | { status: 'consumed'; entryId: string }
     | Extract<CreateLedgerEntryResult, { status: 'blocked' }>
   > {
+    const nonce = await this.getValidSubmissionNonce({
+      formNonce: request.formNonce,
+      targetId: request.entry.targetId,
+      targetKind: request.entry.targetKind,
+      subredditName: request.entry.subredditName,
+      action: request.entry.action,
+      ruleId: request.entry.ruleId,
+      moderatorUsername: request.entry.moderatorUsername,
+      submittedAtMs: request.submittedAtMs,
+      nowMs: request.nowMs,
+      config: request.config,
+    });
+    if (nonce.status !== 'ready') {
+      return nonce;
+    }
+
+    const expectedUserId = nonce.record.authorId.trim();
+    const expectedUserKey = userKeyFromUserId(expectedUserId);
+    if (
+      !expectedUserId ||
+      request.entry.userId !== expectedUserId ||
+      request.entry.userKey !== expectedUserKey ||
+      (nonce.record.userKey !== undefined &&
+        nonce.record.userKey.trim() !== expectedUserKey)
+    ) {
+      return { status: 'blocked', reason: 'nonce_context_mismatch' };
+    }
+
+    return nonce;
+  }
+
+  private async getValidSubmissionNonce(
+    request: ExistingLedgerSubmissionRequest
+  ): Promise<
+    | { status: 'ready'; record: FormNonceRecord }
+    | { status: 'consumed'; entryId: string }
+    | Extract<CreateLedgerEntryResult, { status: 'blocked' }>
+  > {
     const record = parseJson<FormNonceRecord>(
       await this.store.get(formNonceKey(request.formNonce))
     );
@@ -1165,11 +1538,11 @@ export class LedgerRepository {
     }
 
     if (
-      record.moderatorUsername !== request.entry.moderatorUsername ||
-      record.subredditName !== request.entry.subredditName ||
-      record.targetId !== request.entry.targetId ||
-      record.targetKind !== request.entry.targetKind ||
-      record.action !== request.entry.action
+      record.moderatorUsername !== request.moderatorUsername ||
+      record.subredditName !== request.subredditName ||
+      record.targetId !== request.targetId ||
+      record.targetKind !== request.targetKind ||
+      record.action !== request.action
     ) {
       return { status: 'blocked', reason: 'nonce_context_mismatch' };
     }
@@ -1183,6 +1556,46 @@ export class LedgerRepository {
     }
 
     return { status: 'ready', record };
+  }
+
+  private async getRetryEntryForSubmission(
+    request: ExistingLedgerSubmissionRequest
+  ): Promise<LedgerEntry | null> {
+    const submittedAtCandidates = new Set([
+      request.submittedAtMs,
+      request.submittedAtMs - RETRY_WINDOW_MS,
+    ]);
+
+    for (const submittedAtMs of submittedAtCandidates) {
+      const entryId = await this.store.get(
+        getRetryClaimKey({
+          targetId: request.targetId,
+          action: request.action,
+          ruleId: request.ruleId,
+          moderatorUsername: request.moderatorUsername,
+          submittedAtMs,
+        })
+      );
+      if (entryId) {
+        return this.getLedgerEntry(entryId);
+      }
+    }
+
+    return null;
+  }
+
+  private async getDuplicateEntryForSubmission(
+    request: ExistingLedgerSubmissionRequest
+  ): Promise<LedgerEntry | null> {
+    const entryId = await this.store.get(
+      getDuplicateClaimKey({
+        targetId: request.targetId,
+        action: request.action,
+        ruleId: request.ruleId,
+      })
+    );
+
+    return entryId ? this.getLedgerEntry(entryId) : null;
   }
 
   private async getRetryEntry(
@@ -1300,6 +1713,50 @@ export class LedgerRepository {
     return { scanned, remaining };
   }
 
+  private async deleteExpiredTransientUserIdentity(
+    userKey: string,
+    nowMs: number,
+    maxItems: number
+  ): Promise<TransientIdentityCleanupResult> {
+    const nonceIndexKey = userFormNonceIndexKey(userKey);
+    const viewContextIndexKey = userViewContextIndexKey(userKey);
+    let scanned = 0;
+    let budget = Math.max(0, maxItems);
+    const nonceIds =
+      budget > 0
+        ? await this.store.zRange(nonceIndexKey, 0, nowMs, {
+            by: 'score',
+            limit: { offset: 0, count: budget },
+          })
+        : [];
+    await this.deleteKeys(nonceIds.map(formNonceKey));
+    if (nonceIds.length > 0) {
+      await this.store.zRem(nonceIndexKey, nonceIds);
+    }
+    scanned += nonceIds.length;
+    budget -= nonceIds.length;
+
+    const viewContextTokens =
+      budget > 0
+        ? await this.store.zRange(viewContextIndexKey, 0, nowMs, {
+            by: 'score',
+            limit: { offset: 0, count: budget },
+          })
+        : [];
+    await this.deleteKeys(viewContextTokens.map(viewContextKey));
+    if (viewContextTokens.length > 0) {
+      await this.store.zRem(viewContextIndexKey, viewContextTokens);
+    }
+    scanned += viewContextTokens.length;
+
+    const remaining = await this.getTransientIdentityRemaining(userKey);
+    if (remaining === 0) {
+      await this.store.del(nonceIndexKey, viewContextIndexKey);
+    }
+
+    return { scanned, remaining };
+  }
+
   private async getTransientIdentityRemaining(userKey: string): Promise<number> {
     const hasFormNonces =
       (await this.store.zRange(userFormNonceIndexKey(userKey), 0, 0)).length > 0;
@@ -1334,6 +1791,24 @@ export class LedgerRepository {
     }
 
     return remaining;
+  }
+
+  private async saveTargetDeleteScrubContinuation(
+    recordKey: string,
+    record: TargetDeleteScrubRecord
+  ): Promise<void> {
+    await this.store.set(recordKey, JSON.stringify(record));
+    await this.store.zAdd(targetDeleteScrubPendingKey(), {
+      member: recordKey,
+      score: record.updatedAtMs,
+    });
+  }
+
+  private async clearTargetDeleteScrubContinuation(
+    recordKey: string
+  ): Promise<void> {
+    await this.store.del(recordKey);
+    await this.store.zRem(targetDeleteScrubPendingKey(), [recordKey]);
   }
 
   private async markTargetDeletedEntry(

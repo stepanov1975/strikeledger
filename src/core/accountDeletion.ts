@@ -140,7 +140,28 @@ export const runAccountDeletionCheck = async ({
 
     if (user) {
       existingUsers += 1;
-      await ledgerRepository.markTrackedUserChecked(userId, nowMs);
+      const cleanupBudget = Math.min(
+        options.maxEntriesPerUser,
+        remainingEntryBudget
+      );
+      const cleanupResult =
+        await ledgerRepository.cleanupTrackedUserTransientIdentity(
+          userId,
+          nowMs,
+          cleanupBudget
+        );
+      remainingEntryBudget -= cleanupResult.scanned;
+      if (cleanupResult.remaining > 0) {
+        if (cleanupResult.scanned >= cleanupBudget) {
+          await ledgerRepository.markTrackedUserRetrySoon(
+            userId,
+            nowMs,
+            checkIntervalMs
+          );
+        } else {
+          await ledgerRepository.markTrackedUserChecked(userId, nowMs);
+        }
+      }
       continue;
     }
 

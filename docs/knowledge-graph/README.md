@@ -4,10 +4,10 @@ This directory is internal agent context. It helps route code-reading before edi
 
 ## How To Use
 
-1. Start with the workflow doc that matches the change.
-2. Read the module doc for the files you expect to touch.
+1. Start with `generated/summary.md` and pick the critical path or review pack whose tags match the change.
+2. Read the linked workflow doc, then the module docs for files you expect to touch.
 3. If a touched file has a hotspot doc, read that before editing.
-4. Use `generated/summary.md` for review packs, invariants, platform facts, and route lists.
+4. Use the linked invariants to check behavior contracts that are easy to miss from imports alone.
 5. Use `generated/graph.json` when you need machine-readable imports, exports, tests, and source links.
 6. Run the targeted checks named in the relevant docs, then the normal repo verification bundle when behavior changes.
 
@@ -40,9 +40,11 @@ Generation also validates that every `mvpSections` entry in `annotations.json` m
 
 `annotations.json` may also define:
 
+- `criticalPaths`: review entry points that bundle the workflow docs, source files, tests, routes, invariants, and platform facts for a production path such as enforcement idempotency or delete-trigger continuation.
 - `invariants`: behavior contracts that name the source files, tests, docs, routes, and platform facts that protect them.
 - `platformFacts`: compact Devvit documentation facts with a source URL and review date. These are reviewed local notes, not live Reddit proof.
 - `reviewPacks`: curated entry points for broad review lanes, such as dashboard launch behavior or Devvit manifest route drift.
+- `reviewTags`: short labels such as `auth`, `idempotency`, `privacy-retention`, `scheduler-bounds`, `devvit-manifest`, and `settings-audit` used to route review scope quickly.
 
 The generated summary is intentionally human-readable. Use it first when selecting review scope, then open the referenced files directly. For app reviews, prefer review packs and invariants over raw import edges; they capture the regression directions that are easy to miss from file structure alone.
 

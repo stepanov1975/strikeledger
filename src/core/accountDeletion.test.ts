@@ -115,9 +115,9 @@ describe('account deletion checker', () => {
 
     expect(reddit.getUserById).toHaveBeenCalledWith('t2_user');
     await expect(repo.getLedgerEntry(entry.entryId)).resolves.toBeNull();
-    await expect(store.zRange('post:t3_target:entries', 0, -1)).resolves.toEqual(
-      []
-    );
+    await expect(
+      store.zRange('post:t3_target:entries', 0, -1)
+    ).resolves.toEqual([]);
     await expect(store.zRange('users:tracked', 0, -1)).resolves.toEqual([]);
     await expect(store.get('form_nonce:nonce-1')).resolves.toBeNull();
   });
@@ -151,9 +151,118 @@ describe('account deletion checker', () => {
       remainingEntries: 0,
     });
 
-    await expect(store.zRange('users:tracked', 0, nowMs, { by: 'score' }))
-      .resolves.toEqual([]);
+    await expect(
+      store.zRange('users:tracked', 0, nowMs, { by: 'score' })
+    ).resolves.toEqual([]);
     await expect(repo.getLedgerEntry(entry.entryId)).resolves.toEqual(entry);
+  });
+
+  it('removes expired transient-only indexes for users that still resolve', async () => {
+    const store = new FakeRedisStore();
+    const repo = new LedgerRepository(store);
+    const reddit = {
+      getUserById: vi.fn(async () => ({ id: 't2_user' })),
+    };
+    await repo.saveFormNonce({
+      nonce: 'expired-nonce',
+      targetId: 't3_target',
+      targetKind: 'post',
+      subredditName: 'testsub',
+      userKey: 'id:t2_user',
+      authorId: 't2_user',
+      authorName: 'target-user',
+      action: 'warn',
+      moderatorUsername: 'mod-a',
+      createdAtMs: nowMs,
+      expiresAtMs: nowMs + 10 * 60 * 1000,
+    });
+    store.nowMs = nowMs + 2 * 24 * 60 * 60 * 1000;
+
+    await expect(
+      runAccountDeletionCheck({
+        ledgerRepository: repo,
+        reddit,
+        nowMs: store.nowMs,
+        payload: {
+          checkIntervalHours: 24,
+          maxUsers: 5,
+          maxEntriesPerUser: 10,
+        },
+      })
+    ).resolves.toMatchObject({
+      checked: 1,
+      existingUsers: 1,
+      deletedUsers: 0,
+      deletedEntries: 0,
+      failedChecks: 0,
+      remainingEntries: 0,
+    });
+
+    await expect(store.get('form_nonce:expired-nonce')).resolves.toBeNull();
+    await expect(
+      store.zRange('user:id:t2_user:form_nonces', 0, -1)
+    ).resolves.toEqual([]);
+    await expect(store.zRange('users:tracked', 0, -1)).resolves.toEqual([]);
+  });
+
+  it('retries existing-user transient cleanup promptly when a bounded run leaves work', async () => {
+    const store = new FakeRedisStore();
+    const repo = new LedgerRepository(store);
+    const reddit = {
+      getUserById: vi.fn(async () => ({ id: 't2_user' })),
+    };
+    for (const nonce of ['expired-nonce-1', 'expired-nonce-2']) {
+      await repo.saveFormNonce({
+        nonce,
+        targetId: 't3_target',
+        targetKind: 'post',
+        subredditName: 'testsub',
+        userKey: 'id:t2_user',
+        authorId: 't2_user',
+        authorName: 'target-user',
+        action: 'warn',
+        moderatorUsername: 'mod-a',
+        createdAtMs: nowMs,
+        expiresAtMs: nowMs + 10 * 60 * 1000,
+      });
+    }
+    const firstRunMs = nowMs + 2 * 24 * 60 * 60 * 1000;
+    store.nowMs = firstRunMs;
+
+    await runAccountDeletionCheck({
+      ledgerRepository: repo,
+      reddit,
+      nowMs: firstRunMs,
+      payload: {
+        checkIntervalHours: 24,
+        maxUsers: 5,
+        maxEntriesPerUser: 1,
+      },
+    });
+
+    await expect(store.zRange('users:tracked', 0, -1)).resolves.toEqual([
+      't2_user',
+    ]);
+    await expect(store.zScore('users:tracked', 't2_user')).resolves.toBe(
+      firstRunMs - 24 * 60 * 60 * 1000 + 1
+    );
+
+    store.nowMs = firstRunMs + 1;
+    await runAccountDeletionCheck({
+      ledgerRepository: repo,
+      reddit,
+      nowMs: firstRunMs + 1,
+      payload: {
+        checkIntervalHours: 24,
+        maxUsers: 5,
+        maxEntriesPerUser: 1,
+      },
+    });
+
+    await expect(
+      store.zRange('user:id:t2_user:form_nonces', 0, -1)
+    ).resolves.toEqual([]);
+    await expect(store.zRange('users:tracked', 0, -1)).resolves.toEqual([]);
   });
 
   it('caps deleted ledger entries per scheduler run', async () => {

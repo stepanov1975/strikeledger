@@ -1,11 +1,164 @@
 {
   "version": 1,
-  "generatedAt": "2026-06-26T17:53:34.291Z",
+  "generatedAt": "2026-06-26T20:09:19.778Z",
   "nodes": [
     {
       "id": "MVP.md",
       "kind": "file",
       "layer": "unknown"
+    },
+    {
+      "id": "critical-path:account-deletion-transient-cleanup",
+      "kind": "criticalPath",
+      "title": "Account Deletion Transient Cleanup Critical Path",
+      "summary": "Start here when reviewing tracked t2 user IDs, expired nonce/view-context cleanup, per-user budgets, failed lookup retry behavior, and account deletion scheduler bounds.",
+      "reviewTags": [
+        "privacy-retention",
+        "scheduler-bounds"
+      ],
+      "documents": [
+        "docs/knowledge-graph/hotspots/ledgerRepository.md",
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ],
+      "sourceFiles": [
+        "src/core/accountDeletion.ts",
+        "src/core/dashboard.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/userIdentityIndexes.ts",
+        "src/routes/scheduler.ts"
+      ],
+      "testFiles": [
+        "src/core/accountDeletion.test.ts",
+        "src/core/dashboard.test.ts",
+        "src/core/ledgerRepository.test.ts",
+        "src/routes/scheduler.test.ts"
+      ],
+      "routeIds": [
+        "route:POST /internal/scheduler/account-deletion-check"
+      ],
+      "invariants": [
+        "invariant:transient-identity-cleanup-bounded"
+      ],
+      "platformFacts": [
+        "platform-fact:devvit-endpoint-configuration"
+      ]
+    },
+    {
+      "id": "critical-path:deleted-target-scrub-continuation",
+      "kind": "criticalPath",
+      "title": "Deleted Target Scrub Continuation Critical Path",
+      "summary": "Start here when reviewing onPostDelete/onCommentDelete scrubbing, post:{postId}:entries indexing, targetDeleteScrub scheduler continuation, and Devvit manifest wiring.",
+      "reviewTags": [
+        "devvit-manifest",
+        "privacy-retention",
+        "scheduler-bounds"
+      ],
+      "documents": [
+        "docs/knowledge-graph/hotspots/ledgerRepository.md",
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ],
+      "sourceFiles": [
+        "devvit.json",
+        "src/core/ledgerRepository.ts",
+        "src/routes/scheduler.ts",
+        "src/routes/triggers.ts"
+      ],
+      "testFiles": [
+        "src/core/ledgerRepository.test.ts",
+        "src/routes/scheduler.test.ts",
+        "src/routes/triggers.test.ts"
+      ],
+      "routeIds": [
+        "route:POST /internal/scheduler/target-delete-scrub",
+        "route:POST /internal/triggers/on-comment-delete",
+        "route:POST /internal/triggers/on-post-delete"
+      ],
+      "invariants": [
+        "invariant:deleted-target-scrub-is-bounded",
+        "invariant:devvit-manifest-routes-match-generated-routes"
+      ],
+      "platformFacts": [
+        "platform-fact:devvit-endpoint-configuration"
+      ]
+    },
+    {
+      "id": "critical-path:enforcement-idempotent-submit",
+      "kind": "criticalPath",
+      "title": "Enforcement Idempotent Submit Critical Path",
+      "summary": "Start here when reviewing warning form submit, nonce replay, duplicate suppression, moderator authorization, and post-ledger Reddit side effects.",
+      "reviewTags": [
+        "auth",
+        "idempotency"
+      ],
+      "documents": [
+        "docs/knowledge-graph/hotspots/enforcementSubmit.md",
+        "docs/knowledge-graph/hotspots/ledgerRepository.md",
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ],
+      "sourceFiles": [
+        "src/core/idempotency.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/sideEffects.ts",
+        "src/routes/enforcementSubmit.ts",
+        "src/routes/forms.ts",
+        "src/routes/menu.ts",
+        "src/routes/permissions.ts"
+      ],
+      "testFiles": [
+        "src/core/idempotency.test.ts",
+        "src/core/ledgerRepository.test.ts",
+        "src/core/sideEffects.test.ts",
+        "src/routes/enforcementSubmit.test.ts",
+        "src/routes/forms.test.ts",
+        "src/routes/menu.test.ts"
+      ],
+      "routeIds": [
+        "route:POST /internal/form/enforcement-submit"
+      ],
+      "invariants": [
+        "invariant:enforcement-server-side-authorization",
+        "invariant:nonce-replay-before-mutable-target-checks"
+      ],
+      "platformFacts": [
+        "platform-fact:devvit-menu-client-effects"
+      ]
+    },
+    {
+      "id": "critical-path:settings-audit-permission-gate",
+      "kind": "criticalPath",
+      "title": "Settings Audit Permission Gate Critical Path",
+      "summary": "Start here when reviewing settings audit history access, moderator read permissions, and manage-gated settings/admin mutations.",
+      "reviewTags": [
+        "auth",
+        "settings-audit"
+      ],
+      "documents": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/modules/core-config.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ],
+      "sourceFiles": [
+        "src/core/configRepository.ts",
+        "src/routes/api.ts",
+        "src/routes/permissions.ts"
+      ],
+      "testFiles": [
+        "src/core/configRepository.test.ts",
+        "src/routes/api.test.ts"
+      ],
+      "routeIds": [
+        "route:GET /api/settings/audit"
+      ],
+      "invariants": [
+        "invariant:settings-audit-readable-by-moderators"
+      ],
+      "platformFacts": []
     },
     {
       "id": "devvit.json",
@@ -17,6 +170,10 @@
       "kind": "document",
       "documentKind": "hotspot",
       "title": "API Routes Hotspot",
+      "reviewTags": [
+        "auth",
+        "settings-audit"
+      ],
       "mvpSections": [
         "History View",
         "Inline Profile Preview",
@@ -31,6 +188,10 @@
       "kind": "document",
       "documentKind": "hotspot",
       "title": "Enforcement Submit Hotspot",
+      "reviewTags": [
+        "auth",
+        "idempotency"
+      ],
       "mvpSections": [
         "Enforcement Form",
         "Idempotency And Duplicates",
@@ -43,6 +204,11 @@
       "kind": "document",
       "documentKind": "hotspot",
       "title": "LedgerRepository Hotspot",
+      "reviewTags": [
+        "idempotency",
+        "privacy-retention",
+        "scheduler-bounds"
+      ],
       "mvpSections": [
         "Entry Model",
         "Idempotency And Duplicates",
@@ -57,6 +223,7 @@
       "kind": "document",
       "documentKind": "hotspot",
       "title": "Side Effects Hotspot",
+      "reviewTags": [],
       "mvpSections": [
         "Native Mod Note Template",
         "Private User Notice Template",
@@ -70,6 +237,7 @@
       "kind": "document",
       "documentKind": "module",
       "title": "Client Dashboard Module Group",
+      "reviewTags": [],
       "mvpSections": [
         "Frontend And Routes",
         "History View",
@@ -82,6 +250,7 @@
       "kind": "document",
       "documentKind": "module",
       "title": "Core Config Module Group",
+      "reviewTags": [],
       "mvpSections": [
         "Configuration And Settings",
         "Native Mod Note Template",
@@ -97,6 +266,11 @@
       "kind": "document",
       "documentKind": "module",
       "title": "Core Ledger Module Group",
+      "reviewTags": [
+        "idempotency",
+        "privacy-retention",
+        "scheduler-bounds"
+      ],
       "mvpSections": [
         "Idempotency And Duplicates",
         "Identity Keys",
@@ -111,6 +285,7 @@
       "kind": "document",
       "documentKind": "module",
       "title": "Core Side Effects Module Group",
+      "reviewTags": [],
       "mvpSections": [
         "Native Mod Note Template",
         "Private User Notice Template",
@@ -124,6 +299,10 @@
       "kind": "document",
       "documentKind": "module",
       "title": "Routes Module Group",
+      "reviewTags": [
+        "auth",
+        "devvit-manifest"
+      ],
       "mvpSections": [
         "Menu Actions",
         "Permissions",
@@ -135,6 +314,10 @@
       "kind": "document",
       "documentKind": "workflow",
       "title": "Cleanup And Retention Workflow",
+      "reviewTags": [
+        "privacy-retention",
+        "scheduler-bounds"
+      ],
       "mvpSections": [
         "Acceptance Criteria",
         "Entry Model",
@@ -148,6 +331,7 @@
       "kind": "document",
       "documentKind": "workflow",
       "title": "Dashboard Workflow",
+      "reviewTags": [],
       "mvpSections": [
         "Frontend And Routes",
         "History View",
@@ -164,6 +348,10 @@
       "kind": "document",
       "documentKind": "workflow",
       "title": "Enforcement Workflow",
+      "reviewTags": [
+        "auth",
+        "idempotency"
+      ],
       "mvpSections": [
         "Actions",
         "Enforcement Form",
@@ -180,6 +368,10 @@
       "kind": "document",
       "documentKind": "workflow",
       "title": "Settings Workflow",
+      "reviewTags": [
+        "auth",
+        "settings-audit"
+      ],
       "mvpSections": [
         "Configuration And Settings",
         "Native Mod Note Template",
@@ -220,7 +412,8 @@
       ],
       "platformFacts": [
         "platform-fact:devvit-view-modes"
-      ]
+      ],
+      "reviewTags": []
     },
     {
       "id": "invariant:dashboard-inline-does-not-consume-bootstrap",
@@ -250,7 +443,8 @@
       ],
       "platformFacts": [
         "platform-fact:devvit-view-modes"
-      ]
+      ],
+      "reviewTags": []
     },
     {
       "id": "invariant:dashboard-render-current-mode-only",
@@ -276,6 +470,43 @@
       ],
       "platformFacts": [
         "platform-fact:devvit-view-modes"
+      ],
+      "reviewTags": []
+    },
+    {
+      "id": "invariant:deleted-target-scrub-is-bounded",
+      "kind": "invariant",
+      "title": "Deleted Target Scrub Is Bounded",
+      "description": "Post/comment delete triggers must scrub stored target permalinks in bounded pages and save continuation state for the scheduled targetDeleteScrub task instead of scanning all indexed entries in one trigger.",
+      "sourceFiles": [
+        "devvit.json",
+        "src/core/ledgerRepository.ts",
+        "src/routes/scheduler.ts",
+        "src/routes/triggers.ts"
+      ],
+      "testFiles": [
+        "src/core/ledgerRepository.test.ts",
+        "src/routes/scheduler.test.ts",
+        "src/routes/triggers.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/hotspots/ledgerRepository.md",
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ],
+      "routeIds": [
+        "route:POST /internal/scheduler/target-delete-scrub",
+        "route:POST /internal/triggers/on-comment-delete",
+        "route:POST /internal/triggers/on-post-delete"
+      ],
+      "platformFacts": [
+        "platform-fact:devvit-endpoint-configuration"
+      ],
+      "reviewTags": [
+        "devvit-manifest",
+        "privacy-retention",
+        "scheduler-bounds"
       ]
     },
     {
@@ -318,6 +549,7 @@
         "route:POST /internal/menu/warn-remove-post",
         "route:POST /internal/scheduler/account-deletion-check",
         "route:POST /internal/scheduler/ledger-cleanup",
+        "route:POST /internal/scheduler/target-delete-scrub",
         "route:POST /internal/settings/validate-days",
         "route:POST /internal/settings/validate-decay-amount",
         "route:POST /internal/settings/validate-points",
@@ -337,6 +569,45 @@
       "platformFacts": [
         "platform-fact:devvit-endpoint-configuration",
         "platform-fact:devvit-menu-client-effects"
+      ],
+      "reviewTags": [
+        "devvit-manifest"
+      ]
+    },
+    {
+      "id": "invariant:enforcement-server-side-authorization",
+      "kind": "invariant",
+      "title": "Enforcement Server-Side Authorization",
+      "description": "Every enforcement action must re-check moderator identity and permissions on the server before reading or mutating protected moderation state; client menu visibility and form payloads are not authorization.",
+      "sourceFiles": [
+        "src/routes/enforcementSubmit.ts",
+        "src/routes/forms.ts",
+        "src/routes/menu.ts",
+        "src/routes/permissions.ts"
+      ],
+      "testFiles": [
+        "src/routes/enforcementSubmit.test.ts",
+        "src/routes/forms.test.ts",
+        "src/routes/menu.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/hotspots/enforcementSubmit.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ],
+      "routeIds": [
+        "route:POST /internal/form/enforcement-submit",
+        "route:POST /internal/menu/warn-comment",
+        "route:POST /internal/menu/warn-nsfw-post",
+        "route:POST /internal/menu/warn-post",
+        "route:POST /internal/menu/warn-remove-comment",
+        "route:POST /internal/menu/warn-remove-post"
+      ],
+      "platformFacts": [
+        "platform-fact:devvit-menu-client-effects"
+      ],
+      "reviewTags": [
+        "auth"
       ]
     },
     {
@@ -365,7 +636,8 @@
       ],
       "platformFacts": [
         "platform-fact:devvit-view-modes"
-      ]
+      ],
+      "reviewTags": []
     },
     {
       "id": "invariant:limited-dashboard-self-only",
@@ -392,6 +664,100 @@
       ],
       "platformFacts": [
         "platform-fact:devvit-view-modes"
+      ],
+      "reviewTags": []
+    },
+    {
+      "id": "invariant:nonce-replay-before-mutable-target-checks",
+      "kind": "invariant",
+      "title": "Nonce Replay Before Mutable Target Checks",
+      "description": "After moderator authorization, consumed nonce and retry-key replays must return the durable existing entry before rule-disable, override-template, removal, or NSFW preconditions can reject the retry.",
+      "sourceFiles": [
+        "src/core/idempotency.ts",
+        "src/core/ledgerRepository.ts",
+        "src/routes/enforcementSubmit.ts"
+      ],
+      "testFiles": [
+        "src/core/idempotency.test.ts",
+        "src/core/ledgerRepository.test.ts",
+        "src/routes/enforcementSubmit.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/hotspots/enforcementSubmit.md",
+        "docs/knowledge-graph/hotspots/ledgerRepository.md",
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ],
+      "routeIds": [
+        "route:POST /internal/form/enforcement-submit"
+      ],
+      "platformFacts": [],
+      "reviewTags": [
+        "auth",
+        "idempotency"
+      ]
+    },
+    {
+      "id": "invariant:settings-audit-readable-by-moderators",
+      "kind": "invariant",
+      "title": "Settings Audit Readable By Moderators",
+      "description": "Settings audit history is read-only moderator dashboard context: ordinary moderators may read it, while rule imports, saves, cleanup, recalculation, and reversal remain gated on manage permissions.",
+      "sourceFiles": [
+        "src/core/configRepository.ts",
+        "src/routes/api.ts",
+        "src/routes/permissions.ts"
+      ],
+      "testFiles": [
+        "src/core/configRepository.test.ts",
+        "src/routes/api.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/modules/core-config.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ],
+      "routeIds": [
+        "route:GET /api/settings/audit"
+      ],
+      "platformFacts": [],
+      "reviewTags": [
+        "auth",
+        "settings-audit"
+      ]
+    },
+    {
+      "id": "invariant:transient-identity-cleanup-bounded",
+      "kind": "invariant",
+      "title": "Transient Identity Cleanup Bounded",
+      "description": "Form nonce and dashboard view-context author snapshots must be indexed by tracked t2 user ID, cleaned in bounded account-deletion runs, and retried promptly when a run exhausts its per-user budget.",
+      "sourceFiles": [
+        "src/core/accountDeletion.ts",
+        "src/core/dashboard.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/userIdentityIndexes.ts",
+        "src/routes/scheduler.ts"
+      ],
+      "testFiles": [
+        "src/core/accountDeletion.test.ts",
+        "src/core/dashboard.test.ts",
+        "src/core/ledgerRepository.test.ts",
+        "src/routes/scheduler.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/hotspots/ledgerRepository.md",
+        "docs/knowledge-graph/modules/core-ledger.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ],
+      "routeIds": [
+        "route:POST /internal/scheduler/account-deletion-check"
+      ],
+      "platformFacts": [
+        "platform-fact:devvit-endpoint-configuration"
+      ],
+      "reviewTags": [
+        "privacy-retention",
+        "scheduler-bounds"
       ]
     },
     {
@@ -487,6 +853,10 @@
         "platform-fact:devvit-custom-post-entrypoints",
         "platform-fact:devvit-menu-client-effects",
         "platform-fact:devvit-view-modes"
+      ],
+      "reviewTags": [
+        "auth",
+        "launch-surface"
       ]
     },
     {
@@ -523,6 +893,9 @@
       "platformFacts": [
         "platform-fact:devvit-endpoint-configuration",
         "platform-fact:devvit-menu-client-effects"
+      ],
+      "reviewTags": [
+        "devvit-manifest"
       ]
     },
     {
@@ -558,20 +931,6 @@
       "kind": "route",
       "method": "GET",
       "path": "/api/inline-profile-preview",
-      "sourceFile": "src/routes/api.ts",
-      "router": "api",
-      "curatedDocs": [
-        "docs/knowledge-graph/hotspots/api-routes.md",
-        "docs/knowledge-graph/modules/routes.md",
-        "docs/knowledge-graph/workflows/dashboard.md",
-        "docs/knowledge-graph/workflows/settings.md"
-      ]
-    },
-    {
-      "id": "route:GET /api/profile",
-      "kind": "route",
-      "method": "GET",
-      "path": "/api/profile",
       "sourceFile": "src/routes/api.ts",
       "router": "api",
       "curatedDocs": [
@@ -826,6 +1185,18 @@
       "kind": "route",
       "method": "POST",
       "path": "/internal/scheduler/ledger-cleanup",
+      "sourceFile": "src/routes/scheduler.ts",
+      "router": "schedulerRoutes",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/scheduler/target-delete-scrub",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/scheduler/target-delete-scrub",
       "sourceFile": "src/routes/scheduler.ts",
       "router": "schedulerRoutes",
       "curatedDocs": [
@@ -1601,9 +1972,14 @@
       "exports": [
         "CleanupLedgerRequest",
         "CleanupLedgerResult",
+        "CleanupTrackedUserTransientIdentityResult",
+        "ContinueTargetDeletedScrubRequest",
+        "ContinueTargetDeletedScrubResult",
         "CreateLedgerEntryRequest",
         "CreateLedgerEntryResult",
         "DeleteUserLedgerResult",
+        "ExistingLedgerSubmissionRequest",
+        "ExistingLedgerSubmissionResult",
         "FormNonceRecord",
         "LedgerRepository",
         "MarkTargetDeletedRequest",
@@ -1820,6 +2196,7 @@
       "layer": "core",
       "exports": [
         "formNonceKey",
+        "trackedUsersKey",
         "userFormNonceIndexKey",
         "userViewContextIndexKey",
         "viewContextKey"
@@ -2244,12 +2621,22 @@
       "kind": "constrainedBy"
     },
     {
+      "from": "invariant:deleted-target-scrub-is-bounded",
+      "to": "platform-fact:devvit-endpoint-configuration",
+      "kind": "constrainedBy"
+    },
+    {
       "from": "invariant:devvit-manifest-routes-match-generated-routes",
       "to": "platform-fact:devvit-endpoint-configuration",
       "kind": "constrainedBy"
     },
     {
       "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "platform-fact:devvit-menu-client-effects",
+      "kind": "constrainedBy"
+    },
+    {
+      "from": "invariant:enforcement-server-side-authorization",
       "to": "platform-fact:devvit-menu-client-effects",
       "kind": "constrainedBy"
     },
@@ -2264,6 +2651,11 @@
       "kind": "constrainedBy"
     },
     {
+      "from": "invariant:transient-identity-cleanup-bounded",
+      "to": "platform-fact:devvit-endpoint-configuration",
+      "kind": "constrainedBy"
+    },
+    {
       "from": "invariant:dashboard-expanded-bootstrap-once",
       "to": "src/client/dashboard.test.ts",
       "kind": "coveredBy"
@@ -2311,6 +2703,21 @@
     {
       "from": "invariant:dashboard-render-current-mode-only",
       "to": "src/client/dashboardLaunch.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:deleted-target-scrub-is-bounded",
+      "to": "src/core/ledgerRepository.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:deleted-target-scrub-is-bounded",
+      "to": "src/routes/scheduler.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:deleted-target-scrub-is-bounded",
+      "to": "src/routes/triggers.test.ts",
       "kind": "coveredBy"
     },
     {
@@ -2344,6 +2751,21 @@
       "kind": "coveredBy"
     },
     {
+      "from": "invariant:enforcement-server-side-authorization",
+      "to": "src/routes/enforcementSubmit.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:enforcement-server-side-authorization",
+      "to": "src/routes/forms.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:enforcement-server-side-authorization",
+      "to": "src/routes/menu.test.ts",
+      "kind": "coveredBy"
+    },
+    {
       "from": "invariant:inline-profile-preview-bounded",
       "to": "src/client/dashboard.test.ts",
       "kind": "coveredBy"
@@ -2374,6 +2796,51 @@
       "kind": "coveredBy"
     },
     {
+      "from": "invariant:nonce-replay-before-mutable-target-checks",
+      "to": "src/core/idempotency.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:nonce-replay-before-mutable-target-checks",
+      "to": "src/core/ledgerRepository.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:nonce-replay-before-mutable-target-checks",
+      "to": "src/routes/enforcementSubmit.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:settings-audit-readable-by-moderators",
+      "to": "src/core/configRepository.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:settings-audit-readable-by-moderators",
+      "to": "src/routes/api.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:transient-identity-cleanup-bounded",
+      "to": "src/core/accountDeletion.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:transient-identity-cleanup-bounded",
+      "to": "src/core/dashboard.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:transient-identity-cleanup-bounded",
+      "to": "src/core/ledgerRepository.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:transient-identity-cleanup-bounded",
+      "to": "src/routes/scheduler.test.ts",
+      "kind": "coveredBy"
+    },
+    {
       "from": "src/routes/api.ts",
       "to": "route:GET /api/bootstrap",
       "kind": "definesRoute"
@@ -2386,11 +2853,6 @@
     {
       "from": "src/routes/api.ts",
       "to": "route:GET /api/inline-profile-preview",
-      "kind": "definesRoute"
-    },
-    {
-      "from": "src/routes/api.ts",
-      "to": "route:GET /api/profile",
       "kind": "definesRoute"
     },
     {
@@ -2486,6 +2948,11 @@
     {
       "from": "src/routes/scheduler.ts",
       "to": "route:POST /internal/scheduler/ledger-cleanup",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/scheduler.ts",
+      "to": "route:POST /internal/scheduler/target-delete-scrub",
       "kind": "definesRoute"
     },
     {
@@ -2604,6 +3071,26 @@
       "kind": "documentedBy"
     },
     {
+      "from": "invariant:deleted-target-scrub-is-bounded",
+      "to": "docs/knowledge-graph/hotspots/ledgerRepository.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:deleted-target-scrub-is-bounded",
+      "to": "docs/knowledge-graph/modules/core-ledger.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:deleted-target-scrub-is-bounded",
+      "to": "docs/knowledge-graph/modules/routes.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:deleted-target-scrub-is-bounded",
+      "to": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "kind": "documentedBy"
+    },
+    {
       "from": "invariant:devvit-manifest-routes-match-generated-routes",
       "to": "docs/knowledge-graph/modules/routes.md",
       "kind": "documentedBy"
@@ -2619,6 +3106,21 @@
       "kind": "documentedBy"
     },
     {
+      "from": "invariant:enforcement-server-side-authorization",
+      "to": "docs/knowledge-graph/hotspots/enforcementSubmit.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:enforcement-server-side-authorization",
+      "to": "docs/knowledge-graph/modules/routes.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:enforcement-server-side-authorization",
+      "to": "docs/knowledge-graph/workflows/enforcement.md",
+      "kind": "documentedBy"
+    },
+    {
       "from": "invariant:inline-profile-preview-bounded",
       "to": "docs/knowledge-graph/hotspots/api-routes.md",
       "kind": "documentedBy"
@@ -2636,6 +3138,61 @@
     {
       "from": "invariant:limited-dashboard-self-only",
       "to": "docs/knowledge-graph/workflows/dashboard.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:nonce-replay-before-mutable-target-checks",
+      "to": "docs/knowledge-graph/hotspots/enforcementSubmit.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:nonce-replay-before-mutable-target-checks",
+      "to": "docs/knowledge-graph/hotspots/ledgerRepository.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:nonce-replay-before-mutable-target-checks",
+      "to": "docs/knowledge-graph/modules/core-ledger.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:nonce-replay-before-mutable-target-checks",
+      "to": "docs/knowledge-graph/workflows/enforcement.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:settings-audit-readable-by-moderators",
+      "to": "docs/knowledge-graph/hotspots/api-routes.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:settings-audit-readable-by-moderators",
+      "to": "docs/knowledge-graph/modules/core-config.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:settings-audit-readable-by-moderators",
+      "to": "docs/knowledge-graph/modules/routes.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:settings-audit-readable-by-moderators",
+      "to": "docs/knowledge-graph/workflows/settings.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:transient-identity-cleanup-bounded",
+      "to": "docs/knowledge-graph/hotspots/ledgerRepository.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:transient-identity-cleanup-bounded",
+      "to": "docs/knowledge-graph/modules/core-ledger.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:transient-identity-cleanup-bounded",
+      "to": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
       "kind": "documentedBy"
     },
     {
@@ -3354,6 +3911,26 @@
       "kind": "guards"
     },
     {
+      "from": "invariant:deleted-target-scrub-is-bounded",
+      "to": "devvit.json",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:deleted-target-scrub-is-bounded",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:deleted-target-scrub-is-bounded",
+      "to": "src/routes/scheduler.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:deleted-target-scrub-is-bounded",
+      "to": "src/routes/triggers.ts",
+      "kind": "guards"
+    },
+    {
       "from": "invariant:devvit-manifest-routes-match-generated-routes",
       "to": "devvit.json",
       "kind": "guards"
@@ -3391,6 +3968,26 @@
     {
       "from": "invariant:devvit-manifest-routes-match-generated-routes",
       "to": "src/routes/triggers.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:enforcement-server-side-authorization",
+      "to": "src/routes/enforcementSubmit.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:enforcement-server-side-authorization",
+      "to": "src/routes/forms.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:enforcement-server-side-authorization",
+      "to": "src/routes/menu.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:enforcement-server-side-authorization",
+      "to": "src/routes/permissions.ts",
       "kind": "guards"
     },
     {
@@ -3434,6 +4031,61 @@
       "kind": "guards"
     },
     {
+      "from": "invariant:nonce-replay-before-mutable-target-checks",
+      "to": "src/core/idempotency.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:nonce-replay-before-mutable-target-checks",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:nonce-replay-before-mutable-target-checks",
+      "to": "src/routes/enforcementSubmit.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:settings-audit-readable-by-moderators",
+      "to": "src/core/configRepository.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:settings-audit-readable-by-moderators",
+      "to": "src/routes/api.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:settings-audit-readable-by-moderators",
+      "to": "src/routes/permissions.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:transient-identity-cleanup-bounded",
+      "to": "src/core/accountDeletion.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:transient-identity-cleanup-bounded",
+      "to": "src/core/dashboard.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:transient-identity-cleanup-bounded",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:transient-identity-cleanup-bounded",
+      "to": "src/core/userIdentityIndexes.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:transient-identity-cleanup-bounded",
+      "to": "src/routes/scheduler.ts",
+      "kind": "guards"
+    },
+    {
       "from": "invariant:dashboard-expanded-bootstrap-once",
       "to": "route:GET /api/bootstrap",
       "kind": "guardsRoute"
@@ -3456,6 +4108,21 @@
     {
       "from": "invariant:dashboard-render-current-mode-only",
       "to": "route:GET /api/inline-profile-preview",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:deleted-target-scrub-is-bounded",
+      "to": "route:POST /internal/scheduler/target-delete-scrub",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:deleted-target-scrub-is-bounded",
+      "to": "route:POST /internal/triggers/on-comment-delete",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:deleted-target-scrub-is-bounded",
+      "to": "route:POST /internal/triggers/on-post-delete",
       "kind": "guardsRoute"
     },
     {
@@ -3511,6 +4178,11 @@
     {
       "from": "invariant:devvit-manifest-routes-match-generated-routes",
       "to": "route:POST /internal/scheduler/ledger-cleanup",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/scheduler/target-delete-scrub",
       "kind": "guardsRoute"
     },
     {
@@ -3589,6 +4261,36 @@
       "kind": "guardsRoute"
     },
     {
+      "from": "invariant:enforcement-server-side-authorization",
+      "to": "route:POST /internal/form/enforcement-submit",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:enforcement-server-side-authorization",
+      "to": "route:POST /internal/menu/warn-comment",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:enforcement-server-side-authorization",
+      "to": "route:POST /internal/menu/warn-nsfw-post",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:enforcement-server-side-authorization",
+      "to": "route:POST /internal/menu/warn-post",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:enforcement-server-side-authorization",
+      "to": "route:POST /internal/menu/warn-remove-comment",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:enforcement-server-side-authorization",
+      "to": "route:POST /internal/menu/warn-remove-post",
+      "kind": "guardsRoute"
+    },
+    {
       "from": "invariant:inline-profile-preview-bounded",
       "to": "route:GET /api/inline-profile-preview",
       "kind": "guardsRoute"
@@ -3601,6 +4303,21 @@
     {
       "from": "invariant:limited-dashboard-self-only",
       "to": "route:GET /api/self-summary",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:nonce-replay-before-mutable-target-checks",
+      "to": "route:POST /internal/form/enforcement-submit",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:settings-audit-readable-by-moderators",
+      "to": "route:GET /api/settings/audit",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:transient-identity-cleanup-bounded",
+      "to": "route:POST /internal/scheduler/account-deletion-check",
       "kind": "guardsRoute"
     },
     {
@@ -4502,6 +5219,331 @@
       "from": "review-pack:manifest-route-drift",
       "to": "src/routes/triggers.test.ts",
       "kind": "includesTest"
+    },
+    {
+      "from": "critical-path:account-deletion-transient-cleanup",
+      "to": "docs/knowledge-graph/hotspots/ledgerRepository.md",
+      "kind": "pathIncludesDocument"
+    },
+    {
+      "from": "critical-path:account-deletion-transient-cleanup",
+      "to": "docs/knowledge-graph/modules/core-ledger.md",
+      "kind": "pathIncludesDocument"
+    },
+    {
+      "from": "critical-path:account-deletion-transient-cleanup",
+      "to": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "kind": "pathIncludesDocument"
+    },
+    {
+      "from": "critical-path:deleted-target-scrub-continuation",
+      "to": "docs/knowledge-graph/hotspots/ledgerRepository.md",
+      "kind": "pathIncludesDocument"
+    },
+    {
+      "from": "critical-path:deleted-target-scrub-continuation",
+      "to": "docs/knowledge-graph/modules/core-ledger.md",
+      "kind": "pathIncludesDocument"
+    },
+    {
+      "from": "critical-path:deleted-target-scrub-continuation",
+      "to": "docs/knowledge-graph/modules/routes.md",
+      "kind": "pathIncludesDocument"
+    },
+    {
+      "from": "critical-path:deleted-target-scrub-continuation",
+      "to": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "kind": "pathIncludesDocument"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "docs/knowledge-graph/hotspots/enforcementSubmit.md",
+      "kind": "pathIncludesDocument"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "docs/knowledge-graph/hotspots/ledgerRepository.md",
+      "kind": "pathIncludesDocument"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "docs/knowledge-graph/modules/core-ledger.md",
+      "kind": "pathIncludesDocument"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "docs/knowledge-graph/modules/routes.md",
+      "kind": "pathIncludesDocument"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "docs/knowledge-graph/workflows/enforcement.md",
+      "kind": "pathIncludesDocument"
+    },
+    {
+      "from": "critical-path:settings-audit-permission-gate",
+      "to": "docs/knowledge-graph/hotspots/api-routes.md",
+      "kind": "pathIncludesDocument"
+    },
+    {
+      "from": "critical-path:settings-audit-permission-gate",
+      "to": "docs/knowledge-graph/modules/core-config.md",
+      "kind": "pathIncludesDocument"
+    },
+    {
+      "from": "critical-path:settings-audit-permission-gate",
+      "to": "docs/knowledge-graph/modules/routes.md",
+      "kind": "pathIncludesDocument"
+    },
+    {
+      "from": "critical-path:settings-audit-permission-gate",
+      "to": "docs/knowledge-graph/workflows/settings.md",
+      "kind": "pathIncludesDocument"
+    },
+    {
+      "from": "critical-path:account-deletion-transient-cleanup",
+      "to": "invariant:transient-identity-cleanup-bounded",
+      "kind": "pathIncludesInvariant"
+    },
+    {
+      "from": "critical-path:deleted-target-scrub-continuation",
+      "to": "invariant:deleted-target-scrub-is-bounded",
+      "kind": "pathIncludesInvariant"
+    },
+    {
+      "from": "critical-path:deleted-target-scrub-continuation",
+      "to": "invariant:devvit-manifest-routes-match-generated-routes",
+      "kind": "pathIncludesInvariant"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "invariant:enforcement-server-side-authorization",
+      "kind": "pathIncludesInvariant"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "invariant:nonce-replay-before-mutable-target-checks",
+      "kind": "pathIncludesInvariant"
+    },
+    {
+      "from": "critical-path:settings-audit-permission-gate",
+      "to": "invariant:settings-audit-readable-by-moderators",
+      "kind": "pathIncludesInvariant"
+    },
+    {
+      "from": "critical-path:account-deletion-transient-cleanup",
+      "to": "platform-fact:devvit-endpoint-configuration",
+      "kind": "pathIncludesPlatformFact"
+    },
+    {
+      "from": "critical-path:deleted-target-scrub-continuation",
+      "to": "platform-fact:devvit-endpoint-configuration",
+      "kind": "pathIncludesPlatformFact"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "platform-fact:devvit-menu-client-effects",
+      "kind": "pathIncludesPlatformFact"
+    },
+    {
+      "from": "critical-path:account-deletion-transient-cleanup",
+      "to": "route:POST /internal/scheduler/account-deletion-check",
+      "kind": "pathIncludesRoute"
+    },
+    {
+      "from": "critical-path:deleted-target-scrub-continuation",
+      "to": "route:POST /internal/scheduler/target-delete-scrub",
+      "kind": "pathIncludesRoute"
+    },
+    {
+      "from": "critical-path:deleted-target-scrub-continuation",
+      "to": "route:POST /internal/triggers/on-comment-delete",
+      "kind": "pathIncludesRoute"
+    },
+    {
+      "from": "critical-path:deleted-target-scrub-continuation",
+      "to": "route:POST /internal/triggers/on-post-delete",
+      "kind": "pathIncludesRoute"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "route:POST /internal/form/enforcement-submit",
+      "kind": "pathIncludesRoute"
+    },
+    {
+      "from": "critical-path:settings-audit-permission-gate",
+      "to": "route:GET /api/settings/audit",
+      "kind": "pathIncludesRoute"
+    },
+    {
+      "from": "critical-path:account-deletion-transient-cleanup",
+      "to": "src/core/accountDeletion.ts",
+      "kind": "pathIncludesSource"
+    },
+    {
+      "from": "critical-path:account-deletion-transient-cleanup",
+      "to": "src/core/dashboard.ts",
+      "kind": "pathIncludesSource"
+    },
+    {
+      "from": "critical-path:account-deletion-transient-cleanup",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "pathIncludesSource"
+    },
+    {
+      "from": "critical-path:account-deletion-transient-cleanup",
+      "to": "src/core/userIdentityIndexes.ts",
+      "kind": "pathIncludesSource"
+    },
+    {
+      "from": "critical-path:account-deletion-transient-cleanup",
+      "to": "src/routes/scheduler.ts",
+      "kind": "pathIncludesSource"
+    },
+    {
+      "from": "critical-path:deleted-target-scrub-continuation",
+      "to": "devvit.json",
+      "kind": "pathIncludesSource"
+    },
+    {
+      "from": "critical-path:deleted-target-scrub-continuation",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "pathIncludesSource"
+    },
+    {
+      "from": "critical-path:deleted-target-scrub-continuation",
+      "to": "src/routes/scheduler.ts",
+      "kind": "pathIncludesSource"
+    },
+    {
+      "from": "critical-path:deleted-target-scrub-continuation",
+      "to": "src/routes/triggers.ts",
+      "kind": "pathIncludesSource"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "src/core/idempotency.ts",
+      "kind": "pathIncludesSource"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "pathIncludesSource"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "src/core/sideEffects.ts",
+      "kind": "pathIncludesSource"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "src/routes/enforcementSubmit.ts",
+      "kind": "pathIncludesSource"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "src/routes/forms.ts",
+      "kind": "pathIncludesSource"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "src/routes/menu.ts",
+      "kind": "pathIncludesSource"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "src/routes/permissions.ts",
+      "kind": "pathIncludesSource"
+    },
+    {
+      "from": "critical-path:settings-audit-permission-gate",
+      "to": "src/core/configRepository.ts",
+      "kind": "pathIncludesSource"
+    },
+    {
+      "from": "critical-path:settings-audit-permission-gate",
+      "to": "src/routes/api.ts",
+      "kind": "pathIncludesSource"
+    },
+    {
+      "from": "critical-path:settings-audit-permission-gate",
+      "to": "src/routes/permissions.ts",
+      "kind": "pathIncludesSource"
+    },
+    {
+      "from": "critical-path:account-deletion-transient-cleanup",
+      "to": "src/core/accountDeletion.test.ts",
+      "kind": "pathIncludesTest"
+    },
+    {
+      "from": "critical-path:account-deletion-transient-cleanup",
+      "to": "src/core/dashboard.test.ts",
+      "kind": "pathIncludesTest"
+    },
+    {
+      "from": "critical-path:account-deletion-transient-cleanup",
+      "to": "src/core/ledgerRepository.test.ts",
+      "kind": "pathIncludesTest"
+    },
+    {
+      "from": "critical-path:account-deletion-transient-cleanup",
+      "to": "src/routes/scheduler.test.ts",
+      "kind": "pathIncludesTest"
+    },
+    {
+      "from": "critical-path:deleted-target-scrub-continuation",
+      "to": "src/core/ledgerRepository.test.ts",
+      "kind": "pathIncludesTest"
+    },
+    {
+      "from": "critical-path:deleted-target-scrub-continuation",
+      "to": "src/routes/scheduler.test.ts",
+      "kind": "pathIncludesTest"
+    },
+    {
+      "from": "critical-path:deleted-target-scrub-continuation",
+      "to": "src/routes/triggers.test.ts",
+      "kind": "pathIncludesTest"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "src/core/idempotency.test.ts",
+      "kind": "pathIncludesTest"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "src/core/ledgerRepository.test.ts",
+      "kind": "pathIncludesTest"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "src/core/sideEffects.test.ts",
+      "kind": "pathIncludesTest"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "src/routes/enforcementSubmit.test.ts",
+      "kind": "pathIncludesTest"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "src/routes/forms.test.ts",
+      "kind": "pathIncludesTest"
+    },
+    {
+      "from": "critical-path:enforcement-idempotent-submit",
+      "to": "src/routes/menu.test.ts",
+      "kind": "pathIncludesTest"
+    },
+    {
+      "from": "critical-path:settings-audit-permission-gate",
+      "to": "src/core/configRepository.test.ts",
+      "kind": "pathIncludesTest"
+    },
+    {
+      "from": "critical-path:settings-audit-permission-gate",
+      "to": "src/routes/api.test.ts",
+      "kind": "pathIncludesTest"
     },
     {
       "from": "src/client/compactEntryRows.ts",

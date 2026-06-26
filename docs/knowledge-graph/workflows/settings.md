@@ -27,6 +27,10 @@ Settings combine TypeScript defaults, native Devvit settings, Redis-owned config
 - Settings saves must validate before persistence and record audit context.
 - `README.md` is public moderator-manual content; internal rationale belongs in `PROJECT_README.md` or internal docs.
 
+## Stale Wording Checks
+
+Before finishing settings or template changes, grep docs and generated config for old source-of-truth wording: manual `devvit.json` edits, public/private placeholder mixups, `README.md` developer-only rationale, and version text that does not match `package.json`.
+
 ## Targeted Checks
 
 ```sh

@@ -6,7 +6,7 @@ import {
 } from './dashboard';
 import { FakeRedisStore } from './redisStore';
 
-const nowMs = Date.UTC(2026, 0, 1);
+const nowMs = Date.now();
 
 const createRepo = () => {
   const store = new FakeRedisStore();
@@ -102,5 +102,31 @@ describe('DashboardRepository', () => {
     await expect(
       repo.consumeDashboardBootstrap('testsub', 'mod-a')
     ).resolves.toBeNull();
+  });
+
+  it('peeks at per-moderator bootstrap records without consuming them', async () => {
+    const { repo } = createRepo();
+    const times = createExpiringTimes(nowMs);
+
+    await repo.saveDashboardBootstrap({
+      view: 'profile',
+      subredditName: 'testsub',
+      moderatorUsername: 'Mod-A',
+      contextToken: 'view-token',
+      ...times,
+    });
+
+    await expect(
+      repo.getDashboardBootstrap('TestSub', 'mod-a')
+    ).resolves.toMatchObject({
+      view: 'profile',
+      contextToken: 'view-token',
+    });
+    await expect(
+      repo.consumeDashboardBootstrap('testsub', 'mod-a')
+    ).resolves.toMatchObject({
+      view: 'profile',
+      contextToken: 'view-token',
+    });
   });
 });

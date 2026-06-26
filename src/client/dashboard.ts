@@ -14,10 +14,14 @@ import {
 } from '../core/domain';
 import {
   DASHBOARD_ENTRYPOINT,
+  EXPANDED_DASHBOARD_VIEWS,
+  formatInlineRemovalSummary,
+  getDashboardModeContent,
   resolveDashboardLaunch,
-  shouldLoadDashboardData,
+  shouldRefreshDashboardBootstrap,
   shouldKeepDashboardContext,
   type BootstrapResponse,
+  type DashboardWebViewMode,
   type DashboardView,
 } from './dashboardLaunch';
 
@@ -58,20 +62,39 @@ type HistoryResponse = {
   nextOffset: number | null;
 };
 
-type ProfileResponse = {
-  context: ViewContext;
-  canAddReversalModNote: boolean;
-  summary: {
-    activeTotal: number;
-    originalPoints: number;
-    decayedPoints: number;
-    reversedEntries: number;
-    removalsByRule: Record<string, number>;
-    hasMoreEntries: boolean;
-    summaryEntryLimit: number;
-  };
-  recentEntries: LedgerEntryRow[];
+type ProfileSummary = {
+  activeTotal: number;
+  originalPoints: number;
+  decayedPoints: number;
+  reversedEntries: number;
+  removalsByRule: Record<string, number>;
+  hasMoreEntries: boolean;
+  summaryEntryLimit: number;
 };
+
+type InlineProfilePreviewResponse =
+  | {
+      status: 'available';
+      subredditName: string;
+      currentUsername?: string;
+      moderatorUsername?: string;
+      contextToken: string;
+      context: ViewContext;
+      summary: ProfileSummary;
+    }
+  | {
+      status: 'history';
+      subredditName: string;
+      currentUsername?: string;
+      moderatorUsername?: string;
+      contextToken: string;
+    }
+  | {
+      status: 'unavailable';
+      subredditName: string;
+      currentUsername?: string | null;
+      moderatorUsername?: string;
+    };
 
 type ReverseResponse = {
   status: 'reversed' | 'already_reversed';
@@ -168,7 +191,9 @@ let historyActiveTotal = 0;
 let historyCanAddReversalModNote = false;
 let historyNotice: string | null = null;
 let settingsNotice: string | null = null;
-let dashboardStarted = false;
+let currentWebViewMode: DashboardWebViewMode | null = null;
+let renderGeneration = 0;
+let bootstrapLoad: Promise<void> | null = null;
 
 const create = <K extends keyof HTMLElementTagNameMap>(
   tagName: K,
@@ -248,11 +273,7 @@ const renderFrame = () => {
   topbar.append(brand);
   if (bootstrap.view !== 'limited') {
     const tabs = create('div', 'tabs');
-    for (const view of [
-      'history',
-      'profile',
-      'settings',
-    ] satisfies Exclude<DashboardView, 'limited'>[]) {
+    for (const view of EXPANDED_DASHBOARD_VIEWS) {
       const button = create('button', 'tab', dashboardViewLabel(view));
       button.type = 'button';
       button.setAttribute('role', 'tab');
@@ -777,56 +798,6 @@ const reverseEntry = async (entry: LedgerEntryRow) => {
   } catch (error) {
     showError(error instanceof Error ? error.message : 'Reversal failed.');
   }
-};
-
-const renderProfile = (response: ProfileResponse) => {
-  if (!main) {
-    return;
-  }
-
-  const removals = Object.entries(response.summary.removalsByRule)
-    .map(([rule, count]) => `${rule}: ${count}`)
-    .join(', ');
-  const pointsLabel = response.summary.hasMoreEntries
-    ? `Points in latest ${response.summary.summaryEntryLimit}`
-    : 'Lifetime points';
-  const reversedLabel = response.summary.hasMoreEntries
-    ? `Reversed in latest ${response.summary.summaryEntryLimit}`
-    : 'Reversed entries';
-  const decayedLabel = response.summary.hasMoreEntries
-    ? `Decayed in latest ${response.summary.summaryEntryLimit}`
-    : 'Decayed points';
-
-  main.replaceChildren(
-    renderToolbar('Profile', formatTargetUser(response.context)),
-    renderMetrics([
-      ['Active total', response.summary.activeTotal],
-      [pointsLabel, response.summary.originalPoints],
-      [decayedLabel, response.summary.decayedPoints],
-      [reversedLabel, response.summary.reversedEntries],
-    ]),
-    create(
-      'p',
-      'subtitle',
-      response.summary.hasMoreEntries
-        ? removals || 'No removals in the latest entries.'
-        : removals || 'No removals recorded.'
-    ),
-    response.recentEntries.length > 0
-      ? renderEntryTable(response.recentEntries)
-      : create('div', 'empty', 'No ledger entries.')
-  );
-};
-
-const loadProfile = async () => {
-  const params = new URLSearchParams();
-  if (!appendContextTokenParam(params)) {
-    renderContextRequired('profile');
-    return;
-  }
-
-  const response = await fetchJson<ProfileResponse>(`/api/profile?${params}`);
-  renderProfile(response);
 };
 
 const renderRulesTable = (config: StrikeLedgerConfig): HTMLElement => {
@@ -1561,12 +1532,7 @@ const renderSettings = (response: SettingsResponse) => {
     historyButton.addEventListener('click', () => {
       void openUserLookupView('history', recalcInput.value);
     });
-    const profileButton = create('button', 'secondary-button', 'Profile');
-    profileButton.type = 'button';
-    profileButton.addEventListener('click', () => {
-      void openUserLookupView('profile', recalcInput.value);
-    });
-    recalcActions.append(recalcButton, historyButton, profileButton);
+    recalcActions.append(recalcButton, historyButton);
     recalcForm.append(recalcLabel, recalcActions);
     recalcForm.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -1610,7 +1576,7 @@ const getLookupPayloadField = (value: string): 'userKey' | 'username' =>
   value.startsWith('id:') ? 'userKey' : 'username';
 
 const openUserLookupView = async (
-  view: Extract<DashboardView, 'history' | 'profile'>,
+  view: Extract<DashboardView, 'history'>,
   rawValue: string
 ) => {
   const value = rawValue.trim();
@@ -1783,8 +1749,6 @@ const loadActiveView = async () => {
       await loadLimitedAccess();
     } else if (activeView === 'history') {
       await loadHistory(0);
-    } else if (activeView === 'profile') {
-      await loadProfile();
     } else {
       await loadSettings();
     }
@@ -1808,15 +1772,50 @@ const openExpandedDashboard = async (
   }
 };
 
-const renderInlineLauncher = () => {
+const renderInlineLauncher = (
+  buttonLabel = 'Open StrikeLedger',
+  description = 'Open the moderation dashboard in expanded mode.'
+) => {
   const shell = create('div', 'launcher-shell');
   const copy = create('div', 'launcher-copy');
   copy.append(
     create('h1', 'launcher-title', 'StrikeLedger'),
+    create('p', 'launcher-text', description)
+  );
+
+  const actions = create('div', 'launcher-actions');
+  const button = create('button', 'launch-button', buttonLabel);
+  button.type = 'button';
+  const status = create('p', 'launcher-status');
+  button.addEventListener('click', (event) => {
+    void openExpandedDashboard(event, status);
+  });
+  actions.append(button, status);
+
+  shell.append(copy, actions);
+  app.replaceChildren(shell);
+};
+
+const renderInlineProfilePreview = (preview: Extract<
+  InlineProfilePreviewResponse,
+  { status: 'available' }
+>) => {
+  const shell = create('div', 'launcher-shell');
+  const copy = create('div', 'launcher-copy');
+  const pointsLabel = preview.summary.hasMoreEntries
+    ? `Points in latest ${preview.summary.summaryEntryLimit}`
+    : 'Lifetime points';
+  copy.append(
+    create('h1', 'launcher-title', formatTargetUser(preview.context)),
     create(
       'p',
       'launcher-text',
-      'Open the moderation dashboard in expanded mode.'
+      `Active total: ${preview.summary.activeTotal} · ${pointsLabel}: ${preview.summary.originalPoints} · Decayed: ${preview.summary.decayedPoints} · Reversed: ${preview.summary.reversedEntries}`
+    ),
+    create(
+      'p',
+      'launcher-text',
+      formatInlineRemovalSummary(preview.summary.removalsByRule)
     )
   );
 
@@ -1833,6 +1832,42 @@ const renderInlineLauncher = () => {
   app.replaceChildren(shell);
 };
 
+const isCurrentModeRender = (
+  generation: number,
+  mode: DashboardWebViewMode
+): boolean => generation === renderGeneration && currentWebViewMode === mode;
+
+const renderInlineContent = async (generation: number) => {
+  if (!isCurrentModeRender(generation, 'inline')) {
+    return;
+  }
+
+  renderInlineLauncher();
+  try {
+    const preview = await fetchJson<InlineProfilePreviewResponse>(
+      '/api/inline-profile-preview'
+    );
+    if (!isCurrentModeRender(generation, 'inline')) {
+      return;
+    }
+
+    if (preview.status === 'available') {
+      renderInlineProfilePreview(preview);
+      return;
+    }
+
+    if (preview.status === 'history') {
+      renderInlineLauncher(
+        'Open History',
+        'Open the selected user history in expanded mode.'
+      );
+      return;
+    }
+  } catch {
+    // Keep the generic launcher when preview data is unavailable.
+  }
+};
+
 const renderStartupError = (error: unknown) => {
   app.replaceChildren(
     create(
@@ -1843,36 +1878,72 @@ const renderStartupError = (error: unknown) => {
   );
 };
 
-const startDashboard = async () => {
-  if (dashboardStarted) {
+const loadDashboardBootstrap = async () => {
+  if (!bootstrapLoad) {
+    bootstrapLoad = (async () => {
+      bootstrap = await fetchJson<BootstrapResponse>('/api/bootstrap');
+      const launch = resolveDashboardLaunch(
+        bootstrap,
+        new URLSearchParams(window.location.search)
+      );
+      activeView = launch.view;
+      activeContextToken = launch.contextToken ?? null;
+      activeUserLookup = null;
+    })().finally(() => {
+      bootstrapLoad = null;
+    });
+  }
+
+  await bootstrapLoad;
+};
+
+const startDashboard = async (
+  refreshBootstrap = false,
+  generation: number
+) => {
+  if (refreshBootstrap || !bootstrap) {
+    await loadDashboardBootstrap();
+  }
+
+  if (!isCurrentModeRender(generation, 'expanded')) {
     return;
   }
 
-  dashboardStarted = true;
-  bootstrap = await fetchJson<BootstrapResponse>('/api/bootstrap');
-  const launch = resolveDashboardLaunch(
-    bootstrap,
-    new URLSearchParams(window.location.search)
-  );
-  activeView = launch.view;
-  activeContextToken = launch.contextToken ?? null;
   renderFrame();
   await loadActiveView();
 };
 
+const renderModeContent = async (mode: DashboardWebViewMode) => {
+  renderGeneration += 1;
+  const generation = renderGeneration;
+  const previousMode = currentWebViewMode;
+  currentWebViewMode = mode;
+
+  if (getDashboardModeContent(mode) === 'dashboard') {
+    await startDashboard(
+      shouldRefreshDashboardBootstrap({
+        mode,
+        previousMode,
+        hasBootstrap: bootstrap !== null,
+      }),
+      generation
+    );
+    return;
+  }
+
+  bootstrap = null;
+  activeContextToken = null;
+  activeUserLookup = null;
+  main = null;
+  await renderInlineContent(generation);
+};
+
 const start = async () => {
   try {
-    if (!shouldLoadDashboardData(getWebViewMode())) {
-      addWebViewModeListener((mode) => {
-        if (shouldLoadDashboardData(mode)) {
-          void startDashboard().catch(renderStartupError);
-        }
-      });
-      renderInlineLauncher();
-      return;
-    }
-
-    await startDashboard();
+    addWebViewModeListener((mode) => {
+      void renderModeContent(mode).catch(renderStartupError);
+    });
+    await renderModeContent(getWebViewMode());
   } catch (error) {
     renderStartupError(error);
   }

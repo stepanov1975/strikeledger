@@ -167,4 +167,49 @@ describe('dashboard startup', () => {
     expect(document.querySelector('.shell')).not.toBeNull();
     expect(document.querySelector('.launcher-shell')).toBeNull();
   });
+
+  it('renders expanded Admin without Profile tab or lookup action', async () => {
+    devvitClient.mode = 'expanded';
+    const fetchMock = vi.fn((input: string | URL | Request) => {
+      const url = String(input);
+      if (url === '/api/bootstrap') {
+        return Promise.resolve(
+          jsonResponse({
+            view: 'settings',
+            subredditName: 'testsub',
+            moderatorUsername: 'mod-a',
+            hasPendingBootstrap: false,
+          })
+        );
+      }
+      if (url === '/api/settings') {
+        return Promise.resolve(
+          jsonResponse({
+            ...settingsResponse,
+            canManage: true,
+          })
+        );
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await import('./dashboard');
+
+    await waitFor(() =>
+      expect(document.querySelector('.shell')).not.toBeNull()
+    );
+
+    const tabLabels = Array.from(document.querySelectorAll('.tab')).map(
+      (button) => button.textContent
+    );
+    const buttonLabels = Array.from(document.querySelectorAll('button')).map(
+      (button) => button.textContent
+    );
+    expect(tabLabels).toEqual(['History', 'Admin']);
+    expect(buttonLabels).not.toContain('Profile');
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/profile'))
+    ).toBe(false);
+  });
 });

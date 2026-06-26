@@ -46,7 +46,7 @@
         "Frontend And Routes",
         "View Context Tokens",
         "History View",
-        "Profile View",
+        "Inline Profile Preview",
         "Limited User View",
         "Reversal",
         "Permissions"
@@ -67,6 +67,7 @@
         "src/routes/menu.test.ts",
         "src/core/dashboard.test.ts",
         "src/core/ledgerRepository.test.ts",
+        "src/client/dashboard.test.ts",
         "src/client/dashboardLaunch.test.ts",
         "src/client/compactEntryRows.test.ts"
       ]
@@ -252,7 +253,7 @@
       "mvpSections": [
         "Frontend And Routes",
         "History View",
-        "Profile View",
+        "Inline Profile Preview",
         "Limited User View"
       ],
       "sourceFiles": [
@@ -261,6 +262,7 @@
         "src/client/compactEntryRows.ts"
       ],
       "testFiles": [
+        "src/client/dashboard.test.ts",
         "src/client/dashboardLaunch.test.ts",
         "src/client/compactEntryRows.test.ts",
         "src/routes/api.test.ts"
@@ -297,7 +299,7 @@
         "UI And API",
         "View Context Tokens",
         "History View",
-        "Profile View",
+        "Inline Profile Preview",
         "Limited User View",
         "Reversal"
       ],
@@ -349,6 +351,332 @@
         "src/core/sideEffects.test.ts",
         "src/core/templates.test.ts",
         "src/routes/enforcementSubmit.test.ts"
+      ]
+    }
+  ],
+  "platformFacts": [
+    {
+      "id": "devvit-view-modes",
+      "title": "Devvit View Modes",
+      "source": "https://developers.reddit.com/docs/capabilities/server/launch_screen_and_entry_points/view_modes_entry_points.md",
+      "reviewedAt": "2026-06-26",
+      "summary": "Devvit Web launch surfaces can enter inline and expanded view modes. StrikeLedger treats view mode as launch state, so inline rendering must not consume expanded-only bootstrap data.",
+      "appliesTo": [
+        "MVP.md",
+        "src/client/dashboard.ts",
+        "src/client/dashboardLaunch.ts",
+        "src/routes/api.ts",
+        "route:GET /api/bootstrap",
+        "route:GET /api/inline-profile-preview"
+      ]
+    },
+    {
+      "id": "devvit-custom-post-entrypoints",
+      "title": "Devvit Custom Post Entrypoints",
+      "source": "https://developers.reddit.com/docs/capabilities/creating_custom_post.md",
+      "reviewedAt": "2026-06-26",
+      "summary": "Custom post launch behavior depends on configured entrypoints and matching submitCustomPost entry names. StrikeLedger keeps the dashboard entrypoint aligned between devvit.json and menu launch code.",
+      "appliesTo": [
+        "devvit.json",
+        "src/routes/menu.ts"
+      ]
+    },
+    {
+      "id": "devvit-endpoint-configuration",
+      "title": "Devvit Endpoint Configuration",
+      "source": "https://developers.reddit.com/docs/capabilities/devvit-web/devvit_web_configuration.md",
+      "reviewedAt": "2026-06-26",
+      "summary": "devvit.json declares endpoint-backed surfaces such as menu items, forms, settings validation, scheduler actions, and triggers. The generated graph checks those configured paths against local POST route nodes.",
+      "appliesTo": [
+        "devvit.json",
+        "scripts/generate-knowledge-graph.mjs",
+        "scripts/generate-knowledge-graph.test.mjs"
+      ]
+    },
+    {
+      "id": "devvit-menu-client-effects",
+      "title": "Devvit Menu Client Effects",
+      "source": "https://developers.reddit.com/docs/capabilities/client/menu-actions.md",
+      "reviewedAt": "2026-06-26",
+      "summary": "Menu actions can run server processing and return client effects such as navigation or forms. StrikeLedger still treats server-side permission checks and Redis context as the trusted boundary.",
+      "appliesTo": [
+        "src/routes/menu.ts",
+        "src/routes/forms.ts",
+        "src/routes/permissions.ts"
+      ]
+    }
+  ],
+  "invariants": [
+    {
+      "id": "dashboard-inline-does-not-consume-bootstrap",
+      "title": "Dashboard Inline Does Not Consume Bootstrap",
+      "description": "Inline dashboard rendering may show a compact launcher or bounded preview, but it must not call or consume /api/bootstrap before expanded mode opens.",
+      "sourceFiles": [
+        "src/client/dashboard.ts",
+        "src/client/dashboardLaunch.ts",
+        "src/core/dashboard.ts",
+        "src/routes/api.ts"
+      ],
+      "testFiles": [
+        "src/client/dashboard.test.ts",
+        "src/client/dashboardLaunch.test.ts",
+        "src/core/dashboard.test.ts",
+        "src/routes/api.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/modules/client-dashboard.md",
+        "docs/knowledge-graph/hotspots/api-routes.md"
+      ],
+      "routeIds": [
+        "route:GET /api/bootstrap",
+        "route:GET /api/inline-profile-preview"
+      ],
+      "platformFactIds": [
+        "devvit-view-modes"
+      ]
+    },
+    {
+      "id": "dashboard-expanded-bootstrap-once",
+      "title": "Dashboard Expanded Bootstrap Once",
+      "description": "Expanded-mode bootstrap consumes pending menu launch state once per client session; duplicate expanded callbacks must reuse an in-flight or resolved bootstrap load instead of issuing a second consuming request.",
+      "sourceFiles": [
+        "src/client/dashboard.ts",
+        "src/client/dashboardLaunch.ts",
+        "src/core/dashboard.ts",
+        "src/routes/api.ts"
+      ],
+      "testFiles": [
+        "src/client/dashboard.test.ts",
+        "src/client/dashboardLaunch.test.ts",
+        "src/core/dashboard.test.ts",
+        "src/routes/api.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/modules/client-dashboard.md",
+        "docs/knowledge-graph/hotspots/api-routes.md"
+      ],
+      "routeIds": [
+        "route:GET /api/bootstrap"
+      ],
+      "platformFactIds": [
+        "devvit-view-modes"
+      ]
+    },
+    {
+      "id": "dashboard-render-current-mode-only",
+      "title": "Dashboard Render Current Mode Only",
+      "description": "Async inline preview and expanded bootstrap responses must confirm the initiating webview mode is still current before writing DOM.",
+      "sourceFiles": [
+        "src/client/dashboard.ts",
+        "src/client/dashboardLaunch.ts",
+        "src/routes/api.ts"
+      ],
+      "testFiles": [
+        "src/client/dashboard.test.ts",
+        "src/client/dashboardLaunch.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/modules/client-dashboard.md"
+      ],
+      "routeIds": [
+        "route:GET /api/bootstrap",
+        "route:GET /api/inline-profile-preview"
+      ],
+      "platformFactIds": [
+        "devvit-view-modes"
+      ]
+    },
+    {
+      "id": "inline-profile-preview-bounded",
+      "title": "Inline Profile Preview Bounded",
+      "description": "Inline Profile preview must use the non-consuming preview route and bounded cached data instead of full active-total recalculation or full history loading.",
+      "sourceFiles": [
+        "src/client/dashboard.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/scoring.ts",
+        "src/routes/api.ts"
+      ],
+      "testFiles": [
+        "src/client/dashboard.test.ts",
+        "src/client/dashboardLaunch.test.ts",
+        "src/core/dashboard.test.ts",
+        "src/routes/api.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/hotspots/api-routes.md"
+      ],
+      "routeIds": [
+        "route:GET /api/inline-profile-preview"
+      ],
+      "platformFactIds": [
+        "devvit-view-modes"
+      ]
+    },
+    {
+      "id": "limited-dashboard-self-only",
+      "title": "Limited Dashboard Self Only",
+      "description": "Logged-in non-moderators can only receive their own current-subreddit limited summary, with no selected-user context token or arbitrary target lookup.",
+      "sourceFiles": [
+        "src/client/dashboard.ts",
+        "src/core/dashboard.ts",
+        "src/routes/api.ts",
+        "src/routes/permissions.ts"
+      ],
+      "testFiles": [
+        "src/core/dashboard.test.ts",
+        "src/routes/api.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/hotspots/api-routes.md"
+      ],
+      "routeIds": [
+        "route:GET /api/bootstrap",
+        "route:GET /api/self-summary"
+      ],
+      "platformFactIds": [
+        "devvit-view-modes"
+      ]
+    },
+    {
+      "id": "devvit-manifest-routes-match-generated-routes",
+      "title": "Devvit Manifest Routes Match Generated Routes",
+      "description": "Every endpoint path declared in devvit.json for Devvit-backed surfaces must have a generated local POST route node, so manifest drift is caught before publish/playtest.",
+      "sourceFiles": [
+        "devvit.json",
+        "scripts/generate-knowledge-graph.mjs",
+        "src/index.ts",
+        "src/routes/forms.ts",
+        "src/routes/menu.ts",
+        "src/routes/scheduler.ts",
+        "src/routes/settingsValidators.ts",
+        "src/routes/triggers.ts"
+      ],
+      "testFiles": [
+        "scripts/generate-knowledge-graph.test.mjs",
+        "src/routes/forms.test.ts",
+        "src/routes/menu.test.ts",
+        "src/routes/scheduler.test.ts",
+        "src/routes/settingsValidators.test.ts",
+        "src/routes/triggers.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/settings.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ],
+      "routeIds": [
+        "route:POST /internal/form/enforcement-submit",
+        "route:POST /internal/menu/history",
+        "route:POST /internal/menu/profile",
+        "route:POST /internal/menu/settings",
+        "route:POST /internal/menu/warn-comment",
+        "route:POST /internal/menu/warn-nsfw-post",
+        "route:POST /internal/menu/warn-post",
+        "route:POST /internal/menu/warn-remove-comment",
+        "route:POST /internal/menu/warn-remove-post",
+        "route:POST /internal/scheduler/account-deletion-check",
+        "route:POST /internal/scheduler/ledger-cleanup",
+        "route:POST /internal/settings/validate-days",
+        "route:POST /internal/settings/validate-decay-amount",
+        "route:POST /internal/settings/validate-private-template",
+        "route:POST /internal/settings/validate-points",
+        "route:POST /internal/settings/validate-public-template",
+        "route:POST /internal/triggers/on-app-install",
+        "route:POST /internal/triggers/on-comment-delete",
+        "route:POST /internal/triggers/on-mod-action",
+        "route:POST /internal/triggers/on-post-create",
+        "route:POST /internal/triggers/on-post-delete",
+        "route:POST /internal/triggers/on-post-flair-update",
+        "route:POST /internal/triggers/on-post-nsfw-update",
+        "route:POST /internal/triggers/on-post-spoiler-update",
+        "route:POST /internal/triggers/on-post-submit",
+        "route:POST /internal/triggers/on-post-update"
+      ],
+      "platformFactIds": [
+        "devvit-endpoint-configuration",
+        "devvit-menu-client-effects"
+      ]
+    }
+  ],
+  "reviewPacks": [
+    {
+      "id": "dashboard-launch",
+      "title": "Dashboard Launch Review Pack",
+      "summary": "Read this pack before changes to inline launchers, expanded bootstrap, pending dashboard context, or limited dashboard access. Review duplicate mode callbacks, stale async renders, inline overflow, authorization, and Devvit entrypoint compatibility.",
+      "documents": [
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/modules/client-dashboard.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/hotspots/api-routes.md"
+      ],
+      "sourceFiles": [
+        "MVP.md",
+        "devvit.json",
+        "src/client/dashboard.ts",
+        "src/client/dashboardLaunch.ts",
+        "src/core/dashboard.ts",
+        "src/routes/api.ts",
+        "src/routes/menu.ts",
+        "src/routes/permissions.ts"
+      ],
+      "testFiles": [
+        "src/client/dashboard.test.ts",
+        "src/client/dashboardLaunch.test.ts",
+        "src/core/dashboard.test.ts",
+        "src/routes/api.test.ts",
+        "src/routes/menu.test.ts"
+      ],
+      "invariantIds": [
+        "dashboard-render-current-mode-only",
+        "dashboard-inline-does-not-consume-bootstrap",
+        "dashboard-expanded-bootstrap-once",
+        "inline-profile-preview-bounded",
+        "limited-dashboard-self-only"
+      ],
+      "platformFactIds": [
+        "devvit-view-modes",
+        "devvit-custom-post-entrypoints",
+        "devvit-menu-client-effects"
+      ]
+    },
+    {
+      "id": "manifest-route-drift",
+      "title": "Manifest Route Drift Review Pack",
+      "summary": "Read this pack before changing devvit.json, generated settings, Devvit route mounts, or manifest endpoint validation.",
+      "documents": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/settings.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ],
+      "sourceFiles": [
+        "devvit.json",
+        "scripts/generate-knowledge-graph.mjs",
+        "src/index.ts",
+        "src/routes/forms.ts",
+        "src/routes/menu.ts",
+        "src/routes/scheduler.ts",
+        "src/routes/settingsValidators.ts",
+        "src/routes/triggers.ts"
+      ],
+      "testFiles": [
+        "scripts/generate-knowledge-graph.test.mjs",
+        "src/routes/forms.test.ts",
+        "src/routes/menu.test.ts",
+        "src/routes/scheduler.test.ts",
+        "src/routes/settingsValidators.test.ts",
+        "src/routes/triggers.test.ts"
+      ],
+      "invariantIds": [
+        "devvit-manifest-routes-match-generated-routes"
+      ],
+      "platformFactIds": [
+        "devvit-endpoint-configuration",
+        "devvit-menu-client-effects"
       ]
     }
   ]

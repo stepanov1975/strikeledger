@@ -44,6 +44,9 @@ const dashboardBootstrapKey = (
 const parseJson = <T>(raw: string | null): T | null =>
   raw === null ? null : (JSON.parse(raw) as T);
 
+const isExpired = (record: { expiresAtMs?: number }): boolean =>
+  record.expiresAtMs !== undefined && record.expiresAtMs <= Date.now();
+
 export const createExpiringTimes = (
   nowMs: number
 ): Pick<ViewContextRecord, 'createdAtMs' | 'expiresAtMs'> => ({
@@ -109,9 +112,18 @@ export class DashboardRepository {
   }
 
   async getViewContext(token: string): Promise<ViewContextRecord | null> {
-    return parseJson<ViewContextRecord>(
-      await this.store.get(viewContextKey(token))
-    );
+    const key = viewContextKey(token);
+    const record = parseJson<ViewContextRecord>(await this.store.get(key));
+    if (!record) {
+      return null;
+    }
+
+    if (isExpired(record)) {
+      await this.store.del(key);
+      return null;
+    }
+
+    return record;
   }
 
   async saveDashboardBootstrap(
@@ -122,6 +134,24 @@ export class DashboardRepository {
       JSON.stringify(record),
       { expiresAtMs: record.expiresAtMs }
     );
+  }
+
+  async getDashboardBootstrap(
+    subredditName: string,
+    moderatorUsername: string
+  ): Promise<DashboardBootstrapRecord | null> {
+    const key = dashboardBootstrapKey(subredditName, moderatorUsername);
+    const record = parseJson<DashboardBootstrapRecord>(await this.store.get(key));
+    if (!record) {
+      return null;
+    }
+
+    if (isExpired(record)) {
+      await this.store.del(key);
+      return null;
+    }
+
+    return record;
   }
 
   async consumeDashboardBootstrap(
@@ -135,6 +165,6 @@ export class DashboardRepository {
       await this.store.del(key);
     }
 
-    return record;
+    return record && !isExpired(record) ? record : null;
   }
 }

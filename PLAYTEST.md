@@ -51,7 +51,7 @@ npx devvit logs strikeledger_dev strikeledger --since 30m --show-timestamps --lo
 npx devvit logs strikeledger_dev strikeledger --connect --show-timestamps --log-runtime
 ```
 
-- Trigger Admin, Warn, History, Profile, and Reverse while the stream is open. Expected operational log prefixes look like `StrikeLedger menu.enforcement.form_opened`, `StrikeLedger enforcement.submit.created`, `StrikeLedger api.history.ok`, and `StrikeLedger api.profile.ok`.
+- Trigger Admin, Warn, History, Profile, and Reverse while the stream is open. Expected operational log prefixes look like `StrikeLedger menu.enforcement.form_opened`, `StrikeLedger enforcement.submit.created`, `StrikeLedger api.history.ok`, and `StrikeLedger api.inline_profile_preview.ok`.
 
 ## Enforcement
 
@@ -84,11 +84,12 @@ npx devvit logs strikeledger_dev strikeledger --connect --show-timestamps --log-
 
 ## Dashboard
 
-- Open `StrikeLedger: History` from a post and a comment; click `Open StrikeLedger` on the dashboard post and confirm the selected author's entries load.
-- Open `StrikeLedger: Profile`; click `Open StrikeLedger` on the dashboard post and confirm active total, summary-window points, reversals, and removal counts are coherent.
-- On a narrow/mobile viewport, confirm moderator History and Profile entries render as compact cards with date, rule, action/status, points, target link, moderator, and side-effect summary.
+- Open `StrikeLedger: History` from a post and a comment; confirm the inline dashboard shows only an `Open History` launcher, then click it and confirm the selected author's entries load in expanded History.
+- Open `StrikeLedger: Profile`; confirm the inline dashboard shows a compact non-scrolling Profile preview with cached active total, bounded summary-window points, decayed points, reversals, and removal counts when cached preview data is available. Click `Open StrikeLedger` and confirm expanded mode opens History for the same author.
+- Open `StrikeLedger: Profile` for a user whose cached preview data is unavailable; confirm the inline dashboard shows the generic non-scrolling `Open StrikeLedger` launcher, then click it and confirm expanded History opens for the same author.
+- On a narrow/mobile viewport, confirm moderator History entries render as compact cards with date, rule, action/status, points, target link, moderator, and side-effect summary.
 - Reverse an active entry with a required reason; confirm the active total updates and the entry remains visible as reversed.
-- Use Admin to recalculate a selected user's active total; confirm the displayed result matches history/profile.
+- Use Admin to recalculate a selected user's active total; confirm the displayed result matches History and the inline Profile preview.
 - Open the dashboard post as a logged-in non-moderator with prior test entries; click `Open StrikeLedger` and confirm it shows only that user's active total and a narrow history list with date, rule name, and points.
 - Open the dashboard post as a logged-in non-moderator with no entries; click `Open StrikeLedger` and confirm it shows total points as `0` and an empty history state instead of `Request failed with 403`.
 - As a non-moderator, confirm moderator History, Profile, Admin, reversal, cleanup, rule import, and manual recalculation APIs remain blocked.

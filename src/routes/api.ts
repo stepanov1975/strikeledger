@@ -20,8 +20,7 @@ export const api = new Hono();
 
 const HISTORY_PAGE_SIZE = 25;
 const MAX_HISTORY_OFFSET = 500;
-const PROFILE_RECENT_ENTRY_LIMIT = 25;
-const PROFILE_SUMMARY_ENTRY_LIMIT = 500;
+const INLINE_PROFILE_SUMMARY_ENTRY_LIMIT = 25;
 const SELF_HISTORY_LIMIT = 25;
 
 const getRepositories = () => {
@@ -91,6 +90,12 @@ const parseHistoryOffset = (value: string | undefined): number | null => {
 
 const trimString = (value: unknown): string | null =>
   typeof value === 'string' ? value.trim() : null;
+
+const isEntryForSubredditName = (
+  entry: LedgerEntry,
+  subredditName: string
+): boolean =>
+  entry.subredditName.toLowerCase() === subredditName.trim().toLowerCase();
 
 const parseUserIdInput = (rawUserKey: string | null): string | null => {
   if (rawUserKey?.startsWith('id:')) {
@@ -327,6 +332,46 @@ const buildReversalLogDetails = (
   reversalUserNotice: entry.sideEffects.reversalUserNotice,
 });
 
+const buildProfileSummary = (
+  entries: LedgerEntry[],
+  activeTotal: number,
+  config: StrikeLedgerConfig,
+  nowMs: number,
+  hasMoreEntries: boolean,
+  summaryEntryLimit: number
+) => {
+  const activeOriginalPoints = entries
+    .filter((entry) => entry.status !== 'reversed')
+    .reduce((total, entry) => total + entry.originalPoints, 0);
+  const activePointsInSummary = entries.reduce(
+    (total, entry) => total + calculateActivePoints(entry, config, nowMs),
+    0
+  );
+  const originalPoints = entries.reduce(
+    (total, entry) => total + entry.originalPoints,
+    0
+  );
+  const reversedEntries = entries.filter(
+    (entry) => entry.status === 'reversed'
+  ).length;
+  const removalsByRule = entries
+    .filter((entry) => entry.action === 'warn_remove')
+    .reduce<Record<string, number>>((counts, entry) => {
+      counts[entry.ruleLabel] = (counts[entry.ruleLabel] ?? 0) + 1;
+      return counts;
+    }, {});
+
+  return {
+    activeTotal,
+    originalPoints,
+    decayedPoints: Math.max(0, activeOriginalPoints - activePointsInSummary),
+    reversedEntries,
+    removalsByRule,
+    hasMoreEntries,
+    summaryEntryLimit,
+  };
+};
+
 api.get('/bootstrap', async (c) => {
   const subreddit = await reddit.getCurrentSubreddit();
   const access = await getModeratorAccess(subreddit.name);
@@ -365,6 +410,96 @@ api.get('/bootstrap', async (c) => {
     ...(bootstrap?.contextToken !== undefined
       ? { contextToken: bootstrap.contextToken }
       : {}),
+  });
+});
+
+api.get('/inline-profile-preview', async (c) => {
+  const subreddit = await reddit.getCurrentSubreddit();
+  const access = await getModeratorAccess(subreddit.name);
+  const unavailable = {
+    status: 'unavailable',
+    subredditName: subreddit.name,
+    currentUsername: access?.username ?? null,
+    ...(access?.canRead ? { moderatorUsername: access.username } : {}),
+  };
+
+  if (!access?.canRead) {
+    return c.json(unavailable);
+  }
+
+  const { configRepository, dashboardRepository, ledgerRepository } =
+    getRepositories();
+  const bootstrap = await dashboardRepository.getDashboardBootstrap(
+    subreddit.name,
+    access.username
+  );
+  if (bootstrap?.view === 'history' && bootstrap.contextToken) {
+    return c.json({
+      status: 'history',
+      contextToken: bootstrap.contextToken,
+      subredditName: subreddit.name,
+      currentUsername: access.username,
+      moderatorUsername: access.username,
+    });
+  }
+
+  if (bootstrap?.view !== 'profile' || !bootstrap.contextToken) {
+    return c.json(unavailable);
+  }
+
+  const context = await getAuthorizedViewContext(
+    bootstrap.contextToken,
+    subreddit.name,
+    dashboardRepository
+  );
+  if (!context?.userKey) {
+    return c.json(unavailable);
+  }
+
+  const profileContext = { ...context, userKey: context.userKey };
+  const config = await configRepository.getConfig();
+  const activeTotal = await ledgerRepository.getCachedActiveTotal(
+    profileContext.userKey
+  );
+  if (activeTotal === null) {
+    return c.json(unavailable);
+  }
+
+  const nowMs = Date.now();
+  const userKeys = getContextUserKeys(profileContext);
+  const rawPreviewEntries = await ledgerRepository.getUserLedgerPageForKeys(
+    userKeys,
+    0,
+    INLINE_PROFILE_SUMMARY_ENTRY_LIMIT + 1
+  );
+  const profileEntries = rawPreviewEntries.filter((entry) =>
+    isEntryForSubredditName(entry, subreddit.name)
+  );
+  const hasMoreEntries =
+    rawPreviewEntries.length > INLINE_PROFILE_SUMMARY_ENTRY_LIMIT;
+  const entries = profileEntries.slice(0, INLINE_PROFILE_SUMMARY_ENTRY_LIMIT);
+  const summary = buildProfileSummary(
+    entries,
+    activeTotal,
+    config,
+    nowMs,
+    hasMoreEntries,
+    INLINE_PROFILE_SUMMARY_ENTRY_LIMIT
+  );
+  logInfo('api.inline_profile_preview.ok', {
+    subredditName: subreddit.name,
+    moderatorUsername: access.username,
+    userKey: profileContext.userKey,
+    targetId: profileContext.targetId,
+    targetKind: profileContext.targetKind,
+    activeTotal: summary.activeTotal,
+  });
+
+  return c.json({
+    status: 'available',
+    contextToken: bootstrap.contextToken,
+    context: profileContext,
+    summary,
   });
 });
 
@@ -517,111 +652,6 @@ api.get('/history', async (c) => {
       entries.length === HISTORY_PAGE_SIZE && nextOffset <= MAX_HISTORY_OFFSET
         ? nextOffset
         : null,
-  });
-});
-
-api.get('/profile', async (c) => {
-  const apiAccess = await getApiAccess('profile');
-  if (!apiAccess) {
-    return c.json({ error: 'moderator_required' }, 403);
-  }
-
-  const { configRepository, dashboardRepository, ledgerRepository } =
-    getRepositories();
-  const config = await configRepository.getConfig();
-  const contextResult = await getAuthorizedUserViewContext(
-    c.req.query('contextToken'),
-    apiAccess.subredditName,
-    dashboardRepository,
-    apiAccess.access,
-    trimString(c.req.query('userKey')),
-    trimString(c.req.query('username'))
-  );
-  if (contextResult.status === 'denied') {
-    logWarn('api.profile.user_lookup.denied', {
-      subredditName: apiAccess.subredditName,
-      moderatorUsername: apiAccess.access.username,
-    });
-    return c.json({ error: 'all_permission_required' }, 403);
-  }
-
-  const context = contextResult.context;
-  if (!context?.userKey) {
-    logWarn('api.profile.invalid_context', {
-      subredditName: apiAccess.subredditName,
-      moderatorUsername: apiAccess.access.username,
-      hasContextToken: c.req.query('contextToken') !== undefined,
-      hasUserLookup:
-        c.req.query('userKey') !== undefined ||
-        c.req.query('username') !== undefined,
-    });
-    return c.json({ error: 'invalid_context' }, 404);
-  }
-
-  const nowMs = Date.now();
-  const userKeys = getContextUserKeys(context);
-  const profileEntries = await ledgerRepository.getUserLedgerPageForKeys(
-    userKeys,
-    0,
-    PROFILE_SUMMARY_ENTRY_LIMIT + 1,
-    apiAccess.subredditName
-  );
-  const hasMoreEntries = profileEntries.length > PROFILE_SUMMARY_ENTRY_LIMIT;
-  const entries = profileEntries.slice(0, PROFILE_SUMMARY_ENTRY_LIMIT);
-  const activeTotal = await ledgerRepository.recalculateActiveTotalForKeys(
-    userKeys,
-    context.userKey,
-    config,
-    nowMs,
-    apiAccess.subredditName
-  );
-  const activeOriginalPoints = entries
-    .filter((entry) => entry.status !== 'reversed')
-    .reduce((total, entry) => total + entry.originalPoints, 0);
-  const activePointsInSummary = entries.reduce(
-    (total, entry) => total + calculateActivePoints(entry, config, nowMs),
-    0
-  );
-  const originalPoints = entries.reduce(
-    (total, entry) => total + entry.originalPoints,
-    0
-  );
-  const removalsByRule = entries
-    .filter((entry) => entry.action === 'warn_remove')
-    .reduce<Record<string, number>>((counts, entry) => {
-      counts[entry.ruleLabel] = (counts[entry.ruleLabel] ?? 0) + 1;
-      return counts;
-    }, {});
-  logInfo('api.profile.ok', {
-    subredditName: apiAccess.subredditName,
-    moderatorUsername: apiAccess.access.username,
-    userKey: context.userKey,
-    targetId: context.targetId,
-    targetKind: context.targetKind,
-    entryCount: entries.length,
-    hasMoreEntries,
-    activeTotal,
-    reversedEntries: entries.filter((entry) => entry.status === 'reversed')
-      .length,
-  });
-
-  return c.json({
-    context,
-    canAddReversalModNote:
-      config.nativeModNotesEnabled && config.reversalNativeModNotesEnabled,
-    summary: {
-      activeTotal,
-      originalPoints,
-      decayedPoints: Math.max(0, activeOriginalPoints - activePointsInSummary),
-      reversedEntries: entries.filter((entry) => entry.status === 'reversed')
-        .length,
-      removalsByRule,
-      hasMoreEntries,
-      summaryEntryLimit: PROFILE_SUMMARY_ENTRY_LIMIT,
-    },
-    recentEntries: entries
-      .slice(0, PROFILE_RECENT_ENTRY_LIMIT)
-      .map((entry) => serializeEntry(entry, nowMs, config)),
   });
 });
 

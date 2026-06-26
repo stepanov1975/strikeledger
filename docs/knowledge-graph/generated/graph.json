@@ -1,19 +1,29 @@
 {
   "version": 1,
-  "generatedAt": "2026-06-25T16:24:12.794Z",
+  "generatedAt": "2026-06-26T17:53:34.291Z",
   "nodes": [
+    {
+      "id": "MVP.md",
+      "kind": "file",
+      "layer": "unknown"
+    },
+    {
+      "id": "devvit.json",
+      "kind": "file",
+      "layer": "unknown"
+    },
     {
       "id": "docs/knowledge-graph/hotspots/api-routes.md",
       "kind": "document",
       "documentKind": "hotspot",
       "title": "API Routes Hotspot",
       "mvpSections": [
-        "UI And API",
-        "View Context Tokens",
         "History View",
-        "Profile View",
+        "Inline Profile Preview",
         "Limited User View",
-        "Reversal"
+        "Reversal",
+        "UI And API",
+        "View Context Tokens"
       ]
     },
     {
@@ -23,9 +33,9 @@
       "title": "Enforcement Submit Hotspot",
       "mvpSections": [
         "Enforcement Form",
+        "Idempotency And Duplicates",
         "Preconditions",
-        "Side Effects And Partial Failure",
-        "Idempotency And Duplicates"
+        "Side Effects And Partial Failure"
       ]
     },
     {
@@ -35,9 +45,9 @@
       "title": "LedgerRepository Hotspot",
       "mvpSections": [
         "Entry Model",
+        "Idempotency And Duplicates",
         "Identity Keys",
         "Points And Decay",
-        "Idempotency And Duplicates",
         "Reversal",
         "Storage"
       ]
@@ -48,11 +58,11 @@
       "documentKind": "hotspot",
       "title": "Side Effects Hotspot",
       "mvpSections": [
-        "Side Effects And Partial Failure",
-        "Side-Effect Statuses",
-        "Public Comment Template",
+        "Native Mod Note Template",
         "Private User Notice Template",
-        "Native Mod Note Template"
+        "Public Comment Template",
+        "Side Effects And Partial Failure",
+        "Side-Effect Statuses"
       ]
     },
     {
@@ -63,7 +73,7 @@
       "mvpSections": [
         "Frontend And Routes",
         "History View",
-        "Profile View",
+        "Inline Profile Preview",
         "Limited User View"
       ]
     },
@@ -74,12 +84,12 @@
       "title": "Core Config Module Group",
       "mvpSections": [
         "Configuration And Settings",
-        "Rule Schema",
-        "Validation",
-        "Settings Audit",
-        "Public Comment Template",
+        "Native Mod Note Template",
         "Private User Notice Template",
-        "Native Mod Note Template"
+        "Public Comment Template",
+        "Rule Schema",
+        "Settings Audit",
+        "Validation"
       ]
     },
     {
@@ -88,10 +98,10 @@
       "documentKind": "module",
       "title": "Core Ledger Module Group",
       "mvpSections": [
-        "Ledger And Scoring",
-        "Identity Keys",
-        "Points And Decay",
         "Idempotency And Duplicates",
+        "Identity Keys",
+        "Ledger And Scoring",
+        "Points And Decay",
         "Reversal",
         "Storage"
       ]
@@ -102,11 +112,11 @@
       "documentKind": "module",
       "title": "Core Side Effects Module Group",
       "mvpSections": [
-        "Side Effects And Partial Failure",
-        "Side-Effect Statuses",
-        "Public Comment Template",
+        "Native Mod Note Template",
         "Private User Notice Template",
-        "Native Mod Note Template"
+        "Public Comment Template",
+        "Side Effects And Partial Failure",
+        "Side-Effect Statuses"
       ]
     },
     {
@@ -116,8 +126,8 @@
       "title": "Routes Module Group",
       "mvpSections": [
         "Menu Actions",
-        "UI And API",
-        "Permissions"
+        "Permissions",
+        "UI And API"
       ]
     },
     {
@@ -126,11 +136,11 @@
       "documentKind": "workflow",
       "title": "Cleanup And Retention Workflow",
       "mvpSections": [
-        "Identity Keys",
+        "Acceptance Criteria",
         "Entry Model",
-        "Storage",
+        "Identity Keys",
         "Permissions",
-        "Acceptance Criteria"
+        "Storage"
       ]
     },
     {
@@ -139,14 +149,14 @@
       "documentKind": "workflow",
       "title": "Dashboard Workflow",
       "mvpSections": [
-        "Web UI Surfaces",
         "Frontend And Routes",
-        "View Context Tokens",
         "History View",
-        "Profile View",
+        "Inline Profile Preview",
         "Limited User View",
+        "Permissions",
         "Reversal",
-        "Permissions"
+        "View Context Tokens",
+        "Web UI Surfaces"
       ]
     },
     {
@@ -155,14 +165,14 @@
       "documentKind": "workflow",
       "title": "Enforcement Workflow",
       "mvpSections": [
-        "Menu Actions",
-        "Enforcement Form",
         "Actions",
-        "Preconditions",
-        "Side Effects And Partial Failure",
+        "Enforcement Form",
         "Entry Model",
         "Idempotency And Duplicates",
-        "Permissions"
+        "Menu Actions",
+        "Permissions",
+        "Preconditions",
+        "Side Effects And Partial Failure"
       ]
     },
     {
@@ -172,16 +182,851 @@
       "title": "Settings Workflow",
       "mvpSections": [
         "Configuration And Settings",
-        "Source Of Truth",
+        "Native Mod Note Template",
         "Native Settings And Admin UI",
+        "Private User Notice Template",
+        "Public Comment Template",
         "Required Settings",
         "Rule Schema",
-        "Validation",
         "Settings Audit",
-        "Public Comment Template",
-        "Private User Notice Template",
-        "Native Mod Note Template"
+        "Source Of Truth",
+        "Validation"
       ]
+    },
+    {
+      "id": "invariant:dashboard-expanded-bootstrap-once",
+      "kind": "invariant",
+      "title": "Dashboard Expanded Bootstrap Once",
+      "description": "Expanded-mode bootstrap consumes pending menu launch state once per client session; duplicate expanded callbacks must reuse an in-flight or resolved bootstrap load instead of issuing a second consuming request.",
+      "sourceFiles": [
+        "src/client/dashboard.ts",
+        "src/client/dashboardLaunch.ts",
+        "src/core/dashboard.ts",
+        "src/routes/api.ts"
+      ],
+      "testFiles": [
+        "src/client/dashboard.test.ts",
+        "src/client/dashboardLaunch.test.ts",
+        "src/core/dashboard.test.ts",
+        "src/routes/api.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/modules/client-dashboard.md",
+        "docs/knowledge-graph/workflows/dashboard.md"
+      ],
+      "routeIds": [
+        "route:GET /api/bootstrap"
+      ],
+      "platformFacts": [
+        "platform-fact:devvit-view-modes"
+      ]
+    },
+    {
+      "id": "invariant:dashboard-inline-does-not-consume-bootstrap",
+      "kind": "invariant",
+      "title": "Dashboard Inline Does Not Consume Bootstrap",
+      "description": "Inline dashboard rendering may show a compact launcher or bounded preview, but it must not call or consume /api/bootstrap before expanded mode opens.",
+      "sourceFiles": [
+        "src/client/dashboard.ts",
+        "src/client/dashboardLaunch.ts",
+        "src/core/dashboard.ts",
+        "src/routes/api.ts"
+      ],
+      "testFiles": [
+        "src/client/dashboard.test.ts",
+        "src/client/dashboardLaunch.test.ts",
+        "src/core/dashboard.test.ts",
+        "src/routes/api.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/modules/client-dashboard.md",
+        "docs/knowledge-graph/workflows/dashboard.md"
+      ],
+      "routeIds": [
+        "route:GET /api/bootstrap",
+        "route:GET /api/inline-profile-preview"
+      ],
+      "platformFacts": [
+        "platform-fact:devvit-view-modes"
+      ]
+    },
+    {
+      "id": "invariant:dashboard-render-current-mode-only",
+      "kind": "invariant",
+      "title": "Dashboard Render Current Mode Only",
+      "description": "Async inline preview and expanded bootstrap responses must confirm the initiating webview mode is still current before writing DOM.",
+      "sourceFiles": [
+        "src/client/dashboard.ts",
+        "src/client/dashboardLaunch.ts",
+        "src/routes/api.ts"
+      ],
+      "testFiles": [
+        "src/client/dashboard.test.ts",
+        "src/client/dashboardLaunch.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/modules/client-dashboard.md",
+        "docs/knowledge-graph/workflows/dashboard.md"
+      ],
+      "routeIds": [
+        "route:GET /api/bootstrap",
+        "route:GET /api/inline-profile-preview"
+      ],
+      "platformFacts": [
+        "platform-fact:devvit-view-modes"
+      ]
+    },
+    {
+      "id": "invariant:devvit-manifest-routes-match-generated-routes",
+      "kind": "invariant",
+      "title": "Devvit Manifest Routes Match Generated Routes",
+      "description": "Every endpoint path declared in devvit.json for Devvit-backed surfaces must have a generated local POST route node, so manifest drift is caught before publish/playtest.",
+      "sourceFiles": [
+        "devvit.json",
+        "scripts/generate-knowledge-graph.mjs",
+        "src/index.ts",
+        "src/routes/forms.ts",
+        "src/routes/menu.ts",
+        "src/routes/scheduler.ts",
+        "src/routes/settingsValidators.ts",
+        "src/routes/triggers.ts"
+      ],
+      "testFiles": [
+        "scripts/generate-knowledge-graph.test.mjs",
+        "src/routes/forms.test.ts",
+        "src/routes/menu.test.ts",
+        "src/routes/scheduler.test.ts",
+        "src/routes/settingsValidators.test.ts",
+        "src/routes/triggers.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ],
+      "routeIds": [
+        "route:POST /internal/form/enforcement-submit",
+        "route:POST /internal/menu/history",
+        "route:POST /internal/menu/profile",
+        "route:POST /internal/menu/settings",
+        "route:POST /internal/menu/warn-comment",
+        "route:POST /internal/menu/warn-nsfw-post",
+        "route:POST /internal/menu/warn-post",
+        "route:POST /internal/menu/warn-remove-comment",
+        "route:POST /internal/menu/warn-remove-post",
+        "route:POST /internal/scheduler/account-deletion-check",
+        "route:POST /internal/scheduler/ledger-cleanup",
+        "route:POST /internal/settings/validate-days",
+        "route:POST /internal/settings/validate-decay-amount",
+        "route:POST /internal/settings/validate-points",
+        "route:POST /internal/settings/validate-private-template",
+        "route:POST /internal/settings/validate-public-template",
+        "route:POST /internal/triggers/on-app-install",
+        "route:POST /internal/triggers/on-comment-delete",
+        "route:POST /internal/triggers/on-mod-action",
+        "route:POST /internal/triggers/on-post-create",
+        "route:POST /internal/triggers/on-post-delete",
+        "route:POST /internal/triggers/on-post-flair-update",
+        "route:POST /internal/triggers/on-post-nsfw-update",
+        "route:POST /internal/triggers/on-post-spoiler-update",
+        "route:POST /internal/triggers/on-post-submit",
+        "route:POST /internal/triggers/on-post-update"
+      ],
+      "platformFacts": [
+        "platform-fact:devvit-endpoint-configuration",
+        "platform-fact:devvit-menu-client-effects"
+      ]
+    },
+    {
+      "id": "invariant:inline-profile-preview-bounded",
+      "kind": "invariant",
+      "title": "Inline Profile Preview Bounded",
+      "description": "Inline Profile preview must use the non-consuming preview route and bounded cached data instead of full active-total recalculation or full history loading.",
+      "sourceFiles": [
+        "src/client/dashboard.ts",
+        "src/core/ledgerRepository.ts",
+        "src/core/scoring.ts",
+        "src/routes/api.ts"
+      ],
+      "testFiles": [
+        "src/client/dashboard.test.ts",
+        "src/client/dashboardLaunch.test.ts",
+        "src/core/dashboard.test.ts",
+        "src/routes/api.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md"
+      ],
+      "routeIds": [
+        "route:GET /api/inline-profile-preview"
+      ],
+      "platformFacts": [
+        "platform-fact:devvit-view-modes"
+      ]
+    },
+    {
+      "id": "invariant:limited-dashboard-self-only",
+      "kind": "invariant",
+      "title": "Limited Dashboard Self Only",
+      "description": "Logged-in non-moderators can only receive their own current-subreddit limited summary, with no selected-user context token or arbitrary target lookup.",
+      "sourceFiles": [
+        "src/client/dashboard.ts",
+        "src/core/dashboard.ts",
+        "src/routes/api.ts",
+        "src/routes/permissions.ts"
+      ],
+      "testFiles": [
+        "src/core/dashboard.test.ts",
+        "src/routes/api.test.ts"
+      ],
+      "documentPaths": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md"
+      ],
+      "routeIds": [
+        "route:GET /api/bootstrap",
+        "route:GET /api/self-summary"
+      ],
+      "platformFacts": [
+        "platform-fact:devvit-view-modes"
+      ]
+    },
+    {
+      "id": "platform-fact:devvit-custom-post-entrypoints",
+      "kind": "platformFact",
+      "title": "Devvit Custom Post Entrypoints",
+      "source": "https://developers.reddit.com/docs/capabilities/creating_custom_post.md",
+      "reviewedAt": "2026-06-26",
+      "summary": "Custom post launch behavior depends on configured entrypoints and matching submitCustomPost entry names. StrikeLedger keeps the dashboard entrypoint aligned between devvit.json and menu launch code.",
+      "appliesTo": [
+        "devvit.json",
+        "src/routes/menu.ts"
+      ]
+    },
+    {
+      "id": "platform-fact:devvit-endpoint-configuration",
+      "kind": "platformFact",
+      "title": "Devvit Endpoint Configuration",
+      "source": "https://developers.reddit.com/docs/capabilities/devvit-web/devvit_web_configuration.md",
+      "reviewedAt": "2026-06-26",
+      "summary": "devvit.json declares endpoint-backed surfaces such as menu items, forms, settings validation, scheduler actions, and triggers. The generated graph checks those configured paths against local POST route nodes.",
+      "appliesTo": [
+        "devvit.json",
+        "scripts/generate-knowledge-graph.mjs",
+        "scripts/generate-knowledge-graph.test.mjs"
+      ]
+    },
+    {
+      "id": "platform-fact:devvit-menu-client-effects",
+      "kind": "platformFact",
+      "title": "Devvit Menu Client Effects",
+      "source": "https://developers.reddit.com/docs/capabilities/client/menu-actions.md",
+      "reviewedAt": "2026-06-26",
+      "summary": "Menu actions can run server processing and return client effects such as navigation or forms. StrikeLedger still treats server-side permission checks and Redis context as the trusted boundary.",
+      "appliesTo": [
+        "src/routes/forms.ts",
+        "src/routes/menu.ts",
+        "src/routes/permissions.ts"
+      ]
+    },
+    {
+      "id": "platform-fact:devvit-view-modes",
+      "kind": "platformFact",
+      "title": "Devvit View Modes",
+      "source": "https://developers.reddit.com/docs/capabilities/server/launch_screen_and_entry_points/view_modes_entry_points.md",
+      "reviewedAt": "2026-06-26",
+      "summary": "Devvit Web launch surfaces can enter inline and expanded view modes. StrikeLedger treats view mode as launch state, so inline rendering must not consume expanded-only bootstrap data.",
+      "appliesTo": [
+        "MVP.md",
+        "route:GET /api/bootstrap",
+        "route:GET /api/inline-profile-preview",
+        "src/client/dashboard.ts",
+        "src/client/dashboardLaunch.ts",
+        "src/routes/api.ts"
+      ]
+    },
+    {
+      "id": "review-pack:dashboard-launch",
+      "kind": "reviewPack",
+      "title": "Dashboard Launch Review Pack",
+      "summary": "Read this pack before changes to inline launchers, expanded bootstrap, pending dashboard context, or limited dashboard access. Review duplicate mode callbacks, stale async renders, inline overflow, authorization, and Devvit entrypoint compatibility.",
+      "documents": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/modules/client-dashboard.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md"
+      ],
+      "sourceFiles": [
+        "MVP.md",
+        "devvit.json",
+        "src/client/dashboard.ts",
+        "src/client/dashboardLaunch.ts",
+        "src/core/dashboard.ts",
+        "src/routes/api.ts",
+        "src/routes/menu.ts",
+        "src/routes/permissions.ts"
+      ],
+      "testFiles": [
+        "src/client/dashboard.test.ts",
+        "src/client/dashboardLaunch.test.ts",
+        "src/core/dashboard.test.ts",
+        "src/routes/api.test.ts",
+        "src/routes/menu.test.ts"
+      ],
+      "invariants": [
+        "invariant:dashboard-expanded-bootstrap-once",
+        "invariant:dashboard-inline-does-not-consume-bootstrap",
+        "invariant:dashboard-render-current-mode-only",
+        "invariant:inline-profile-preview-bounded",
+        "invariant:limited-dashboard-self-only"
+      ],
+      "platformFacts": [
+        "platform-fact:devvit-custom-post-entrypoints",
+        "platform-fact:devvit-menu-client-effects",
+        "platform-fact:devvit-view-modes"
+      ]
+    },
+    {
+      "id": "review-pack:manifest-route-drift",
+      "kind": "reviewPack",
+      "title": "Manifest Route Drift Review Pack",
+      "summary": "Read this pack before changing devvit.json, generated settings, Devvit route mounts, or manifest endpoint validation.",
+      "documents": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ],
+      "sourceFiles": [
+        "devvit.json",
+        "scripts/generate-knowledge-graph.mjs",
+        "src/index.ts",
+        "src/routes/forms.ts",
+        "src/routes/menu.ts",
+        "src/routes/scheduler.ts",
+        "src/routes/settingsValidators.ts",
+        "src/routes/triggers.ts"
+      ],
+      "testFiles": [
+        "scripts/generate-knowledge-graph.test.mjs",
+        "src/routes/forms.test.ts",
+        "src/routes/menu.test.ts",
+        "src/routes/scheduler.test.ts",
+        "src/routes/settingsValidators.test.ts",
+        "src/routes/triggers.test.ts"
+      ],
+      "invariants": [
+        "invariant:devvit-manifest-routes-match-generated-routes"
+      ],
+      "platformFacts": [
+        "platform-fact:devvit-endpoint-configuration",
+        "platform-fact:devvit-menu-client-effects"
+      ]
+    },
+    {
+      "id": "route:GET /api/bootstrap",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/bootstrap",
+      "sourceFile": "src/routes/api.ts",
+      "router": "api",
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "route:GET /api/history",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/history",
+      "sourceFile": "src/routes/api.ts",
+      "router": "api",
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "route:GET /api/inline-profile-preview",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/inline-profile-preview",
+      "sourceFile": "src/routes/api.ts",
+      "router": "api",
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "route:GET /api/profile",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/profile",
+      "sourceFile": "src/routes/api.ts",
+      "router": "api",
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "route:GET /api/self-summary",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/self-summary",
+      "sourceFile": "src/routes/api.ts",
+      "router": "api",
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "route:GET /api/settings",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/settings",
+      "sourceFile": "src/routes/api.ts",
+      "router": "api",
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "route:GET /api/settings/audit",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/settings/audit",
+      "sourceFile": "src/routes/api.ts",
+      "router": "api",
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "route:GET /api/settings/reddit-rules",
+      "kind": "route",
+      "method": "GET",
+      "path": "/api/settings/reddit-rules",
+      "sourceFile": "src/routes/api.ts",
+      "router": "api",
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "route:POST /api/cleanup-ledger",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/cleanup-ledger",
+      "sourceFile": "src/routes/api.ts",
+      "router": "api",
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "route:POST /api/recalculate-user-total",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/recalculate-user-total",
+      "sourceFile": "src/routes/api.ts",
+      "router": "api",
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "route:POST /api/reverse",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/reverse",
+      "sourceFile": "src/routes/api.ts",
+      "router": "api",
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "route:POST /api/settings",
+      "kind": "route",
+      "method": "POST",
+      "path": "/api/settings",
+      "sourceFile": "src/routes/api.ts",
+      "router": "api",
+      "curatedDocs": [
+        "docs/knowledge-graph/hotspots/api-routes.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/form/enforcement-submit",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/form/enforcement-submit",
+      "sourceFile": "src/routes/forms.ts",
+      "router": "forms",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/menu/history",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/menu/history",
+      "sourceFile": "src/routes/menu.ts",
+      "router": "menu",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/menu/profile",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/menu/profile",
+      "sourceFile": "src/routes/menu.ts",
+      "router": "menu",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/menu/settings",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/menu/settings",
+      "sourceFile": "src/routes/menu.ts",
+      "router": "menu",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/menu/warn-comment",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/menu/warn-comment",
+      "sourceFile": "src/routes/menu.ts",
+      "router": "menu",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/menu/warn-nsfw-post",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/menu/warn-nsfw-post",
+      "sourceFile": "src/routes/menu.ts",
+      "router": "menu",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/menu/warn-post",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/menu/warn-post",
+      "sourceFile": "src/routes/menu.ts",
+      "router": "menu",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/menu/warn-remove-comment",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/menu/warn-remove-comment",
+      "sourceFile": "src/routes/menu.ts",
+      "router": "menu",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/menu/warn-remove-post",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/menu/warn-remove-post",
+      "sourceFile": "src/routes/menu.ts",
+      "router": "menu",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/dashboard.md",
+        "docs/knowledge-graph/workflows/enforcement.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/scheduler/account-deletion-check",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/scheduler/account-deletion-check",
+      "sourceFile": "src/routes/scheduler.ts",
+      "router": "schedulerRoutes",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/scheduler/ledger-cleanup",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/scheduler/ledger-cleanup",
+      "sourceFile": "src/routes/scheduler.ts",
+      "router": "schedulerRoutes",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/settings/validate-days",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/settings/validate-days",
+      "sourceFile": "src/routes/settingsValidators.ts",
+      "router": "settingsValidators",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-config.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/settings/validate-decay-amount",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/settings/validate-decay-amount",
+      "sourceFile": "src/routes/settingsValidators.ts",
+      "router": "settingsValidators",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-config.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/settings/validate-points",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/settings/validate-points",
+      "sourceFile": "src/routes/settingsValidators.ts",
+      "router": "settingsValidators",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-config.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/settings/validate-private-template",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/settings/validate-private-template",
+      "sourceFile": "src/routes/settingsValidators.ts",
+      "router": "settingsValidators",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-config.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/settings/validate-public-template",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/settings/validate-public-template",
+      "sourceFile": "src/routes/settingsValidators.ts",
+      "router": "settingsValidators",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/core-config.md",
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/settings.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/triggers/on-app-install",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/triggers/on-app-install",
+      "sourceFile": "src/routes/triggers.ts",
+      "router": "triggers",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/triggers/on-comment-delete",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/triggers/on-comment-delete",
+      "sourceFile": "src/routes/triggers.ts",
+      "router": "triggers",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/triggers/on-mod-action",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/triggers/on-mod-action",
+      "sourceFile": "src/routes/triggers.ts",
+      "router": "triggers",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/triggers/on-post-create",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/triggers/on-post-create",
+      "sourceFile": "src/routes/triggers.ts",
+      "router": "triggers",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/triggers/on-post-delete",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/triggers/on-post-delete",
+      "sourceFile": "src/routes/triggers.ts",
+      "router": "triggers",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/triggers/on-post-flair-update",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/triggers/on-post-flair-update",
+      "sourceFile": "src/routes/triggers.ts",
+      "router": "triggers",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/triggers/on-post-nsfw-update",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/triggers/on-post-nsfw-update",
+      "sourceFile": "src/routes/triggers.ts",
+      "router": "triggers",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/triggers/on-post-spoiler-update",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/triggers/on-post-spoiler-update",
+      "sourceFile": "src/routes/triggers.ts",
+      "router": "triggers",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/triggers/on-post-submit",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/triggers/on-post-submit",
+      "sourceFile": "src/routes/triggers.ts",
+      "router": "triggers",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "route:POST /internal/triggers/on-post-update",
+      "kind": "route",
+      "method": "POST",
+      "path": "/internal/triggers/on-post-update",
+      "sourceFile": "src/routes/triggers.ts",
+      "router": "triggers",
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/routes.md",
+        "docs/knowledge-graph/workflows/cleanup-and-retention.md"
+      ]
+    },
+    {
+      "id": "scripts/generate-knowledge-graph.mjs",
+      "kind": "file",
+      "layer": "unknown"
+    },
+    {
+      "id": "scripts/generate-knowledge-graph.test.mjs",
+      "kind": "file",
+      "layer": "unknown"
     },
     {
       "id": "src/client/compactEntryRows.test.ts",
@@ -216,6 +1061,18 @@
       ]
     },
     {
+      "id": "src/client/dashboard.test.ts",
+      "kind": "module",
+      "layer": "client",
+      "exports": [],
+      "imports": [],
+      "tests": [],
+      "curatedDocs": [
+        "docs/knowledge-graph/modules/client-dashboard.md",
+        "docs/knowledge-graph/workflows/dashboard.md"
+      ]
+    },
+    {
       "id": "src/client/dashboard.ts",
       "kind": "module",
       "layer": "client",
@@ -225,7 +1082,9 @@
         "src/client/dashboardLaunch.ts",
         "src/core/domain.ts"
       ],
-      "tests": [],
+      "tests": [
+        "src/client/dashboard.test.ts"
+      ],
       "curatedDocs": [
         "docs/knowledge-graph/modules/client-dashboard.md",
         "docs/knowledge-graph/workflows/dashboard.md"
@@ -252,10 +1111,19 @@
       "layer": "client",
       "exports": [
         "BootstrapResponse",
+        "DASHBOARD_ENTRYPOINT",
+        "DashboardBootstrapRefreshState",
         "DashboardLaunch",
+        "DashboardModeContent",
         "DashboardView",
+        "DashboardWebViewMode",
+        "EXPANDED_DASHBOARD_VIEWS",
+        "ExpandedDashboardView",
+        "formatInlineRemovalSummary",
+        "getDashboardModeContent",
         "resolveDashboardLaunch",
-        "shouldKeepDashboardContext"
+        "shouldKeepDashboardContext",
+        "shouldRefreshDashboardBootstrap"
       ],
       "imports": [],
       "tests": [
@@ -265,6 +1133,15 @@
         "docs/knowledge-graph/modules/client-dashboard.md",
         "docs/knowledge-graph/workflows/dashboard.md"
       ]
+    },
+    {
+      "id": "src/client/devvit-client.d.ts",
+      "kind": "module",
+      "layer": "client",
+      "exports": [],
+      "imports": [],
+      "tests": [],
+      "curatedDocs": []
     },
     {
       "id": "src/client/vite-env.d.ts",
@@ -1282,6 +2159,486 @@
   ],
   "edges": [
     {
+      "from": "platform-fact:devvit-custom-post-entrypoints",
+      "to": "devvit.json",
+      "kind": "appliesTo"
+    },
+    {
+      "from": "platform-fact:devvit-custom-post-entrypoints",
+      "to": "src/routes/menu.ts",
+      "kind": "appliesTo"
+    },
+    {
+      "from": "platform-fact:devvit-endpoint-configuration",
+      "to": "devvit.json",
+      "kind": "appliesTo"
+    },
+    {
+      "from": "platform-fact:devvit-endpoint-configuration",
+      "to": "scripts/generate-knowledge-graph.mjs",
+      "kind": "appliesTo"
+    },
+    {
+      "from": "platform-fact:devvit-endpoint-configuration",
+      "to": "scripts/generate-knowledge-graph.test.mjs",
+      "kind": "appliesTo"
+    },
+    {
+      "from": "platform-fact:devvit-menu-client-effects",
+      "to": "src/routes/forms.ts",
+      "kind": "appliesTo"
+    },
+    {
+      "from": "platform-fact:devvit-menu-client-effects",
+      "to": "src/routes/menu.ts",
+      "kind": "appliesTo"
+    },
+    {
+      "from": "platform-fact:devvit-menu-client-effects",
+      "to": "src/routes/permissions.ts",
+      "kind": "appliesTo"
+    },
+    {
+      "from": "platform-fact:devvit-view-modes",
+      "to": "MVP.md",
+      "kind": "appliesTo"
+    },
+    {
+      "from": "platform-fact:devvit-view-modes",
+      "to": "route:GET /api/bootstrap",
+      "kind": "appliesTo"
+    },
+    {
+      "from": "platform-fact:devvit-view-modes",
+      "to": "route:GET /api/inline-profile-preview",
+      "kind": "appliesTo"
+    },
+    {
+      "from": "platform-fact:devvit-view-modes",
+      "to": "src/client/dashboard.ts",
+      "kind": "appliesTo"
+    },
+    {
+      "from": "platform-fact:devvit-view-modes",
+      "to": "src/client/dashboardLaunch.ts",
+      "kind": "appliesTo"
+    },
+    {
+      "from": "platform-fact:devvit-view-modes",
+      "to": "src/routes/api.ts",
+      "kind": "appliesTo"
+    },
+    {
+      "from": "invariant:dashboard-expanded-bootstrap-once",
+      "to": "platform-fact:devvit-view-modes",
+      "kind": "constrainedBy"
+    },
+    {
+      "from": "invariant:dashboard-inline-does-not-consume-bootstrap",
+      "to": "platform-fact:devvit-view-modes",
+      "kind": "constrainedBy"
+    },
+    {
+      "from": "invariant:dashboard-render-current-mode-only",
+      "to": "platform-fact:devvit-view-modes",
+      "kind": "constrainedBy"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "platform-fact:devvit-endpoint-configuration",
+      "kind": "constrainedBy"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "platform-fact:devvit-menu-client-effects",
+      "kind": "constrainedBy"
+    },
+    {
+      "from": "invariant:inline-profile-preview-bounded",
+      "to": "platform-fact:devvit-view-modes",
+      "kind": "constrainedBy"
+    },
+    {
+      "from": "invariant:limited-dashboard-self-only",
+      "to": "platform-fact:devvit-view-modes",
+      "kind": "constrainedBy"
+    },
+    {
+      "from": "invariant:dashboard-expanded-bootstrap-once",
+      "to": "src/client/dashboard.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:dashboard-expanded-bootstrap-once",
+      "to": "src/client/dashboardLaunch.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:dashboard-expanded-bootstrap-once",
+      "to": "src/core/dashboard.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:dashboard-expanded-bootstrap-once",
+      "to": "src/routes/api.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:dashboard-inline-does-not-consume-bootstrap",
+      "to": "src/client/dashboard.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:dashboard-inline-does-not-consume-bootstrap",
+      "to": "src/client/dashboardLaunch.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:dashboard-inline-does-not-consume-bootstrap",
+      "to": "src/core/dashboard.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:dashboard-inline-does-not-consume-bootstrap",
+      "to": "src/routes/api.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:dashboard-render-current-mode-only",
+      "to": "src/client/dashboard.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:dashboard-render-current-mode-only",
+      "to": "src/client/dashboardLaunch.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "scripts/generate-knowledge-graph.test.mjs",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "src/routes/forms.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "src/routes/menu.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "src/routes/scheduler.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "src/routes/settingsValidators.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "src/routes/triggers.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:inline-profile-preview-bounded",
+      "to": "src/client/dashboard.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:inline-profile-preview-bounded",
+      "to": "src/client/dashboardLaunch.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:inline-profile-preview-bounded",
+      "to": "src/core/dashboard.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:inline-profile-preview-bounded",
+      "to": "src/routes/api.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:limited-dashboard-self-only",
+      "to": "src/core/dashboard.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "invariant:limited-dashboard-self-only",
+      "to": "src/routes/api.test.ts",
+      "kind": "coveredBy"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "route:GET /api/bootstrap",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "route:GET /api/history",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "route:GET /api/inline-profile-preview",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "route:GET /api/profile",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "route:GET /api/self-summary",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "route:GET /api/settings",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "route:GET /api/settings/audit",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "route:GET /api/settings/reddit-rules",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "route:POST /api/cleanup-ledger",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "route:POST /api/recalculate-user-total",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "route:POST /api/reverse",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/api.ts",
+      "to": "route:POST /api/settings",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/forms.ts",
+      "to": "route:POST /internal/form/enforcement-submit",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/menu.ts",
+      "to": "route:POST /internal/menu/history",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/menu.ts",
+      "to": "route:POST /internal/menu/profile",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/menu.ts",
+      "to": "route:POST /internal/menu/settings",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/menu.ts",
+      "to": "route:POST /internal/menu/warn-comment",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/menu.ts",
+      "to": "route:POST /internal/menu/warn-nsfw-post",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/menu.ts",
+      "to": "route:POST /internal/menu/warn-post",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/menu.ts",
+      "to": "route:POST /internal/menu/warn-remove-comment",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/menu.ts",
+      "to": "route:POST /internal/menu/warn-remove-post",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/scheduler.ts",
+      "to": "route:POST /internal/scheduler/account-deletion-check",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/scheduler.ts",
+      "to": "route:POST /internal/scheduler/ledger-cleanup",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/settingsValidators.ts",
+      "to": "route:POST /internal/settings/validate-days",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/settingsValidators.ts",
+      "to": "route:POST /internal/settings/validate-decay-amount",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/settingsValidators.ts",
+      "to": "route:POST /internal/settings/validate-points",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/settingsValidators.ts",
+      "to": "route:POST /internal/settings/validate-private-template",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/settingsValidators.ts",
+      "to": "route:POST /internal/settings/validate-public-template",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/triggers.ts",
+      "to": "route:POST /internal/triggers/on-app-install",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/triggers.ts",
+      "to": "route:POST /internal/triggers/on-comment-delete",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/triggers.ts",
+      "to": "route:POST /internal/triggers/on-mod-action",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/triggers.ts",
+      "to": "route:POST /internal/triggers/on-post-create",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/triggers.ts",
+      "to": "route:POST /internal/triggers/on-post-delete",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/triggers.ts",
+      "to": "route:POST /internal/triggers/on-post-flair-update",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/triggers.ts",
+      "to": "route:POST /internal/triggers/on-post-nsfw-update",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/triggers.ts",
+      "to": "route:POST /internal/triggers/on-post-spoiler-update",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/triggers.ts",
+      "to": "route:POST /internal/triggers/on-post-submit",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "src/routes/triggers.ts",
+      "to": "route:POST /internal/triggers/on-post-update",
+      "kind": "definesRoute"
+    },
+    {
+      "from": "invariant:dashboard-expanded-bootstrap-once",
+      "to": "docs/knowledge-graph/hotspots/api-routes.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:dashboard-expanded-bootstrap-once",
+      "to": "docs/knowledge-graph/modules/client-dashboard.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:dashboard-expanded-bootstrap-once",
+      "to": "docs/knowledge-graph/workflows/dashboard.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:dashboard-inline-does-not-consume-bootstrap",
+      "to": "docs/knowledge-graph/hotspots/api-routes.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:dashboard-inline-does-not-consume-bootstrap",
+      "to": "docs/knowledge-graph/modules/client-dashboard.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:dashboard-inline-does-not-consume-bootstrap",
+      "to": "docs/knowledge-graph/workflows/dashboard.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:dashboard-render-current-mode-only",
+      "to": "docs/knowledge-graph/modules/client-dashboard.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:dashboard-render-current-mode-only",
+      "to": "docs/knowledge-graph/workflows/dashboard.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "docs/knowledge-graph/modules/routes.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "docs/knowledge-graph/workflows/settings.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:inline-profile-preview-bounded",
+      "to": "docs/knowledge-graph/hotspots/api-routes.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:inline-profile-preview-bounded",
+      "to": "docs/knowledge-graph/workflows/dashboard.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:limited-dashboard-self-only",
+      "to": "docs/knowledge-graph/hotspots/api-routes.md",
+      "kind": "documentedBy"
+    },
+    {
+      "from": "invariant:limited-dashboard-self-only",
+      "to": "docs/knowledge-graph/workflows/dashboard.md",
+      "kind": "documentedBy"
+    },
+    {
       "from": "docs/knowledge-graph/hotspots/api-routes.md",
       "to": "src/client/dashboardLaunch.test.ts",
       "kind": "documents"
@@ -1389,6 +2746,11 @@
     {
       "from": "docs/knowledge-graph/modules/client-dashboard.md",
       "to": "src/client/compactEntryRows.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/modules/client-dashboard.md",
+      "to": "src/client/dashboard.test.ts",
       "kind": "documents"
     },
     {
@@ -1723,6 +3085,11 @@
     },
     {
       "from": "docs/knowledge-graph/workflows/dashboard.md",
+      "to": "src/client/dashboard.test.ts",
+      "kind": "documents"
+    },
+    {
+      "from": "docs/knowledge-graph/workflows/dashboard.md",
       "to": "src/client/dashboard.ts",
       "kind": "documents"
     },
@@ -1930,6 +3297,311 @@
       "from": "docs/knowledge-graph/workflows/settings.md",
       "to": "src/routes/settingsValidators.ts",
       "kind": "documents"
+    },
+    {
+      "from": "invariant:dashboard-expanded-bootstrap-once",
+      "to": "src/client/dashboard.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:dashboard-expanded-bootstrap-once",
+      "to": "src/client/dashboardLaunch.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:dashboard-expanded-bootstrap-once",
+      "to": "src/core/dashboard.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:dashboard-expanded-bootstrap-once",
+      "to": "src/routes/api.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:dashboard-inline-does-not-consume-bootstrap",
+      "to": "src/client/dashboard.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:dashboard-inline-does-not-consume-bootstrap",
+      "to": "src/client/dashboardLaunch.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:dashboard-inline-does-not-consume-bootstrap",
+      "to": "src/core/dashboard.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:dashboard-inline-does-not-consume-bootstrap",
+      "to": "src/routes/api.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:dashboard-render-current-mode-only",
+      "to": "src/client/dashboard.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:dashboard-render-current-mode-only",
+      "to": "src/client/dashboardLaunch.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:dashboard-render-current-mode-only",
+      "to": "src/routes/api.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "devvit.json",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "scripts/generate-knowledge-graph.mjs",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "src/index.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "src/routes/forms.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "src/routes/menu.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "src/routes/scheduler.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "src/routes/settingsValidators.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "src/routes/triggers.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:inline-profile-preview-bounded",
+      "to": "src/client/dashboard.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:inline-profile-preview-bounded",
+      "to": "src/core/ledgerRepository.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:inline-profile-preview-bounded",
+      "to": "src/core/scoring.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:inline-profile-preview-bounded",
+      "to": "src/routes/api.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:limited-dashboard-self-only",
+      "to": "src/client/dashboard.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:limited-dashboard-self-only",
+      "to": "src/core/dashboard.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:limited-dashboard-self-only",
+      "to": "src/routes/api.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:limited-dashboard-self-only",
+      "to": "src/routes/permissions.ts",
+      "kind": "guards"
+    },
+    {
+      "from": "invariant:dashboard-expanded-bootstrap-once",
+      "to": "route:GET /api/bootstrap",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:dashboard-inline-does-not-consume-bootstrap",
+      "to": "route:GET /api/bootstrap",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:dashboard-inline-does-not-consume-bootstrap",
+      "to": "route:GET /api/inline-profile-preview",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:dashboard-render-current-mode-only",
+      "to": "route:GET /api/bootstrap",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:dashboard-render-current-mode-only",
+      "to": "route:GET /api/inline-profile-preview",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/form/enforcement-submit",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/menu/history",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/menu/profile",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/menu/settings",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/menu/warn-comment",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/menu/warn-nsfw-post",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/menu/warn-post",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/menu/warn-remove-comment",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/menu/warn-remove-post",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/scheduler/account-deletion-check",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/scheduler/ledger-cleanup",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/settings/validate-days",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/settings/validate-decay-amount",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/settings/validate-points",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/settings/validate-private-template",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/settings/validate-public-template",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/triggers/on-app-install",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/triggers/on-comment-delete",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/triggers/on-mod-action",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/triggers/on-post-create",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/triggers/on-post-delete",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/triggers/on-post-flair-update",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/triggers/on-post-nsfw-update",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/triggers/on-post-spoiler-update",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/triggers/on-post-submit",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:devvit-manifest-routes-match-generated-routes",
+      "to": "route:POST /internal/triggers/on-post-update",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:inline-profile-preview-bounded",
+      "to": "route:GET /api/inline-profile-preview",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:limited-dashboard-self-only",
+      "to": "route:GET /api/bootstrap",
+      "kind": "guardsRoute"
+    },
+    {
+      "from": "invariant:limited-dashboard-self-only",
+      "to": "route:GET /api/self-summary",
+      "kind": "guardsRoute"
     },
     {
       "from": "src/client/compactEntryRows.test.ts",
@@ -2607,8 +4279,238 @@
       "kind": "imports"
     },
     {
+      "from": "review-pack:dashboard-launch",
+      "to": "docs/knowledge-graph/hotspots/api-routes.md",
+      "kind": "includesDocument"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "docs/knowledge-graph/modules/client-dashboard.md",
+      "kind": "includesDocument"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "docs/knowledge-graph/modules/routes.md",
+      "kind": "includesDocument"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "docs/knowledge-graph/workflows/dashboard.md",
+      "kind": "includesDocument"
+    },
+    {
+      "from": "review-pack:manifest-route-drift",
+      "to": "docs/knowledge-graph/modules/routes.md",
+      "kind": "includesDocument"
+    },
+    {
+      "from": "review-pack:manifest-route-drift",
+      "to": "docs/knowledge-graph/workflows/cleanup-and-retention.md",
+      "kind": "includesDocument"
+    },
+    {
+      "from": "review-pack:manifest-route-drift",
+      "to": "docs/knowledge-graph/workflows/settings.md",
+      "kind": "includesDocument"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "invariant:dashboard-expanded-bootstrap-once",
+      "kind": "includesInvariant"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "invariant:dashboard-inline-does-not-consume-bootstrap",
+      "kind": "includesInvariant"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "invariant:dashboard-render-current-mode-only",
+      "kind": "includesInvariant"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "invariant:inline-profile-preview-bounded",
+      "kind": "includesInvariant"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "invariant:limited-dashboard-self-only",
+      "kind": "includesInvariant"
+    },
+    {
+      "from": "review-pack:manifest-route-drift",
+      "to": "invariant:devvit-manifest-routes-match-generated-routes",
+      "kind": "includesInvariant"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "platform-fact:devvit-custom-post-entrypoints",
+      "kind": "includesPlatformFact"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "platform-fact:devvit-menu-client-effects",
+      "kind": "includesPlatformFact"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "platform-fact:devvit-view-modes",
+      "kind": "includesPlatformFact"
+    },
+    {
+      "from": "review-pack:manifest-route-drift",
+      "to": "platform-fact:devvit-endpoint-configuration",
+      "kind": "includesPlatformFact"
+    },
+    {
+      "from": "review-pack:manifest-route-drift",
+      "to": "platform-fact:devvit-menu-client-effects",
+      "kind": "includesPlatformFact"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "MVP.md",
+      "kind": "includesSource"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "devvit.json",
+      "kind": "includesSource"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "src/client/dashboard.ts",
+      "kind": "includesSource"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "src/client/dashboardLaunch.ts",
+      "kind": "includesSource"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "src/core/dashboard.ts",
+      "kind": "includesSource"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "src/routes/api.ts",
+      "kind": "includesSource"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "src/routes/menu.ts",
+      "kind": "includesSource"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "src/routes/permissions.ts",
+      "kind": "includesSource"
+    },
+    {
+      "from": "review-pack:manifest-route-drift",
+      "to": "devvit.json",
+      "kind": "includesSource"
+    },
+    {
+      "from": "review-pack:manifest-route-drift",
+      "to": "scripts/generate-knowledge-graph.mjs",
+      "kind": "includesSource"
+    },
+    {
+      "from": "review-pack:manifest-route-drift",
+      "to": "src/index.ts",
+      "kind": "includesSource"
+    },
+    {
+      "from": "review-pack:manifest-route-drift",
+      "to": "src/routes/forms.ts",
+      "kind": "includesSource"
+    },
+    {
+      "from": "review-pack:manifest-route-drift",
+      "to": "src/routes/menu.ts",
+      "kind": "includesSource"
+    },
+    {
+      "from": "review-pack:manifest-route-drift",
+      "to": "src/routes/scheduler.ts",
+      "kind": "includesSource"
+    },
+    {
+      "from": "review-pack:manifest-route-drift",
+      "to": "src/routes/settingsValidators.ts",
+      "kind": "includesSource"
+    },
+    {
+      "from": "review-pack:manifest-route-drift",
+      "to": "src/routes/triggers.ts",
+      "kind": "includesSource"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "src/client/dashboard.test.ts",
+      "kind": "includesTest"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "src/client/dashboardLaunch.test.ts",
+      "kind": "includesTest"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "src/core/dashboard.test.ts",
+      "kind": "includesTest"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "src/routes/api.test.ts",
+      "kind": "includesTest"
+    },
+    {
+      "from": "review-pack:dashboard-launch",
+      "to": "src/routes/menu.test.ts",
+      "kind": "includesTest"
+    },
+    {
+      "from": "review-pack:manifest-route-drift",
+      "to": "scripts/generate-knowledge-graph.test.mjs",
+      "kind": "includesTest"
+    },
+    {
+      "from": "review-pack:manifest-route-drift",
+      "to": "src/routes/forms.test.ts",
+      "kind": "includesTest"
+    },
+    {
+      "from": "review-pack:manifest-route-drift",
+      "to": "src/routes/menu.test.ts",
+      "kind": "includesTest"
+    },
+    {
+      "from": "review-pack:manifest-route-drift",
+      "to": "src/routes/scheduler.test.ts",
+      "kind": "includesTest"
+    },
+    {
+      "from": "review-pack:manifest-route-drift",
+      "to": "src/routes/settingsValidators.test.ts",
+      "kind": "includesTest"
+    },
+    {
+      "from": "review-pack:manifest-route-drift",
+      "to": "src/routes/triggers.test.ts",
+      "kind": "includesTest"
+    },
+    {
       "from": "src/client/compactEntryRows.ts",
       "to": "src/client/compactEntryRows.test.ts",
+      "kind": "tests"
+    },
+    {
+      "from": "src/client/dashboard.ts",
+      "to": "src/client/dashboard.test.ts",
       "kind": "tests"
     },
     {

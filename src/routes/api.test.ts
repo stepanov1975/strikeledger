@@ -17,8 +17,14 @@ type PostScoreMock = {
   score: number;
 };
 
+type RedisSetMockOptions = {
+  expiration?: Date;
+  expiresAtMs?: number;
+};
+
 class ApiRedisMock {
   readonly values = new Map<string, string>();
+  readonly expiresAtMs = new Map<string, number>();
   readonly sortedSets = new Map<string, Map<string, number>>();
   readonly setCalls: Array<{ key: string; value: string }> = [];
   readonly zRangeCalls: Array<{
@@ -29,18 +35,37 @@ class ApiRedisMock {
   }> = [];
 
   async get(key: string): Promise<string | undefined> {
+    const expiresAtMs = this.expiresAtMs.get(key);
+    if (expiresAtMs !== undefined && expiresAtMs <= Date.now()) {
+      this.values.delete(key);
+      this.expiresAtMs.delete(key);
+      return undefined;
+    }
+
     return this.values.get(key);
   }
 
-  async set(key: string, value: string): Promise<string> {
+  async set(
+    key: string,
+    value: string,
+    options: RedisSetMockOptions = {}
+  ): Promise<string> {
     this.setCalls.push({ key, value });
     this.values.set(key, value);
+    const expiresAtMs =
+      options.expiresAtMs ?? options.expiration?.getTime() ?? null;
+    if (expiresAtMs === null) {
+      this.expiresAtMs.delete(key);
+    } else {
+      this.expiresAtMs.set(key, expiresAtMs);
+    }
     return 'OK';
   }
 
   async del(...keys: string[]): Promise<void> {
     for (const key of keys) {
       this.values.delete(key);
+      this.expiresAtMs.delete(key);
       this.sortedSets.delete(key);
     }
   }
@@ -108,10 +133,12 @@ class ApiRedisMock {
     let commandCount = 0;
     return {
       multi: vi.fn(async () => undefined),
-      set: vi.fn(async (key: string, value: string) => {
-        commandCount += 1;
-        return this.set(key, value);
-      }),
+      set: vi.fn(
+        async (key: string, value: string, options?: RedisSetMockOptions) => {
+          commandCount += 1;
+          return this.set(key, value, options);
+        }
+      ),
       del: vi.fn(async (...keys: string[]) => {
         commandCount += 1;
         return this.del(...keys);
@@ -267,20 +294,31 @@ const seedViewContext = async (
   redis: ApiRedisMock,
   overrides: Record<string, unknown> = {}
 ) => {
+  const createdAtMs =
+    typeof overrides.createdAtMs === 'number'
+      ? overrides.createdAtMs
+      : Date.now();
+  const expiresAtMs =
+    typeof overrides.expiresAtMs === 'number'
+      ? overrides.expiresAtMs
+      : createdAtMs + 15 * 60 * 1000;
+  const record = {
+    token: 'token-1',
+    targetId: 't3_target',
+    targetKind: 'post',
+    subredditName: 'testsub',
+    userKey: 'id:t2_user',
+    authorId: 't2_user',
+    authorName: 'target-user',
+    createdAtMs,
+    expiresAtMs,
+    ...overrides,
+  };
+
   await redis.set(
     `view_context:${String(overrides.token ?? 'token-1')}`,
-    JSON.stringify({
-      token: 'token-1',
-      targetId: 't3_target',
-      targetKind: 'post',
-      subredditName: 'testsub',
-      userKey: 'id:t2_user',
-      authorId: 't2_user',
-      authorName: 'target-user',
-      createdAtMs: Date.UTC(2026, 0, 1),
-      expiresAtMs: Date.UTC(2026, 0, 1) + 15 * 60 * 1000,
-      ...overrides,
-    })
+    JSON.stringify(record),
+    { expiresAtMs }
   );
 };
 
@@ -374,8 +412,8 @@ describe('api routes', () => {
         subredditName: 'testsub',
         moderatorUsername: 'mod-a',
         contextToken: 'view-token',
-        createdAtMs: Date.UTC(2026, 0, 1),
-        expiresAtMs: Date.UTC(2026, 0, 1) + 15 * 60 * 1000,
+        createdAtMs: Date.now(),
+        expiresAtMs: Date.now() + 15 * 60 * 1000,
       })
     );
 
@@ -390,6 +428,337 @@ describe('api routes', () => {
     expect(redis.values.has('dashboard_bootstrap:testsub:mod-a')).toBe(false);
   });
 
+  it('ignores expired pending dashboard bootstrap records', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await redis.set(
+      'dashboard_bootstrap:testsub:mod-a',
+      JSON.stringify({
+        view: 'profile',
+        subredditName: 'testsub',
+        moderatorUsername: 'mod-a',
+        contextToken: 'view-token',
+        createdAtMs: Date.now() - 16 * 60 * 1000,
+        expiresAtMs: Date.now() - 1,
+      })
+    );
+
+    const response = await api.request('/bootstrap');
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      view: 'settings',
+      hasPendingBootstrap: false,
+    });
+    expect(redis.values.has('dashboard_bootstrap:testsub:mod-a')).toBe(false);
+  });
+
+  it('returns inline profile preview without consuming pending profile launches', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await seedViewContext(redis, { token: 'view-token' });
+    await seedLedger(redis);
+    await redis.set('user:id:t2_user:active_total', '3');
+    await redis.set(
+      'dashboard_bootstrap:testsub:mod-a',
+      JSON.stringify({
+        view: 'profile',
+        subredditName: 'testsub',
+        moderatorUsername: 'mod-a',
+        contextToken: 'view-token',
+        createdAtMs: Date.now(),
+        expiresAtMs: Date.now() + 15 * 60 * 1000,
+      })
+    );
+
+    const response = await api.request('/inline-profile-preview');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      status: 'available',
+      contextToken: 'view-token',
+      context: {
+        userKey: 'id:t2_user',
+        authorName: 'target-user',
+      },
+      summary: {
+        activeTotal: 3,
+        originalPoints: 3,
+        reversedEntries: 0,
+      },
+    });
+    expect(body).not.toHaveProperty('recentEntries');
+    expect(redis.values.has('dashboard_bootstrap:testsub:mod-a')).toBe(true);
+
+    const bootstrapResponse = await api.request('/bootstrap');
+    await expect(bootstrapResponse.json()).resolves.toMatchObject({
+      view: 'profile',
+      contextToken: 'view-token',
+      hasPendingBootstrap: true,
+    });
+    expect(redis.values.has('dashboard_bootstrap:testsub:mod-a')).toBe(false);
+  });
+
+  it('uses cached active total for inline profile preview without recalculating totals', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await seedViewContext(redis, { token: 'view-token' });
+    await seedLedger(redis);
+    await redis.set('user:id:t2_user:active_total', '9');
+    await redis.set(
+      'dashboard_bootstrap:testsub:mod-a',
+      JSON.stringify({
+        view: 'profile',
+        subredditName: 'testsub',
+        moderatorUsername: 'mod-a',
+        contextToken: 'view-token',
+        createdAtMs: Date.now(),
+        expiresAtMs: Date.now() + 15 * 60 * 1000,
+      })
+    );
+
+    const response = await api.request('/inline-profile-preview');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      status: 'available',
+      summary: {
+        activeTotal: 9,
+      },
+    });
+    expect(
+      redis.setCalls.filter((call) => call.key === 'user:id:t2_user:active_total')
+    ).toHaveLength(1);
+    expect(
+      redis.zRangeCalls
+        .filter((call) => call.key === 'user:id:t2_user:ledger')
+        .every((call) => call.stop <= 25)
+    ).toBe(true);
+    expect(redis.values.has('dashboard_bootstrap:testsub:mod-a')).toBe(true);
+  });
+
+  it('keeps inline profile preview to one raw ledger page when other subreddits dominate', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    const baseMs = Date.now();
+    await seedViewContext(redis, { token: 'view-token' });
+    await seedLedger(
+      redis,
+      buildEntry({
+        entryId: 'current-subreddit-entry',
+        createdAtMs: baseMs,
+      })
+    );
+    for (let index = 0; index < 40; index += 1) {
+      await seedLedger(
+        redis,
+        buildEntry({
+          entryId: `other-subreddit-entry-${index}`,
+          subredditName: 'othersub',
+          targetId: `t3_other_${index}`,
+          targetPermalink: `/r/othersub/comments/other_${index}`,
+          originalPoints: 99,
+          createdAtMs: baseMs + index + 1,
+        })
+      );
+    }
+    await redis.set('user:id:t2_user:active_total', '3');
+    await redis.set(
+      'dashboard_bootstrap:testsub:mod-a',
+      JSON.stringify({
+        view: 'profile',
+        subredditName: 'testsub',
+        moderatorUsername: 'mod-a',
+        contextToken: 'view-token',
+        createdAtMs: Date.now(),
+        expiresAtMs: Date.now() + 15 * 60 * 1000,
+      })
+    );
+
+    const response = await api.request('/inline-profile-preview');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      status: 'available',
+      summary: {
+        activeTotal: 3,
+        originalPoints: 0,
+        hasMoreEntries: true,
+      },
+    });
+    expect(
+      redis.zRangeCalls.filter((call) => call.key === 'user:id:t2_user:ledger')
+    ).toEqual([
+      expect.objectContaining({
+        start: 0,
+        stop: 25,
+      }),
+    ]);
+  });
+
+  it('returns inline history launch state without consuming pending history launches', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await redis.set(
+      'dashboard_bootstrap:testsub:mod-a',
+      JSON.stringify({
+        view: 'history',
+        subredditName: 'testsub',
+        moderatorUsername: 'mod-a',
+        contextToken: 'view-token',
+        createdAtMs: Date.now(),
+        expiresAtMs: Date.now() + 15 * 60 * 1000,
+      })
+    );
+
+    const response = await api.request('/inline-profile-preview');
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      status: 'history',
+      contextToken: 'view-token',
+    });
+    expect(redis.values.has('dashboard_bootstrap:testsub:mod-a')).toBe(true);
+  });
+
+  it('does not expose inline profile preview data to non-moderators', async () => {
+    const { api, redis } = await loadApi([]);
+    await seedViewContext(redis, { token: 'view-token' });
+    await seedLedger(redis);
+    await redis.set(
+      'dashboard_bootstrap:testsub:mod-a',
+      JSON.stringify({
+        view: 'profile',
+        subredditName: 'testsub',
+        moderatorUsername: 'mod-a',
+        contextToken: 'view-token',
+        createdAtMs: Date.now(),
+        expiresAtMs: Date.now() + 15 * 60 * 1000,
+      })
+    );
+
+    const response = await api.request('/inline-profile-preview');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      status: 'unavailable',
+      subredditName: 'testsub',
+      currentUsername: 'mod-a',
+    });
+    expect(body).not.toHaveProperty('moderatorUsername');
+    expect(body).not.toHaveProperty('contextToken');
+    expect(body).not.toHaveProperty('context');
+    expect(body).not.toHaveProperty('summary');
+    expect(body).not.toHaveProperty('recentEntries');
+  });
+
+  it('falls back when inline profile preview cache is unavailable', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await seedViewContext(redis, { token: 'view-token' });
+    await seedLedger(redis);
+    await redis.set(
+      'dashboard_bootstrap:testsub:mod-a',
+      JSON.stringify({
+        view: 'profile',
+        subredditName: 'testsub',
+        moderatorUsername: 'mod-a',
+        contextToken: 'view-token',
+        createdAtMs: Date.now(),
+        expiresAtMs: Date.now() + 15 * 60 * 1000,
+      })
+    );
+
+    const response = await api.request('/inline-profile-preview');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      status: 'unavailable',
+      subredditName: 'testsub',
+      currentUsername: 'mod-a',
+      moderatorUsername: 'mod-a',
+    });
+    expect(body).not.toHaveProperty('contextToken');
+    expect(body).not.toHaveProperty('context');
+    expect(body).not.toHaveProperty('summary');
+    expect(
+      redis.zRangeCalls.filter((call) => call.key === 'user:id:t2_user:ledger')
+    ).toHaveLength(0);
+    expect(redis.values.has('dashboard_bootstrap:testsub:mod-a')).toBe(true);
+  });
+
+  it('falls back when inline profile preview context is expired', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await seedViewContext(redis, {
+      token: 'view-token',
+      createdAtMs: Date.now() - 16 * 60 * 1000,
+      expiresAtMs: Date.now() - 1,
+    });
+    await seedLedger(redis);
+    await redis.set('user:id:t2_user:active_total', '3');
+    await redis.set(
+      'dashboard_bootstrap:testsub:mod-a',
+      JSON.stringify({
+        view: 'profile',
+        subredditName: 'testsub',
+        moderatorUsername: 'mod-a',
+        contextToken: 'view-token',
+        createdAtMs: Date.now(),
+        expiresAtMs: Date.now() + 15 * 60 * 1000,
+      })
+    );
+
+    const response = await api.request('/inline-profile-preview');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      status: 'unavailable',
+      subredditName: 'testsub',
+      currentUsername: 'mod-a',
+      moderatorUsername: 'mod-a',
+    });
+    expect(body).not.toHaveProperty('contextToken');
+    expect(body).not.toHaveProperty('context');
+    expect(body).not.toHaveProperty('summary');
+    expect(redis.values.has('dashboard_bootstrap:testsub:mod-a')).toBe(true);
+  });
+
+  it('keeps inline profile preview scoped to the ID-key context', async () => {
+    const { api, redis } = await loadApi(['posts']);
+    await seedViewContext(redis, { token: 'view-token' });
+    await seedLedger(
+      redis,
+      buildEntry({
+        userKey: 'name:target-user',
+        username: 'TargetUser',
+      })
+    );
+    await redis.set('user:id:t2_user:active_total', '3');
+    await redis.set(
+      'dashboard_bootstrap:testsub:mod-a',
+      JSON.stringify({
+        view: 'profile',
+        subredditName: 'testsub',
+        moderatorUsername: 'mod-a',
+        contextToken: 'view-token',
+        createdAtMs: Date.now(),
+        expiresAtMs: Date.now() + 15 * 60 * 1000,
+      })
+    );
+
+    const response = await api.request('/inline-profile-preview');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      status: 'available',
+      summary: {
+        activeTotal: 3,
+        originalPoints: 0,
+      },
+    });
+  });
+
   it('keeps listed moderators with no explicit permissions on moderator bootstrap', async () => {
     const { api, redis } = await loadApi([], { listedModerator: true });
     await redis.set(
@@ -399,8 +768,8 @@ describe('api routes', () => {
         subredditName: 'testsub',
         moderatorUsername: 'mod-a',
         contextToken: 'view-token',
-        createdAtMs: Date.UTC(2026, 0, 1),
-        expiresAtMs: Date.UTC(2026, 0, 1) + 15 * 60 * 1000,
+        createdAtMs: Date.now(),
+        expiresAtMs: Date.now() + 15 * 60 * 1000,
       })
     );
 
@@ -792,198 +1161,17 @@ describe('api routes', () => {
     });
   });
 
-  it('reads profile summaries from a server-side view context token', async () => {
-    const { api, redis } = await loadApi(['posts']);
-    await seedViewContext(redis);
-    await seedLedger(redis);
-
-    const response = await api.request('/profile?contextToken=token-1');
-    const body = await response.json();
-
-    expect(response.status).toBe(200);
-    expect(body).toMatchObject({
-      summary: {
-        activeTotal: 3,
-        originalPoints: 3,
-        reversedEntries: 0,
-        removalsByRule: {
-          'Community rule violation': 1,
-        },
-      },
-      recentEntries: [
-        {
-          entryId: 'entry-1',
-        },
-      ],
-    });
-  });
-
-  it('does not read username-key legacy ledger entries for ID-key profile contexts', async () => {
-    const { api, redis } = await loadApi(['posts']);
-    await seedViewContext(redis);
-    await seedLedger(
-      redis,
-      buildEntry({
-        userKey: 'name:target-user',
-        username: 'TargetUser',
-      })
-    );
-
-    const response = await api.request('/profile?contextToken=token-1');
-    const body = await response.json();
-
-    expect(response.status).toBe(200);
-    expect(body).toMatchObject({
-      summary: {
-        activeTotal: 0,
-        originalPoints: 0,
-      },
-      recentEntries: [],
-    });
-  });
-
-  it('filters profile summaries to the current subreddit', async () => {
-    const { api, redis } = await loadApi(['posts']);
-    await seedViewContext(redis);
-    await seedLedger(
-      redis,
-      buildEntry({
-        entryId: 'entry-current',
-        originalPoints: 3,
-      })
-    );
-    await seedLedger(
-      redis,
-      buildEntry({
-        entryId: 'entry-other',
-        subredditName: 'othersub',
-        targetId: 't3_other',
-        targetPermalink: '/r/othersub/comments/other',
-        originalPoints: 99,
-      })
-    );
-
-    const response = await api.request('/profile?contextToken=token-1');
-    const body = await response.json();
-
-    expect(response.status).toBe(200);
-    expect(body.summary).toMatchObject({
-      activeTotal: 3,
-      originalPoints: 3,
-      removalsByRule: {
-        'Community rule violation': 1,
-      },
-    });
-    expect(body.recentEntries).toEqual([
-      expect.objectContaining({ entryId: 'entry-current' }),
-    ]);
-  });
-
-  it('does not fetch live Reddit post scores for profile lookups', async () => {
-    const { api, reddit, redis } = await loadApi(['posts'], {
-      postsByUser: [
-        {
-          subredditName: 'testsub',
-          createdAt: new Date(),
-          score: 10,
-        },
-      ],
-    });
-    await seedViewContext(redis);
-
-    const response = await api.request('/profile?contextToken=token-1');
-    const body = await response.json();
-
-    expect(response.status).toBe(200);
-    expect(reddit.getPostsByUser).not.toHaveBeenCalled();
-    expect(body.summary).not.toHaveProperty('averagePostScore');
-    expect(body.summary).not.toHaveProperty('postScorePostCount');
-    expect(body.summary).not.toHaveProperty('postScoreWindowDays');
-  });
-
-  it('bounds profile ledger reads', async () => {
-    const { api, redis } = await loadApi(['posts']);
-    await seedViewContext(redis);
-    await seedLedger(redis);
-
-    const response = await api.request('/profile?contextToken=token-1');
-
-    expect(response.status).toBe(200);
-    expect(redis.zRangeCalls.some((call) => call.stop === -1)).toBe(false);
-  });
-
-  it('reports profile summary scope without claiming bounded reads are lifetime totals', async () => {
-    const { api, redis } = await loadApi(['posts']);
-    await seedViewContext(redis);
-    const baseMs = Date.UTC(2026, 0, 1);
-    for (let index = 0; index < 501; index += 1) {
-      await seedLedger(
-        redis,
-        buildEntry({
-          entryId: `entry-${index}`,
-          targetId: `t3_target_${index}`,
-          createdAtMs: baseMs + index,
-          originalPoints: 1,
-        })
-      );
-    }
-
-    const response = await api.request('/profile?contextToken=token-1');
-    const body = await response.json();
-
-    expect(response.status).toBe(200);
-    expect(body.summary).toMatchObject({
-      activeTotal: 0,
-      originalPoints: 500,
-      hasMoreEntries: true,
-      summaryEntryLimit: 500,
-    });
-    expect(body.summary).not.toHaveProperty('lifetimeOriginalPoints');
-  });
-
-  it('resolves username profile lookups to ID keys for moderator dashboard lookup', async () => {
+  it('does not expose the retired full profile API', async () => {
     const { api, reddit, redis } = await loadApi(['all']);
-    const entry = buildEntry({
-      userId: 't2_someuser',
-      userKey: 'id:t2_someuser',
-      username: 'SomeUser',
-    });
-    await seedLedger(redis, entry);
+    await seedViewContext(redis);
+    await seedLedger(redis);
 
-    const response = await api.request('/profile?username=someuser');
-    const body = await response.json();
+    const contextResponse = await api.request('/profile?contextToken=token-1');
+    const lookupResponse = await api.request('/profile?userKey=id:t2_deleted');
 
-    expect(response.status).toBe(200);
-    expect(body).toMatchObject({
-      context: {
-        userKey: 'id:t2_someuser',
-        authorName: 'someuser',
-      },
-      summary: {
-        activeTotal: 3,
-        originalPoints: 3,
-      },
-    });
-    expect(reddit.getUserByUsername).toHaveBeenCalledWith('someuser');
-  });
-
-  it('rejects raw profile lookups for read-only moderators', async () => {
-    const { api, redis } = await loadApi(['posts']);
-    await seedLedger(
-      redis,
-      buildEntry({
-        userId: 't2_someuser',
-        userKey: 'id:t2_someuser',
-        username: 'SomeUser',
-      })
-    );
-
-    const response = await api.request('/profile?username=someuser');
-
-    expect(response.status).toBe(403);
-    await expect(response.json()).resolves.toEqual({
-      error: 'all_permission_required',
-    });
+    expect(contextResponse.status).toBe(404);
+    expect(lookupResponse.status).toBe(404);
+    expect(reddit.getUserById).not.toHaveBeenCalled();
   });
 
   it('exposes compact settings audit records to settings managers', async () => {
@@ -1239,18 +1427,6 @@ describe('api routes', () => {
     reddit.getUserById.mockResolvedValueOnce(undefined);
 
     const response = await api.request('/history?userKey=id:t2_deleted');
-
-    expect(response.status).toBe(404);
-    await expect(response.json()).resolves.toEqual({ error: 'invalid_context' });
-    expect(reddit.getUserById).toHaveBeenCalledWith('t2_deleted');
-    expect(redis.values.has('user:id:t2_deleted:active_total')).toBe(false);
-  });
-
-  it('rejects deleted direct user IDs for profile lookups without recreating caches', async () => {
-    const { api, reddit, redis } = await loadApi(['all']);
-    reddit.getUserById.mockResolvedValueOnce(undefined);
-
-    const response = await api.request('/profile?userKey=id:t2_deleted');
 
     expect(response.status).toBe(404);
     await expect(response.json()).resolves.toEqual({ error: 'invalid_context' });

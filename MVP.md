@@ -4,7 +4,7 @@ This file is the authoritative MVP specification for StrikeLedger, a Devvit mode
 
 ## Goal
 
-Moderators can apply a rule-specific warning action to a post or comment. The app records a durable ledger entry, updates the user's active warning total with configurable step decay, performs configured Reddit side effects, and exposes history, profile, reversal, and Admin workflows in an in-app web UI. Logged-in non-moderators who open the dashboard post and launch expanded mode can see only their own active total and compact warning history.
+Moderators can apply a rule-specific warning action to a post or comment. The app records a durable ledger entry, updates the user's active warning total with configurable step decay, performs configured Reddit side effects, and exposes History, inline Profile preview, reversal, and Admin workflows in an in-app web UI. Logged-in non-moderators who open the dashboard post and launch expanded mode can see only their own active total and compact warning history.
 
 ## Scope
 
@@ -26,20 +26,20 @@ The product name shown to moderators is `StrikeLedger`. The internal package and
 The MVP includes these in-app web UI views:
 
 - History for the selected author or target.
-- Profile for the selected author.
+- Compact inline Profile preview for the selected author.
 - Reversal launched from an individual history entry.
 - Admin tools for rules, Reddit rule import, rules JSON import/export, and manual user-total recalculation.
 - Limited user view for logged-in non-moderators, showing only the viewer's own active total and compact warning history.
 
-History and profile menu handlers create short-lived Redis view context records, navigate to the dashboard post, and rely on the expanded dashboard to load the requested view and context token. The MVP must not assume that a bare relative URL such as `/app?view=history&context={token}` is directly navigable from a Reddit menu response.
+History and profile menu handlers create short-lived Redis view context records and navigate to the dashboard post. History launches use a compact inline `Open History` launcher before the expanded dashboard loads the requested history. Profile launches use a compact non-scrolling inline preview for the selected author, and the expanded action opens History for that same context. The MVP must not assume that a bare relative URL such as `/app?view=history&context={token}` is directly navigable from a Reddit menu response.
 
-The MVP UI launch path is a StrikeLedger dashboard custom post/webview entrypoint. In inline mode, the custom post must render only a compact, non-scrolling launch screen with an `Open StrikeLedger` button. That user action opens the same `dashboard` entrypoint in expanded mode, where the plain TypeScript client loads the selected view/context from the app-provided bootstrap endpoint. Admin opens the same expanded web UI without a target context token. The app must provide a clear first-run way for moderators with `all` permission to create or locate the dashboard surface.
+The MVP UI launch path is a StrikeLedger dashboard custom post/webview entrypoint. In inline mode, the custom post must render only compact, non-scrolling content: either a Profile preview for a pending Profile launch or a button-driven launcher. That user action opens the same `dashboard` entrypoint in expanded mode, where the plain TypeScript client loads History or Admin from the app-provided bootstrap endpoint. Admin opens the same expanded web UI without a target context token. The app must provide a clear first-run way for moderators with `all` permission to create or locate the dashboard surface.
 
 Implementation decision:
 
 - `devvit.json` must define a `post.dir` and a `dashboard` entrypoint.
 - The subreddit-level `StrikeLedger: Admin` menu handler checks for a stored dashboard post ID. If one exists and is readable, it navigates to that post. If none exists, a moderator with `all` permission can create it with `reddit.submitCustomPost({ subredditName, title, entry: 'dashboard' })`; the returned post ID is stored in Redis.
-- History and profile menu handlers store a pending view request in Redis keyed by subreddit and moderator username, then navigate to the dashboard post. The inline launch screen must not call `/api/bootstrap`, because doing so would consume the pending menu launch before the moderator opens the expanded dashboard. The expanded dashboard client calls `/api/bootstrap` to resolve the current moderator's pending view request. Query parameters are optional hints only.
+- History and profile menu handlers store a pending view request in Redis keyed by subreddit and moderator username, then navigate to the dashboard post. Inline mode must not call `/api/bootstrap`, because doing so would consume the pending menu launch before the moderator opens the expanded dashboard. Inline Profile preview uses a non-consuming, bounded preview route. The expanded dashboard client calls `/api/bootstrap` when entering expanded mode to resolve the current moderator's pending view request, and duplicate expanded-mode callbacks in the same client session must not consume bootstrap state a second time. Query parameters are optional hints only.
 - The dashboard post is a launch surface, not an authorization boundary. Do not store ledger data, user identities, or target context in custom-post `postData`. Logged-in non-moderators who open the dashboard post and launch expanded mode get a limited view. Moderator-only data remains hidden because protected API routes re-check access server-side.
 
 ### Non-Goals
@@ -54,7 +54,7 @@ Implementation decision:
 - Automatic severe-violation detection.
 - Automatic retry worker for failed side effects.
 - Public correction comments on reversal.
-- Form-only history, profile, reversal, or Admin workflows as the primary MVP UI.
+- Form-only history, Profile preview, reversal, or Admin workflows as the primary MVP UI.
 - Rollback UI for settings changes.
 - Bulk background active-total recalculation.
 - React or another frontend framework.
@@ -132,11 +132,11 @@ Run side effects in this order:
 
 Required side effects are the public explanation comment and the action-specific moderation effect for `warn_remove` or `warn_nsfw`. Configured side effects are attempted when enabled. Failure of any required or configured side effect leaves the ledger valid and sets final status to `partial`. Public-comment option failures are tracked in side-effect details without deleting `publicCommentId`; a failed configured option still makes the entry `partial`.
 
-If all required and enabled configured side effects succeed, the moderator toast says the strike was recorded and includes the new active total. If the ledger write succeeds but one or more side effects fail, the toast says the strike was recorded but identifies failed side effects such as public comment, user notice, or mod note. History and profile show compact side-effect status per entry.
+If all required and enabled configured side effects succeed, the moderator toast says the strike was recorded and includes the new active total. If the ledger write succeeds but one or more side effects fail, the toast says the strike was recorded but identifies failed side effects such as public comment, user notice, or mod note. History shows compact side-effect status per entry; inline Profile preview remains summary-only.
 
 Entries with a successful ledger write count toward active totals unless reversed, even if one or more side effects failed. Moderators can reverse partial entries the same way as fully successful entries. The MVP does not include an automatic retry worker.
 
-If the runtime exits after durable ledger creation but before final status is written, a `pending` entry may remain. History and profile show stale pending entries explicitly, and reversal is still allowed. MVP does not auto-retry stale pending side effects.
+If the runtime exits after durable ledger creation but before final status is written, a `pending` entry may remain. History shows stale pending entries explicitly, and reversal is still allowed from expanded History. MVP does not auto-retry stale pending side effects.
 
 Public comments must not expose point totals or strike totals. Private user notices and native mod notes may include point totals and active totals.
 
@@ -228,7 +228,7 @@ Moderator-entered usernames in Admin lookup are convenience inputs only. The ser
 - Default decay subtracts `1` active point every `30` days.
 - Decay amount and interval are configurable.
 - Decay setting changes apply retroactively when totals are recalculated.
-- Recalculate totals from non-reversed ledger entries whenever enforcement, reversal, history, or profile needs them.
+- Recalculate totals from non-reversed ledger entries whenever enforcement, reversal, History, or exact expanded workflows need them. Inline Profile preview may read the rebuildable active-total cache and fall back to the generic launcher when that cached value is unavailable.
 - Store active total as a rebuildable cache and overwrite it after recalculation.
 
 Default step decay examples:
@@ -305,12 +305,12 @@ Use a small Vite client app for the in-app web UI, backed by Hono JSON endpoints
 Proposed routes and launch behavior:
 
 - Web UI entrypoint: use the Devvit Web custom post/webview entrypoint configured in `devvit.json`. The client may render a route-like `/app` view internally, but menu handlers must navigate through a supported Devvit target rather than assuming a relative server route is user-openable.
-- Inline launch screen: render only compact, button-driven content. Do not render History, Profile, Admin, limited history, tables, long forms, or scrollable regions inline. Inline mode must not call `/api/bootstrap`.
-- Expanded dashboard: after the user clicks `Open StrikeLedger`, request expanded mode for the `dashboard` entrypoint and load the full dashboard there.
+- Inline launch screen: render only compact, bounded content. Profile launches may render a non-scrolling summary preview with no recent-entry list, tables, long forms, or reversal controls. The preview must use cached active total data plus a small bounded ledger sample, and must fall back to the generic launcher when that cheap preview data is unavailable. History, Admin, limited history, tables, long forms, and scrollable regions must not render inline. Inline mode must not call `/api/bootstrap`.
+- Expanded dashboard: after the user clicks `Open StrikeLedger` or `Open History`, request expanded mode for the `dashboard` entrypoint and load History or Admin there. Expanded mode has History and Admin tabs only; pending Profile launches resolve to History for the same target context.
 - `/api/bootstrap` resolves the expanded dashboard view for the current user. Moderators get pending view request records or explicit settings mode. Logged-in non-moderators get `view = limited`.
+- `/api/inline-profile-preview` reads pending Profile and History launch state without consuming it. It returns compact cached/bounded Profile summary data only for moderator Profile launches, and does not recalculate active totals or scan the full profile window inline.
 - `/api/self-summary` reads the logged-in viewer's own active total and compact warning history for the current subreddit.
 - `/api/history` reads paginated ledger history.
-- `/api/profile` reads the selected user's moderation profile.
 - `/api/settings` reads effective runtime configuration and writes audited admin rule configuration.
 - `/api/reverse` reverses a ledger entry.
 - `/api/recalculate-user-total` recalculates a selected user's cached active total.
@@ -321,14 +321,14 @@ Devvit select fields return arrays in form submissions. All form handlers normal
 
 ### View Context Tokens
 
-History and profile APIs resolve view context tokens server-side from Redis records at `view_context:{token}`. A context record contains:
+History and inline Profile preview APIs resolve view context tokens server-side from Redis records at `view_context:{token}`. A context record contains:
 
 - `targetId`
 - `targetKind`
 - `subredditName`
 - Selected author identity if available
 
-Tokens expire after 15 minutes, can be reused until expiry, and are read-only. They do not authorize mutations. Raw target or user IDs in query params are ignored unless backed by a valid context token.
+Tokens expire after 15 minutes, can be reused until expiry, and are read-only. They do not authorize mutations. Raw target or user IDs in query params are ignored unless backed by a valid context token, except for explicit Admin/direct lookup routes that re-check `all` permission server-side before resolving a username or `id:t2_*` user key.
 
 Dashboard bootstrap records are stored separately from context tokens, keyed by subreddit and moderator username. They contain the selected `view`, optional `contextToken`, and `createdAtMs`; they expire after 15 minutes and are consumed or overwritten by the next menu launch for that moderator.
 
@@ -351,18 +351,17 @@ History is moderator-only and shows:
 
 History shows the latest `25` entries by default and supports load-more pagination from the Redis sorted-set index. On narrow/mobile layouts, History renders the same moderator entry data as compact cards with date, rule, action/status, points, target link, moderator, side-effect summary, and available reverse action.
 
-### Profile View
+### Inline Profile Preview
 
-The profile is moderator-only and shows:
+The Profile menu action is moderator-only and opens a compact inline preview for the selected author. It shows:
 
 - Current active strike total.
 - Original points in the summary window.
 - Decayed points.
 - Reversed entries.
-- Recent rule violations.
 - Recent removals by rule.
 
-Profile active total is recalculated from the active ledger window. Historical Profile metrics such as original points, decayed points, reversed entries, and removals by rule are bounded to the latest `500` ledger entries; the UI labels those metrics as latest-entry metrics when more entries exist. Visible recent violations show the latest `25` entries. On narrow/mobile layouts, recent Profile entries use the same compact moderator entry cards as History.
+Profile preview active total is read from the rebuildable active-total cache to keep inline loading fast. Historical preview metrics such as original points, decayed points, reversed entries, and removals by rule are bounded to the latest `25` ledger entries; the UI labels those metrics as latest-entry metrics when more entries exist. If cached preview data is unavailable, inline mode shows the generic launcher instead of doing full recalculation. The inline preview must not show recent violations, tables, reversal controls, or any internally scrollable region. Its `Open StrikeLedger` action opens expanded History for the same target context, where active total is recalculated from the active ledger window.
 
 Post-rate counts and severe violation summaries can be added when those accepted extensions are implemented.
 
@@ -408,13 +407,13 @@ Boolean native settings must include moderator-facing labels and help text so fi
 The in-app Admin UI supports editing:
 
 - Rules.
-- Recalculate user totals for a selected username or profile.
+- Recalculate user totals for a selected username or `id:t2_*` user key.
 - Export current rules as JSON.
 - Import rules JSON.
 
 Settings reads require moderator access. Admin rule writes, rule import, rules JSON import, and user-total recalculation require `all`. Native-owned fields must not be editable in the Admin UI.
 
-The Admin page includes a manual repair action to recalculate cached active totals for a selected username or profile. It rebuilds from that user's ledger and overwrites the active-total cache. Bulk background recalculation is not in MVP.
+The Admin page includes a manual repair action to recalculate cached active totals for a selected username or `id:t2_*` user key. It rebuilds from that user's ledger and overwrites the active-total cache. Bulk background recalculation is not in MVP.
 
 ### Required Settings
 
@@ -702,7 +701,7 @@ Default behavior:
 - Configurable post limit per rolling 24 hours.
 - Default limit when enabled: `3` posts per rolling `24` hours.
 - Track post count per user.
-- Show post counts in user moderation profile.
+- Show post counts in the bounded Profile preview or History/Admin user lookup.
 - Show over-limit users in the daily digest.
 
 Possible moderator actions:
@@ -764,7 +763,7 @@ Use these as product references for the accepted Post Rate Ledger extension:
 4. Active-total decay/recalculation.
 5. Menu/forms for enforcement preconditions and idempotent ledger creation.
 6. Reddit side effects with per-side-effect status updates.
-7. Web UI/API for history/profile/reversal.
+7. Web UI/API for History, inline Profile preview, and reversal.
 8. Native settings integration plus Admin UI/API with audit records.
 9. Manual recalc tool.
 10. Devvit config update and playtest checklist.
@@ -773,7 +772,7 @@ Use these as product references for the accepted Post Rate Ledger extension:
 
 - Unit tests for decay math, template rendering, placeholder validation, config validation, identity keying, account deletion checks, duplicate handling, and idempotency logic.
 - Repository tests with a fake Redis adapter for ledger writes, account deletion cleanup, reversal, active-total recalculation, and settings audit.
-- Route tests for API authorization failures and happy-path history/profile/Admin reads.
+- Route tests for API authorization failures and happy-path History, inline Profile preview, and Admin reads.
 - Manual Devvit playtest checklist for actual Reddit side effects.
 
 Use `vitest` for unit, repository, and route tests.
@@ -802,8 +801,8 @@ Use `vitest` for unit, repository, and route tests.
 - Already removed content blocks `Warn and remove` before ledger creation.
 - Already NSFW posts block `Warn and mark NSFW` before ledger creation.
 - Moderators can view recent strike history for the selected author.
-- Moderators can view the selected author's moderation profile.
-- The inline dashboard post has no internal scrolling and only launches the expanded dashboard.
+- Moderators can view a compact non-scrolling inline Profile preview for the selected author.
+- The inline dashboard post has no internal scrolling; History launches show an `Open History` launcher, Profile launches show a compact preview, and full workflows load only in expanded mode.
 - Moderators can edit stable MVP settings in native Devvit app settings.
 - Moderators can edit rules in the in-app Admin UI.
 - Admin saves write audit records.
@@ -814,6 +813,6 @@ Use `vitest` for unit, repository, and route tests.
 
 ## Product Decisions
 
-The MVP UI launch path is the StrikeLedger dashboard custom post/webview entrypoint. Inline mode is only a non-scrolling launcher; History, Profile, reversal, Admin, and limited self-view workflows load in expanded mode. Form-only history, profile, reversal, and Admin workflows are not part of the primary MVP UI.
+The MVP UI launch path is the StrikeLedger dashboard custom post/webview entrypoint. Inline mode is only a non-scrolling launcher or compact Profile preview; History, reversal, Admin, and limited self-view workflows load in expanded mode. Expanded mode has History and Admin tabs only. Form-only history, Profile preview, reversal, and Admin workflows are not part of the primary MVP UI.
 
 The reviewed references and incorporated findings above are part of the MVP contract for implementation.

@@ -7,15 +7,16 @@ This directory is internal agent context. It helps route code-reading before edi
 1. Start with the workflow doc that matches the change.
 2. Read the module doc for the files you expect to touch.
 3. If a touched file has a hotspot doc, read that before editing.
-4. Use `generated/graph.json` for imports, exports, tests, and source links.
-5. Run the targeted checks named in the relevant docs, then the normal repo verification bundle when behavior changes.
+4. Use `generated/summary.md` for review packs, invariants, platform facts, and route lists.
+5. Use `generated/graph.json` when you need machine-readable imports, exports, tests, and source links.
+6. Run the targeted checks named in the relevant docs, then the normal repo verification bundle when behavior changes.
 
 ## Edit Routing
 
 | Change area | Read first | Then read |
 | --- | --- | --- |
 | Warning actions, form nonce, ledger creation, side effects | [workflows/enforcement.md](workflows/enforcement.md) | [modules/routes.md](modules/routes.md), [modules/core-ledger.md](modules/core-ledger.md), [modules/core-side-effects.md](modules/core-side-effects.md) |
-| Dashboard bootstrap, history, profile, reversal, limited user view | [workflows/dashboard.md](workflows/dashboard.md) | [modules/client-dashboard.md](modules/client-dashboard.md), [hotspots/api-routes.md](hotspots/api-routes.md) |
+| Dashboard bootstrap, inline Profile preview, history, reversal, limited user view | [workflows/dashboard.md](workflows/dashboard.md) | [modules/client-dashboard.md](modules/client-dashboard.md), [hotspots/api-routes.md](hotspots/api-routes.md) |
 | Defaults, templates, settings validation, generated `devvit.json` | [workflows/settings.md](workflows/settings.md) | [modules/core-config.md](modules/core-config.md) |
 | Account deletion, deleted target scrubbing, ledger retention | [workflows/cleanup-and-retention.md](workflows/cleanup-and-retention.md) | [modules/core-ledger.md](modules/core-ledger.md), [hotspots/ledgerRepository.md](hotspots/ledgerRepository.md) |
 
@@ -33,7 +34,17 @@ Check freshness with:
 npm run check-knowledge-graph
 ```
 
-Do not edit `generated/graph.json` by hand. Update source files or `annotations.json`, then regenerate.
+Do not edit generated files by hand. Update source files or `annotations.json`, then regenerate.
+
+Generation also validates that every `mvpSections` entry in `annotations.json` matches a real heading in [MVP.md](../../MVP.md). Static mounted Hono routes are emitted as first-class `route:*` nodes with `definesRoute` edges back to their source files. `devvit.json` trigger, menu, form, settings validation, and scheduler endpoints must also appear as generated `POST route:*` nodes, so manifest drift is caught by `npm run check-knowledge-graph`.
+
+`annotations.json` may also define:
+
+- `invariants`: behavior contracts that name the source files, tests, docs, routes, and platform facts that protect them.
+- `platformFacts`: compact Devvit documentation facts with a source URL and review date. These are reviewed local notes, not live Reddit proof.
+- `reviewPacks`: curated entry points for broad review lanes, such as dashboard launch behavior or Devvit manifest route drift.
+
+The generated summary is intentionally human-readable. Use it first when selecting review scope, then open the referenced files directly. For app reviews, prefer review packs and invariants over raw import edges; they capture the regression directions that are easy to miss from file structure alone.
 
 ## Local Vs Live Proof
 

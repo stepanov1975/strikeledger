@@ -22,7 +22,7 @@ Moderators can use these Reddit menu actions:
 | StrikeLedger: Warn and remove    | Posts and comments | Records a warning, leaves the configured public explanation, and removes the target.  |
 | StrikeLedger: Warn and mark NSFW | Posts only         | Records a warning, leaves the configured public explanation, and marks the post NSFW. |
 | StrikeLedger: History            | Posts and comments | Opens the user's ledger history.                                                      |
-| StrikeLedger: Profile            | Posts and comments | Opens the user's summary profile.                                                     |
+| StrikeLedger: Profile            | Posts and comments | Opens a compact inline profile preview.                                               |
 | StrikeLedger: Admin              | Subreddit menu     | Opens StrikeLedger admin tools.                                                       |
 
 ## First Setup
@@ -89,7 +89,7 @@ Default decay subtracts `1` active point every `30` days from each non-reversed 
 
 ## Profile Metrics
 
-The Profile view shows ledger totals for the selected user: active points, original points in the summary window, decayed points, reversed entries, and removals by rule.
+The inline Profile preview shows cached, bounded ledger totals for the selected user: active points, original points in the preview window, decayed points, reversed entries, and removals by rule.
 
 ## Templates
 
@@ -126,11 +126,11 @@ StrikeLedger checks the target before creating a ledger entry. It blocks actions
 
 StrikeLedger also prevents accidental duplicate warnings. A repeat submit by the same moderator for the same target, action, and rule within the retry window returns the existing ledger entry. A duplicate submit by another moderator is blocked while the existing entry is still active or partial. To record a separate issue on the same target, choose a different rule or action. To reissue the same rule and action after a mistake, reverse the existing entry first, then submit a new warning.
 
-After a successful submission, the ledger entry counts toward the user's active total even if a configured side effect, such as a private notice or mod note, fails. History and Profile show side-effect status so moderators can see what happened.
+After a successful submission, the ledger entry counts toward the user's active total even if a configured side effect, such as a private notice or mod note, fails. History shows side-effect status so moderators can see what happened.
 
 ## History
 
-Use `StrikeLedger: History` from a post or comment to open that author's ledger history. The History tab shows:
+Use `StrikeLedger: History` from a post or comment to open that author's ledger history. The dashboard post first shows a compact `Open History` launcher; click it to open expanded mode. The History tab shows:
 
 - Active total.
 - Ledger entries in reverse chronological order.
@@ -142,24 +142,23 @@ Use `StrikeLedger: History` from a post or comment to open that author's ledger 
 - Side-effect summary.
 - Reversal controls for entries that can still be reversed.
 
-History is loaded from a short-lived server-issued context token. Open History from a post or comment menu item when you need a selected user's ledger, then click `Open StrikeLedger` on the dashboard post. On narrow/mobile screens, History shows the same entries as compact cards instead of a wide table.
+History is loaded from a short-lived server-issued context token. Open History from a post or comment menu item when you need a selected user's ledger, then click `Open History` on the dashboard post. On narrow/mobile screens, History shows the same entries as compact cards instead of a wide table.
 
 Moderators with full `all` permission can also open History from Admin by entering a username or `id:t2_*` user key in User lookup and clicking `History`. Username lookup resolves the live Reddit user first, then reads the ID-keyed ledger. Use direct lookup for repair or review when no current post or comment menu context is available.
 
 ## Profile
 
-Use `StrikeLedger: Profile` from a post or comment to open the author's profile summary. The Profile tab shows:
+Use `StrikeLedger: Profile` from a post or comment to open a compact inline profile preview for the author. The preview shows:
 
 - Active total.
 - Original points in the summary window.
 - Decayed points.
 - Reversed entry count.
 - Removals grouped by rule.
-- Recent ledger entries.
 
-Profile is loaded from a short-lived server-issued context token. Open Profile from a post or comment menu item when you need a selected user's summary, then click `Open StrikeLedger` on the dashboard post. Active total is recalculated from the active ledger window; historical summary metrics are bounded to the latest entries on very large ledgers. On narrow/mobile screens, recent Profile entries use the compact card layout.
+The preview comes from the selected post or comment menu action. It uses the cached active total and a small bounded ledger sample so the inline post stays fast and non-scrolling; if preview data is not immediately available, StrikeLedger shows the normal launcher instead. It has no recent-entry list, table, form, reversal controls, or internal scrolling. Click `Open StrikeLedger` to open expanded History for the same selected author, where the active total is recalculated from the active ledger window.
 
-Moderators with full `all` permission can also open Profile from Admin by entering a username or `id:t2_*` user key in User lookup and clicking `Profile`. Username lookup resolves the live Reddit user first, then reads the ID-keyed ledger.
+Moderators with full `all` permission can also open History from Admin by entering a username or `id:t2_*` user key in User lookup and clicking `History`. Username lookup resolves the live Reddit user first, then reads the ID-keyed ledger.
 
 ## Limited User Dashboard
 

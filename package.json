@@ -27,7 +27,7 @@
     "@devvit/client": "0.13.5",
     "@devvit/start": "0.13.5",
     "@devvit/web": "0.13.5",
-    "@hono/node-server": "^2.0.3",
+    "@hono/node-server": "^2.0.6",
     "devvit": "0.13.5",
     "hono": "4.12.21"
   },

@@ -1,6 +1,6 @@
 # StrikeLedger User Manual
 
-App version: `1.3.2`
+App version: `1.3.3`
 
 StrikeLedger helps moderators record rule violations in a durable warning ledger. It adds moderator menu actions for warnings, removal warnings, NSFW warnings, history, profile, and settings. The app records what happened, calculates active warning totals with decay, and keeps a reversible audit trail for future moderator review.
 
@@ -231,6 +231,11 @@ Uninstalling or reinstalling the app may remove or orphan stored data. Treat uni
 - Recalculate totals after major decay setting changes if you need a fresh cached value immediately.
 
 ## Change History
+
+### 1.3.3 - 2026-07-04
+
+- Updated the Devvit package family to `0.13.6`.
+- Dependency-only rebuild with no intended moderation behavior changes.
 
 ### 1.3.2 - 2026-06-29
 

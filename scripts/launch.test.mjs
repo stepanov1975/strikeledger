@@ -17,7 +17,7 @@ test('runs verification and one versioned publish through Node', async () => {
     nodePath: 'C:\\Program Files\\nodejs\\node.exe',
     npmCliPath: 'C:\\Program Files\\nodejs\\node_modules\\npm\\bin\\npm-cli.js',
     devvitCliPath: 'C:\\repo\\node_modules\\devvit\\bin\\devvit.js',
-    version: '1.3.3',
+    version: '1.3.4',
   });
 
   assert.deepEqual(
@@ -61,7 +61,7 @@ test('runs verification and one versioned publish through Node', async () => {
           'C:\\repo\\node_modules\\devvit\\bin\\devvit.js',
           'publish',
           '--version',
-          '1.3.3',
+          '1.3.4',
         ],
       },
     ]

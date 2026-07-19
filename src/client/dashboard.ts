@@ -57,6 +57,7 @@ type LedgerEntryRow = {
 type HistoryResponse = {
   context: ViewContext;
   activeTotal: number;
+  canReverse: boolean;
   canAddReversalModNote: boolean;
   entries: LedgerEntryRow[];
   nextOffset: number | null;
@@ -188,11 +189,14 @@ let historyEntries: LedgerEntryRow[] = [];
 let historyNextOffset: number | null = null;
 let historyContext: ViewContext | null = null;
 let historyActiveTotal = 0;
+let historyCanReverse = false;
 let historyCanAddReversalModNote = false;
 let historyNotice: string | null = null;
 let settingsNotice: string | null = null;
 let currentWebViewMode: DashboardWebViewMode | null = null;
 let renderGeneration = 0;
+let expandedViewGeneration = 0;
+let bootstrapGeneration = 0;
 let bootstrapLoad: Promise<void> | null = null;
 
 const create = <K extends keyof HTMLElementTagNameMap>(
@@ -298,13 +302,13 @@ const dashboardViewLabel = (view: DashboardView): string =>
   view === 'settings' ? 'Admin' : titleCase(view);
 
 const setActiveView = async (view: DashboardView) => {
-  activeView = view;
   if (!shouldKeepDashboardContext(view)) {
     activeContextToken = null;
     activeUserLookup = null;
   }
+  const request = activateExpandedView(view);
   renderFrame();
-  await loadActiveView();
+  await loadActiveView(request);
 };
 
 const showError = (message: string) => {
@@ -572,7 +576,7 @@ const renderHistory = () => {
   } else {
     children.push(
       renderEntryTable(historyEntries, {
-        onReverse: reverseEntry,
+        ...(historyCanReverse ? { onReverse: reverseEntry } : {}),
       })
     );
   }
@@ -581,7 +585,7 @@ const renderHistory = () => {
     const loadMore = create('button', 'load-more', 'Load more');
     loadMore.type = 'button';
     loadMore.addEventListener('click', () => {
-      void loadHistory(historyNextOffset ?? 0);
+      void loadHistory(historyNextOffset ?? 0, captureExpandedViewRequest());
     });
     children.push(loadMore);
   }
@@ -648,20 +652,29 @@ const renderLimitedAccess = (summary: SelfSummaryResponse | null) => {
   );
 };
 
-const loadLimitedAccess = async () => {
-  renderLimitedAccess(await fetchJson<SelfSummaryResponse>('/api/self-summary'));
+const loadLimitedAccess = async (request: ExpandedViewRequest) => {
+  const response = await fetchJson<SelfSummaryResponse>('/api/self-summary');
+  if (isCurrentExpandedViewRequest(request)) {
+    renderLimitedAccess(response);
+  }
 };
 
-const loadHistory = async (offset: number) => {
+const loadHistory = async (offset: number, request: ExpandedViewRequest) => {
   const params = new URLSearchParams({
     offset: String(offset),
   });
   if (!appendContextTokenParam(params)) {
-    renderContextRequired('history');
+    if (isCurrentExpandedViewRequest(request)) {
+      renderContextRequired('history');
+    }
     return;
   }
 
   const response = await fetchJson<HistoryResponse>(`/api/history?${params}`);
+
+  if (!isCurrentExpandedViewRequest(request)) {
+    return;
+  }
 
   if (offset === 0) {
     historyEntries = [];
@@ -669,6 +682,7 @@ const loadHistory = async (offset: number) => {
 
   historyContext = response.context;
   historyActiveTotal = response.activeTotal;
+  historyCanReverse = response.canReverse;
   historyCanAddReversalModNote = response.canAddReversalModNote;
   historyEntries = [...historyEntries, ...response.entries];
   historyNextOffset = response.nextOffset;
@@ -771,6 +785,11 @@ const reverseEntry = async (entry: LedgerEntryRow) => {
     return;
   }
 
+  const request = captureExpandedViewRequest();
+  if (!isCurrentExpandedViewRequest(request)) {
+    return;
+  }
+
   try {
     const response = await fetch('/api/reverse', {
       method: 'POST',
@@ -790,13 +809,18 @@ const reverseEntry = async (entry: LedgerEntryRow) => {
     }
 
     const result = (await response.json()) as ReverseResponse;
+    if (!isCurrentExpandedViewRequest(request)) {
+      return;
+    }
     historyNotice =
       result.status === 'already_reversed'
         ? 'Strike was already reversed.'
         : `Strike reversed. Active total: ${result.activeTotal}.`;
-    await loadHistory(0);
+    await loadHistory(0, request);
   } catch (error) {
-    showError(error instanceof Error ? error.message : 'Reversal failed.');
+    if (isCurrentExpandedViewRequest(request)) {
+      showError(error instanceof Error ? error.message : 'Reversal failed.');
+    }
   }
 };
 
@@ -1568,8 +1592,11 @@ const renderSettings = (response: SettingsResponse) => {
   main.replaceChildren(...children);
 };
 
-const loadSettings = async () => {
-  renderSettings(await fetchJson<SettingsResponse>('/api/settings'));
+const loadSettings = async (request: ExpandedViewRequest) => {
+  const response = await fetchJson<SettingsResponse>('/api/settings');
+  if (isCurrentExpandedViewRequest(request)) {
+    renderSettings(response);
+  }
 };
 
 const getLookupPayloadField = (value: string): 'userKey' | 'username' =>
@@ -1585,17 +1612,22 @@ const openUserLookupView = async (
     return;
   }
 
-  activeView = view;
   activeContextToken = null;
   activeUserLookup = { keyField: getLookupPayloadField(value), value };
+  const request = activateExpandedView(view);
   renderFrame();
-  await loadActiveView();
+  await loadActiveView(request);
 };
 
 const recalculateUserTotal = async (rawValue: string) => {
   const value = rawValue.trim();
   if (!value) {
     showError('User is required.');
+    return;
+  }
+
+  const request = captureExpandedViewRequest();
+  if (!isCurrentExpandedViewRequest(request)) {
     return;
   }
 
@@ -1615,10 +1647,15 @@ const recalculateUserTotal = async (rawValue: string) => {
     }
 
     const result = (await response.json()) as RecalculateResponse;
+    if (!isCurrentExpandedViewRequest(request)) {
+      return;
+    }
     settingsNotice = `${result.userKey}: active total ${result.activeTotal}.`;
-    await loadSettings();
+    await loadSettings(request);
   } catch (error) {
-    showError(error instanceof Error ? error.message : 'Recalculate failed.');
+    if (isCurrentExpandedViewRequest(request)) {
+      showError(error instanceof Error ? error.message : 'Recalculate failed.');
+    }
   }
 };
 
@@ -1657,25 +1694,34 @@ const renderSettingsAuditTable = (
 };
 
 const loadSettingsAudit = async (target: HTMLElement) => {
+  const request = captureExpandedViewRequest();
+  if (!isCurrentExpandedViewRequest(request)) {
+    return;
+  }
   target.replaceChildren(create('div', 'notice', 'Loading settings audit.'));
   try {
-    target.replaceChildren(
-      renderSettingsAuditTable(
-        await fetchJson<SettingsAuditResponse>('/api/settings/audit')
-      )
-    );
+    const response = await fetchJson<SettingsAuditResponse>('/api/settings/audit');
+    if (isCurrentExpandedViewRequest(request)) {
+      target.replaceChildren(renderSettingsAuditTable(response));
+    }
   } catch (error) {
-    target.replaceChildren(
-      create(
-        'div',
-        'error',
-        error instanceof Error ? error.message : 'Audit load failed.'
-      )
-    );
+    if (isCurrentExpandedViewRequest(request)) {
+      target.replaceChildren(
+        create(
+          'div',
+          'error',
+          error instanceof Error ? error.message : 'Audit load failed.'
+        )
+      );
+    }
   }
 };
 
 const runLedgerCleanup = async () => {
+  const request = captureExpandedViewRequest();
+  if (!isCurrentExpandedViewRequest(request)) {
+    return;
+  }
   try {
     const response = await fetch('/api/cleanup-ledger', {
       method: 'POST',
@@ -1691,14 +1737,23 @@ const runLedgerCleanup = async () => {
     }
 
     const result = (await response.json()) as CleanupResponse;
+    if (!isCurrentExpandedViewRequest(request)) {
+      return;
+    }
     settingsNotice = `Cleanup scanned ${result.scanned}, deleted ${result.deleted}.`;
-    await loadSettings();
+    await loadSettings(request);
   } catch (error) {
-    showError(error instanceof Error ? error.message : 'Cleanup failed.');
+    if (isCurrentExpandedViewRequest(request)) {
+      showError(error instanceof Error ? error.message : 'Cleanup failed.');
+    }
   }
 };
 
 const saveSettings = async (revision: number, config: AdminConfig) => {
+  const request = captureExpandedViewRequest();
+  if (!isCurrentExpandedViewRequest(request)) {
+    return;
+  }
   try {
     const response = await fetch('/api/settings', {
       method: 'POST',
@@ -1709,6 +1764,9 @@ const saveSettings = async (revision: number, config: AdminConfig) => {
       body: JSON.stringify({ revision, config }),
     });
     const result = (await response.json()) as SettingsSaveResponse;
+    if (!isCurrentExpandedViewRequest(request)) {
+      return;
+    }
 
     if (!response.ok) {
       if (result.status === 'conflict') {
@@ -1739,21 +1797,25 @@ const saveSettings = async (revision: number, config: AdminConfig) => {
       config: result.config,
     });
   } catch (error) {
-    showError(error instanceof Error ? error.message : 'Settings save failed.');
+    if (isCurrentExpandedViewRequest(request)) {
+      showError(error instanceof Error ? error.message : 'Settings save failed.');
+    }
   }
 };
 
-const loadActiveView = async () => {
+const loadActiveView = async (request: ExpandedViewRequest) => {
   try {
-    if (activeView === 'limited') {
-      await loadLimitedAccess();
-    } else if (activeView === 'history') {
-      await loadHistory(0);
+    if (request.view === 'limited') {
+      await loadLimitedAccess(request);
+    } else if (request.view === 'history') {
+      await loadHistory(0, request);
     } else {
-      await loadSettings();
+      await loadSettings(request);
     }
   } catch (error) {
-    showError(error instanceof Error ? error.message : 'Request failed.');
+    if (isCurrentExpandedViewRequest(request)) {
+      showError(error instanceof Error ? error.message : 'Request failed.');
+    }
   }
 };
 
@@ -1837,6 +1899,31 @@ const isCurrentModeRender = (
   mode: DashboardWebViewMode
 ): boolean => generation === renderGeneration && currentWebViewMode === mode;
 
+type ExpandedViewRequest = {
+  modeGeneration: number;
+  viewGeneration: number;
+  view: DashboardView;
+};
+
+const captureExpandedViewRequest = (): ExpandedViewRequest => ({
+  modeGeneration: renderGeneration,
+  viewGeneration: expandedViewGeneration,
+  view: activeView,
+});
+
+const activateExpandedView = (view: DashboardView): ExpandedViewRequest => {
+  activeView = view;
+  expandedViewGeneration += 1;
+  return captureExpandedViewRequest();
+};
+
+const isCurrentExpandedViewRequest = (
+  request: ExpandedViewRequest
+): boolean =>
+  isCurrentModeRender(request.modeGeneration, 'expanded') &&
+  request.viewGeneration === expandedViewGeneration &&
+  activeView === request.view;
+
 const renderInlineContent = async (generation: number) => {
   if (!isCurrentModeRender(generation, 'inline')) {
     return;
@@ -1880,18 +1967,28 @@ const renderStartupError = (error: unknown) => {
 
 const loadDashboardBootstrap = async () => {
   if (!bootstrapLoad) {
-    bootstrapLoad = (async () => {
-      bootstrap = await fetchJson<BootstrapResponse>('/api/bootstrap');
+    const requestGeneration = bootstrapGeneration;
+    const load = (async () => {
+      const response = await fetchJson<BootstrapResponse>('/api/bootstrap');
+      if (requestGeneration !== bootstrapGeneration) {
+        return;
+      }
+
+      bootstrap = response;
       const launch = resolveDashboardLaunch(
-        bootstrap,
+        response,
         new URLSearchParams(window.location.search)
       );
       activeView = launch.view;
       activeContextToken = launch.contextToken ?? null;
       activeUserLookup = null;
-    })().finally(() => {
-      bootstrapLoad = null;
     });
+    const trackedLoad = load().finally(() => {
+      if (bootstrapLoad === trackedLoad) {
+        bootstrapLoad = null;
+      }
+    });
+    bootstrapLoad = trackedLoad;
   }
 
   await bootstrapLoad;
@@ -1909,8 +2006,9 @@ const startDashboard = async (
     return;
   }
 
+  const request = activateExpandedView(activeView);
   renderFrame();
-  await loadActiveView();
+  await loadActiveView(request);
 };
 
 const renderModeContent = async (mode: DashboardWebViewMode) => {
@@ -1919,29 +2017,37 @@ const renderModeContent = async (mode: DashboardWebViewMode) => {
   const previousMode = currentWebViewMode;
   currentWebViewMode = mode;
 
-  if (getDashboardModeContent(mode) === 'dashboard') {
-    await startDashboard(
-      shouldRefreshDashboardBootstrap({
-        mode,
-        previousMode,
-        hasBootstrap: bootstrap !== null,
-      }),
-      generation
-    );
-    return;
-  }
+  try {
+    if (getDashboardModeContent(mode) === 'dashboard') {
+      await startDashboard(
+        shouldRefreshDashboardBootstrap({
+          mode,
+          previousMode,
+          hasBootstrap: bootstrap !== null,
+        }),
+        generation
+      );
+      return;
+    }
 
-  bootstrap = null;
-  activeContextToken = null;
-  activeUserLookup = null;
-  main = null;
-  await renderInlineContent(generation);
+    bootstrap = null;
+    bootstrapGeneration += 1;
+    bootstrapLoad = null;
+    activeContextToken = null;
+    activeUserLookup = null;
+    main = null;
+    await renderInlineContent(generation);
+  } catch (error) {
+    if (isCurrentModeRender(generation, mode)) {
+      renderStartupError(error);
+    }
+  }
 };
 
 const start = async () => {
   try {
     addWebViewModeListener((mode) => {
-      void renderModeContent(mode).catch(renderStartupError);
+      void renderModeContent(mode);
     });
     await renderModeContent(getWebViewMode());
   } catch (error) {

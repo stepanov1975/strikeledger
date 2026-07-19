@@ -621,6 +621,38 @@ describe('LedgerRepository', () => {
     });
   });
 
+  it('initializes reversal side effects when an active entry is first reversed', async () => {
+    const { repo } = createRepo();
+    const entry = buildEntry();
+    await repo.saveFormNonce(buildNonce());
+    await repo.createLedgerEntry({
+      entry,
+      formNonce: entry.formNonce,
+      submittedAtMs: nowMs,
+      nowMs,
+      config: DEFAULT_CONFIG,
+    });
+
+    const result = await repo.reverseLedgerEntry({
+      entryId: entry.entryId,
+      reversedAtMs: nowMs + 1000,
+      reversedBy: 'mod-b',
+      reversalReason: 'issued in error',
+      config: DEFAULT_CONFIG,
+      nowMs,
+    });
+
+    expect(result).toMatchObject({
+      status: 'reversed',
+      entry: {
+        sideEffects: {
+          reversalModNote: 'pending',
+          reversalUserNotice: 'pending',
+        },
+      },
+    });
+  });
+
   it('scopes create and reversal active totals to the entry subreddit', async () => {
     const { repo, store } = createRepo();
     await seedEntry(
@@ -1513,6 +1545,68 @@ describe('LedgerRepository', () => {
     expect(stored?.sideEffects.reversalModNote).toBe('succeeded');
     expect(stored?.sideEffects.reversalUserNotice).toBe('succeeded');
     expect(stored?.publicCommentId).toBe('t1_comment');
+  });
+
+  it('keeps terminal reversal side effects when a stale checkpoint arrives', async () => {
+    const { repo, store } = createRepo();
+    await seedEntry(
+      store,
+      buildEntry({
+        status: 'reversed',
+        sideEffects: {
+          ...EMPTY_SIDE_EFFECTS,
+          reversalModNote: 'succeeded',
+          reversalUserNotice: 'skipped',
+        },
+      })
+    );
+
+    await repo.updateLedgerEntrySideEffects(
+      buildEntry({
+        status: 'reversed',
+        sideEffects: {
+          ...EMPTY_SIDE_EFFECTS,
+          reversalModNote: 'failed',
+          reversalUserNotice: 'succeeded',
+        },
+      })
+    );
+
+    const stored = await repo.getLedgerEntry('entry-1');
+
+    expect(stored?.sideEffects.reversalModNote).toBe('succeeded');
+    expect(stored?.sideEffects.reversalUserNotice).toBe('skipped');
+  });
+
+  it('allows a terminal reversal checkpoint to advance unfinished side effects', async () => {
+    const { repo, store } = createRepo();
+    await seedEntry(
+      store,
+      buildEntry({
+        status: 'reversed',
+        sideEffects: {
+          ...EMPTY_SIDE_EFFECTS,
+          reversalModNote: 'failed',
+          reversalUserNotice: 'pending',
+        },
+      })
+    );
+
+    await repo.updateLedgerEntrySideEffects(
+      buildEntry({
+        status: 'reversed',
+        sideEffects: {
+          ...EMPTY_SIDE_EFFECTS,
+          reversalModNote: 'succeeded',
+          reversalUserNotice: 'skipped',
+        },
+      })
+    );
+
+    const stored = await repo.getLedgerEntry('entry-1');
+
+    expect(stored?.sideEffects.reversalModNote).toBe('succeeded');
+    expect(stored?.sideEffects.reversalUserNotice).toBe('skipped');
   });
 
   it('keeps newer enforcement side effects when a stale reversal checkpoint arrives', async () => {

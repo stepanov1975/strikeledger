@@ -229,6 +229,14 @@ const cloneSideEffects = (sideEffects: SideEffects): SideEffects => ({
 const shouldAttemptSideEffect = (status: SideEffectStatus): boolean =>
   status === 'pending' || status === 'failed';
 
+const failUnavailableUsernameEffect = (
+  status: SideEffectStatus
+): SideEffectStatus =>
+  status === 'succeeded' || status === 'skipped' ? status : 'failed';
+
+const skipDisabledSideEffect = (status: SideEffectStatus): SideEffectStatus =>
+  status === 'succeeded' || status === 'skipped' ? status : 'skipped';
+
 const submitPublicComment = async (
   target: SideEffectTarget,
   text: string
@@ -454,6 +462,14 @@ export const executeSideEffects = async (
       sideEffects.modNote = 'failed';
       await persistCheckpoint();
     }
+  } else if (
+    input.config.nativeModNotesEnabled && !hasUsableUsername(input.entry.username)
+  ) {
+    const status = failUnavailableUsernameEffect(sideEffects.modNote);
+    if (status !== sideEffects.modNote) {
+      sideEffects.modNote = status;
+      await persistCheckpoint();
+    }
   } else {
     sideEffects.modNote =
       sideEffects.modNote === 'succeeded' ? 'succeeded' : 'skipped';
@@ -495,6 +511,14 @@ export const executeSideEffects = async (
         error
       );
       sideEffects.userNotice = 'failed';
+      await persistCheckpoint();
+    }
+  } else if (
+    input.config.userNoticesEnabled && !hasUsableUsername(input.entry.username)
+  ) {
+    const status = failUnavailableUsernameEffect(sideEffects.userNotice);
+    if (status !== sideEffects.userNotice) {
+      sideEffects.userNotice = status;
       await persistCheckpoint();
     }
   } else {
@@ -540,11 +564,14 @@ export const executeReversalSideEffects = async (
     }
   };
 
-  if (
+  const reversalModNoteEnabled =
     input.config.nativeModNotesEnabled &&
     input.config.reversalNativeModNotesEnabled &&
-    input.addNativeModNote &&
-    hasUsableUsername(input.entry.username)
+    input.addNativeModNote;
+  if (
+    reversalModNoteEnabled &&
+    hasUsableUsername(input.entry.username) &&
+    shouldAttemptSideEffect(sideEffects.reversalModNote)
   ) {
     try {
       const modNote = await input.reddit.addModNote({
@@ -574,13 +601,22 @@ export const executeReversalSideEffects = async (
       sideEffects.reversalModNote = 'failed';
       await persistCheckpoint();
     }
-  } else {
-    sideEffects.reversalModNote = 'skipped';
+  } else if (reversalModNoteEnabled) {
+    const status = failUnavailableUsernameEffect(sideEffects.reversalModNote);
+    if (status !== sideEffects.reversalModNote) {
+      sideEffects.reversalModNote = status;
+      await persistCheckpoint();
+    }
+  } else if (!reversalModNoteEnabled) {
+    sideEffects.reversalModNote = skipDisabledSideEffect(
+      sideEffects.reversalModNote
+    );
   }
 
   if (
     input.config.userNoticesEnabled &&
-    hasUsableUsername(input.entry.username)
+    hasUsableUsername(input.entry.username) &&
+    shouldAttemptSideEffect(sideEffects.reversalUserNotice)
   ) {
     try {
       const response = await input.reddit.modMail.createConversation({
@@ -613,8 +649,16 @@ export const executeReversalSideEffects = async (
       sideEffects.reversalUserNotice = 'failed';
       await persistCheckpoint();
     }
-  } else {
-    sideEffects.reversalUserNotice = 'skipped';
+  } else if (input.config.userNoticesEnabled) {
+    const status = failUnavailableUsernameEffect(sideEffects.reversalUserNotice);
+    if (status !== sideEffects.reversalUserNotice) {
+      sideEffects.reversalUserNotice = status;
+      await persistCheckpoint();
+    }
+  } else if (!input.config.userNoticesEnabled) {
+    sideEffects.reversalUserNotice = skipDisabledSideEffect(
+      sideEffects.reversalUserNotice
+    );
   }
 
   return buildUpdatedEntry();

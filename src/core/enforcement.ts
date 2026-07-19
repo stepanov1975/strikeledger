@@ -1,7 +1,6 @@
 import {
   DEFAULT_CONFIG,
   getRulePoints,
-  validateConfig,
 } from './config';
 import { hashCanonicalJson } from './canonicalJson';
 import {
@@ -47,15 +46,6 @@ export type BuildLedgerEntryInput = {
   publicCommentOverrideUsed: boolean;
   config?: StrikeLedgerConfig;
   moderatorNote?: string;
-};
-
-export const getRuntimeConfig = (): StrikeLedgerConfig => {
-  const issues = validateConfig(DEFAULT_CONFIG);
-  if (issues.length > 0) {
-    throw new Error('Default StrikeLedger config is invalid.');
-  }
-
-  return DEFAULT_CONFIG;
 };
 
 export const getEnabledRules = (

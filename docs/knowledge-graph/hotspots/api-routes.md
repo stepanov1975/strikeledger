@@ -26,7 +26,7 @@
 - Consumes pending launch state: `GET /api/bootstrap`.
 - Peeks at pending launch state: `GET /api/inline-profile-preview`.
 - Non-moderator data route: `GET /api/self-summary`, derived only from `reddit.getCurrentUser()`.
-- Moderator-only reads: `GET /api/history`, `GET /api/profile`, `GET /api/settings`, `GET /api/settings/audit`, and `GET /api/settings/reddit-rules`.
+- Moderator-only reads: `GET /api/history`, `GET /api/settings`, `GET /api/settings/audit`, and `GET /api/settings/reddit-rules`.
 - Moderator-only writes: `POST /api/settings`, `POST /api/recalculate-user-total`, `POST /api/cleanup-ledger`, and `POST /api/reverse`.
 
 ## Required Regression Coverage

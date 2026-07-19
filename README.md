@@ -184,6 +184,7 @@ To reverse an entry:
 6. Submit the reversal.
 
 If reversal mod notes are enabled, StrikeLedger records a native mod note for the reversal.
+If user notices are enabled, StrikeLedger also sends the affected user a private Modmail notice with their updated active total.
 
 ## Manual Recalculation
 

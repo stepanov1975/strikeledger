@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-06-26T20:09:19.778Z",
+  "generatedAt": "2026-07-18T19:07:23.222Z",
   "nodes": [
     {
       "id": "MVP.md",
@@ -1807,7 +1807,6 @@
         "createFormNonceRecordTimes",
         "findEnabledRule",
         "getEnabledRules",
-        "getRuntimeConfig",
         "normalizeSelectValue"
       ],
       "imports": [

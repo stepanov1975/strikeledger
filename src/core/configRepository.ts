@@ -116,12 +116,25 @@ export class ConfigRepository {
   }
 
   private async getStoredConfig(): Promise<StrikeLedgerConfig> {
-    const storedConfig = parseJson<StrikeLedgerConfig>(
-      await this.store.get(configKey)
-    );
+    const rawStoredConfig = await this.store.get(configKey);
+    if (rawStoredConfig !== null) {
+      let storedConfig: unknown;
+      try {
+        storedConfig = JSON.parse(rawStoredConfig);
+      } catch {
+        throw new Error('Stored config contains invalid JSON.');
+      }
 
-    if (storedConfig) {
-      return storedConfig;
+      const issues = validateConfig(storedConfig);
+      if (issues.length > 0) {
+        throw new Error(
+          `Stored config is invalid: ${issues
+            .map((issue) => `${issue.path}: ${issue.message}`)
+            .join(' ')}`
+        );
+      }
+
+      return storedConfig as StrikeLedgerConfig;
     }
 
     const defaultStoredConfig = toRedisOwnedConfig(DEFAULT_CONFIG);

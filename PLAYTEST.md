@@ -81,6 +81,8 @@ npx devvit logs strikeledger_dev strikeledger --connect --show-timestamps --log-
 - Confirm default private notices for `Warn and remove` and `Warn and mark NSFW` state whether the action-specific side effect was confirmed.
 - Confirm native mod notes are neutral and unlabeled when enabled.
 - Temporarily disable user notices in native app settings; confirm new actions skip private notices.
+- With user notices enabled, reverse a test entry and confirm the affected user receives a private reversal notice with the updated active total.
+- With user notices disabled, reverse a separate test entry and confirm no private reversal notice is sent.
 
 ## Dashboard
 

@@ -991,6 +991,7 @@ describe('api routes', () => {
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
       activeTotal: 3,
+      canReverse: true,
       entries: [
         {
           entryId: 'entry-1',
@@ -999,6 +1000,17 @@ describe('api routes', () => {
       ],
     });
     expect(redis.values.get('user:id:t2_user:active_total')).toBe('3');
+  });
+
+  it('does not advertise reversal to read-only moderators', async () => {
+    const { api, redis } = await loadApi(['wiki']);
+    await seedViewContext(redis);
+
+    const response = await api.request('/history?contextToken=token-1');
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.canReverse).toBe(false);
   });
 
   it('rejects history offsets beyond the bounded review window', async () => {
@@ -1308,7 +1320,7 @@ describe('api routes', () => {
     });
   });
 
-  it('runs bounded cleanup for old inactive ledger entries', async () => {
+  it('uses server cleanup defaults instead of request tuning', async () => {
     const { api, redis } = await loadApi(['all']);
     const nowMs = Date.now();
     await seedLedger(
@@ -1330,12 +1342,21 @@ describe('api routes', () => {
 
     const response = await api.request('/cleanup-ledger', {
       method: 'POST',
-      body: JSON.stringify({ retentionDays: 365, maxEntries: 10 }),
+      body: JSON.stringify({
+        retentionDays: 1,
+        maxEntries: 1,
+        maxRuntimeMs: 1,
+      }),
       headers: { 'Content-Type': 'application/json' },
     });
     const body = await response.json();
 
     expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      retentionDays: 365,
+      maxEntries: 2000,
+      maxRuntimeMs: 10_000,
+    });
     expect(body.deleted).toBe(1);
     expect(redis.values.has('ledger_entry:old-inactive')).toBe(false);
     expect(redis.values.has('ledger_entry:recent-active')).toBe(true);

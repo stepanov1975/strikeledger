@@ -370,6 +370,16 @@ const getCleanupRetentionTimestampMs = (entry: LedgerEntry): number =>
     ? entry.reversedAtMs
     : entry.createdAtMs;
 
+const isTerminalReversalSideEffect = (
+  status: SideEffects['reversalModNote']
+): boolean => status === 'succeeded' || status === 'skipped';
+
+const mergeReversalSideEffect = (
+  current: SideEffects['reversalModNote'],
+  checkpoint: SideEffects['reversalModNote']
+): SideEffects['reversalModNote'] =>
+  isTerminalReversalSideEffect(current) ? current : checkpoint;
+
 const mergeCheckpointSideEffects = (
   current: LedgerEntry,
   checkpoint: LedgerEntry
@@ -377,8 +387,20 @@ const mergeCheckpointSideEffects = (
   if (checkpoint.status === 'reversed') {
     return {
       ...current.sideEffects,
-      reversalModNote: checkpoint.sideEffects.reversalModNote,
-      reversalUserNotice: checkpoint.sideEffects.reversalUserNotice,
+      reversalModNote:
+        current.status === 'reversed'
+          ? mergeReversalSideEffect(
+              current.sideEffects.reversalModNote,
+              checkpoint.sideEffects.reversalModNote
+            )
+          : checkpoint.sideEffects.reversalModNote,
+      reversalUserNotice:
+        current.status === 'reversed'
+          ? mergeReversalSideEffect(
+              current.sideEffects.reversalUserNotice,
+              checkpoint.sideEffects.reversalUserNotice
+            )
+          : checkpoint.sideEffects.reversalUserNotice,
     };
   }
 
@@ -441,10 +463,6 @@ export class LedgerRepository {
 
   async getLedgerEntry(entryId: string): Promise<LedgerEntry | null> {
     return parseLedgerEntry(await this.store.get(ledgerEntryKey(entryId)));
-  }
-
-  async updateLedgerEntry(entry: LedgerEntry): Promise<void> {
-    await this.store.set(ledgerEntryKey(entry.entryId), JSON.stringify(entry));
   }
 
   async updateLedgerEntrySideEffects(
@@ -830,6 +848,11 @@ export class LedgerRepository {
         const reversedEntry: LedgerEntry = {
           ...entry,
           status: 'reversed',
+          sideEffects: {
+            ...entry.sideEffects,
+            reversalModNote: 'pending',
+            reversalUserNotice: 'pending',
+          },
           reversedAtMs: request.reversedAtMs,
           reversedBy: request.reversedBy,
           reversalReason: request.reversalReason,
@@ -1232,21 +1255,6 @@ export class LedgerRepository {
       remainingTargets,
       ...(stoppedEarly ? { stoppedEarly } : {}),
     };
-  }
-
-  async recalculateActiveTotal(
-    userKey: string,
-    config: StrikeLedgerConfig,
-    nowMs: number,
-    subredditName?: string
-  ): Promise<number> {
-    return this.recalculateActiveTotalForKeys(
-      [userKey],
-      userKey,
-      config,
-      nowMs,
-      subredditName
-    );
   }
 
   async recalculateActiveTotalForKeys(

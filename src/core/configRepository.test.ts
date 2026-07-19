@@ -25,6 +25,39 @@ describe('ConfigRepository', () => {
     await expect(repo.getConfig()).resolves.toEqual(DEFAULT_CONFIG);
   });
 
+  it('rejects a future stored schema before applying native settings', async () => {
+    const { repo, store } = createRepo();
+    await store.set(
+      'config',
+      JSON.stringify({ ...DEFAULT_CONFIG, schemaVersion: 2 })
+    );
+
+    await expect(repo.getConfig()).rejects.toThrow(
+      'Stored config is invalid: schemaVersion: Unsupported config schema version 2.'
+    );
+  });
+
+  it('rejects malformed stored config JSON with a clear error', async () => {
+    const { repo, store } = createRepo();
+    await store.set('config', '{not-json');
+
+    await expect(repo.getConfig()).rejects.toThrow(
+      'Stored config contains invalid JSON.'
+    );
+  });
+
+  it('rejects structurally malformed stored config with validation details', async () => {
+    const { repo, store } = createRepo();
+    await store.set(
+      'config',
+      JSON.stringify({ ...DEFAULT_CONFIG, revision: 0, rules: undefined })
+    );
+
+    await expect(repo.getConfig()).rejects.toThrow(
+      'Stored config is invalid: revision: Revision must be an integer greater than or equal to 1. rules: Rules must be an array.'
+    );
+  });
+
   it('overlays native install settings onto the stored rule config', async () => {
     const { repo } = createRepo({
       warnPoints: 2,

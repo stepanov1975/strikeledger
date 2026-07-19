@@ -45,6 +45,11 @@ type DashboardPostResolution =
   | { post: DashboardPost }
   | { response: UiResponse };
 
+const isMissingDashboardPostError = (
+  error: unknown,
+  postId: string
+): boolean => error instanceof Error && error.message === `no post ${postId}`;
+
 const dashboardNavigateTarget = (
   post: DashboardPost
 ): NonNullable<UiResponse['navigateTo']> => ({
@@ -54,7 +59,7 @@ const dashboardNavigateTarget = (
 
 const getStoredDashboardPost = async (
   subredditName: string
-): Promise<DashboardPost | null> => {
+): Promise<DashboardPost | null | undefined> => {
   const dashboardRepository = getDashboardRepository();
   const record = await dashboardRepository.getDashboardPost(subredditName);
   if (!record) {
@@ -70,6 +75,15 @@ const getStoredDashboardPost = async (
 
     return post;
   } catch (error) {
+    if (isMissingDashboardPostError(error, record.postId)) {
+      logWarn('dashboard.post_missing', {
+        subredditName,
+        postId: record.postId,
+      });
+      await dashboardRepository.clearDashboardPost();
+      return null;
+    }
+
     logError(
       'dashboard.post_unreadable',
       {
@@ -78,8 +92,7 @@ const getStoredDashboardPost = async (
       },
       error
     );
-    await dashboardRepository.clearDashboardPost();
-    return null;
+    return undefined;
   }
 };
 
@@ -119,6 +132,15 @@ const resolveDashboardPost = async (
   const storedPost = await getStoredDashboardPost(subredditName);
   if (storedPost) {
     return { post: storedPost };
+  }
+
+  if (storedPost === undefined) {
+    return {
+      response: {
+        showToast:
+          'StrikeLedger dashboard is temporarily unavailable. Please try again.',
+      },
+    };
   }
 
   if (allowCreate && access.canManage) {

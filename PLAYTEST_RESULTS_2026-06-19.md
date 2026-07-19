@@ -1,5 +1,7 @@
 # StrikeLedger Playtest Results - 2026-06-19
 
+> **Historical-only report.** This is a dated playtest record, not the current behavioral contract. Use `MVP.md` for the product contract and `README.md` for the current moderator manual.
+
 Environment:
 - Subreddit: `r/strikeledger_dev`
 - Browser: logged-in Chrome profile through Codex browser extension

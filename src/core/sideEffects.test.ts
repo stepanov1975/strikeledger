@@ -557,7 +557,7 @@ describe('executeSideEffects', () => {
     expect(modNoteOptions.note.endsWith('...')).toBe(true);
   });
 
-  it('skips username-required side effects when the username is unavailable', async () => {
+  it('fails enabled username-required side effects when the username is unavailable', async () => {
     const publicComment = {
       id: 'comment-1',
       distinguish: vi.fn(async () => undefined),
@@ -579,13 +579,59 @@ describe('executeSideEffects', () => {
       config: DEFAULT_CONFIG,
     });
 
-    expect(updated.status).toBe('succeeded');
-    expect(updated.sideEffects.modNote).toBe('skipped');
-    expect(updated.sideEffects.userNotice).toBe('skipped');
+    expect(updated.status).toBe('partial');
+    expect(updated.sideEffects.modNote).toBe('failed');
+    expect(updated.sideEffects.userNotice).toBe('failed');
     expect(target.addComment).toHaveBeenCalledTimes(1);
     expect(target.remove).toHaveBeenCalledWith(false);
     expect(reddit.addModNote).not.toHaveBeenCalled();
     expect(reddit.modMail.createConversation).not.toHaveBeenCalled();
+  });
+
+  it('preserves completed enforcement effects when a later username-dependent effect is unavailable', async () => {
+    const updated = await executeSideEffects({
+      entry: buildEntry({
+        username: '[unknown]',
+        sideEffects: {
+          ...EMPTY_SIDE_EFFECTS,
+          publicComment: 'succeeded',
+          remove: 'succeeded',
+          modNote: 'succeeded',
+          userNotice: 'pending',
+        },
+      }),
+      activeTotal: 3,
+      target: { remove: vi.fn(async () => undefined) },
+      reddit: buildReddit(),
+      config: DEFAULT_CONFIG,
+    });
+
+    expect(updated.status).toBe('partial');
+    expect(updated.sideEffects.modNote).toBe('succeeded');
+    expect(updated.sideEffects.userNotice).toBe('failed');
+  });
+
+  it('preserves skipped enforcement effects when the username is unavailable', async () => {
+    const updated = await executeSideEffects({
+      entry: buildEntry({
+        username: '[unknown]',
+        sideEffects: {
+          ...EMPTY_SIDE_EFFECTS,
+          publicComment: 'succeeded',
+          remove: 'succeeded',
+          modNote: 'skipped',
+          userNotice: 'skipped',
+        },
+      }),
+      activeTotal: 3,
+      target: { remove: vi.fn(async () => undefined) },
+      reddit: buildReddit(),
+      config: DEFAULT_CONFIG,
+    });
+
+    expect(updated.status).toBe('succeeded');
+    expect(updated.sideEffects.modNote).toBe('skipped');
+    expect(updated.sideEffects.userNotice).toBe('skipped');
   });
 
   it('logs remove failures with enforcement context', async () => {
@@ -682,6 +728,11 @@ describe('executeSideEffects', () => {
         reversedAtMs: 2000,
         reversedBy: 'mod-b',
         reversalReason: 'issued in error',
+        sideEffects: {
+          ...EMPTY_SIDE_EFFECTS,
+          reversalModNote: 'pending',
+          reversalUserNotice: 'pending',
+        },
       }),
       activeTotal: 0,
       reddit,
@@ -727,6 +778,113 @@ describe('executeSideEffects', () => {
     expect(reddit.addModNote).not.toHaveBeenCalled();
   });
 
+  it('does not re-attempt succeeded reversal effects', async () => {
+    const reddit = buildReddit();
+    const updated = await executeReversalSideEffects({
+      entry: buildEntry({
+        status: 'reversed',
+        reversedAtMs: 2000,
+        reversedBy: 'mod-b',
+        reversalReason: 'issued in error',
+        sideEffects: {
+          ...EMPTY_SIDE_EFFECTS,
+          reversalModNote: 'succeeded',
+          reversalUserNotice: 'succeeded',
+        },
+      }),
+      activeTotal: 0,
+      reddit,
+      config: DEFAULT_CONFIG,
+      addNativeModNote: true,
+    });
+
+    expect(updated.status).toBe('reversed');
+    expect(updated.sideEffects.reversalModNote).toBe('succeeded');
+    expect(updated.sideEffects.reversalUserNotice).toBe('succeeded');
+    expect(reddit.addModNote).not.toHaveBeenCalled();
+    expect(reddit.modMail.createConversation).not.toHaveBeenCalled();
+  });
+
+  it('retries failed reversal effects without duplicating terminal companions', async () => {
+    const reddit = buildReddit();
+    const updated = await executeReversalSideEffects({
+      entry: buildEntry({
+        status: 'reversed',
+        reversedAtMs: 2000,
+        reversedBy: 'mod-b',
+        reversalReason: 'issued in error',
+        sideEffects: {
+          ...EMPTY_SIDE_EFFECTS,
+          reversalModNote: 'failed',
+          reversalUserNotice: 'succeeded',
+        },
+      }),
+      activeTotal: 0,
+      reddit,
+      config: DEFAULT_CONFIG,
+      addNativeModNote: true,
+    });
+
+    expect(updated.status).toBe('reversed');
+    expect(updated.sideEffects.reversalModNote).toBe('succeeded');
+    expect(updated.sideEffects.reversalUserNotice).toBe('succeeded');
+    expect(reddit.addModNote).toHaveBeenCalledTimes(1);
+    expect(reddit.modMail.createConversation).not.toHaveBeenCalled();
+  });
+
+  it('does not re-attempt skipped reversal effects', async () => {
+    const reddit = buildReddit();
+    const updated = await executeReversalSideEffects({
+      entry: buildEntry({
+        status: 'reversed',
+        reversedAtMs: 2000,
+        reversedBy: 'mod-b',
+        reversalReason: 'issued in error',
+      }),
+      activeTotal: 0,
+      reddit,
+      config: DEFAULT_CONFIG,
+      addNativeModNote: true,
+    });
+
+    expect(updated.status).toBe('reversed');
+    expect(updated.sideEffects.reversalModNote).toBe('skipped');
+    expect(updated.sideEffects.reversalUserNotice).toBe('skipped');
+    expect(reddit.addModNote).not.toHaveBeenCalled();
+    expect(reddit.modMail.createConversation).not.toHaveBeenCalled();
+  });
+
+  it('preserves terminal reversal effects when later disabled', async () => {
+    const reddit = buildReddit();
+    const updated = await executeReversalSideEffects({
+      entry: buildEntry({
+        status: 'reversed',
+        reversedAtMs: 2000,
+        reversedBy: 'mod-b',
+        reversalReason: 'issued in error',
+        sideEffects: {
+          ...EMPTY_SIDE_EFFECTS,
+          reversalModNote: 'succeeded',
+          reversalUserNotice: 'skipped',
+        },
+      }),
+      activeTotal: 0,
+      reddit,
+      config: {
+        ...DEFAULT_CONFIG,
+        nativeModNotesEnabled: false,
+        userNoticesEnabled: false,
+      },
+      addNativeModNote: false,
+    });
+
+    expect(updated.status).toBe('reversed');
+    expect(updated.sideEffects.reversalModNote).toBe('succeeded');
+    expect(updated.sideEffects.reversalUserNotice).toBe('skipped');
+    expect(reddit.addModNote).not.toHaveBeenCalled();
+    expect(reddit.modMail.createConversation).not.toHaveBeenCalled();
+  });
+
   it('checkpoints reversal side-effect progress after each attempt', async () => {
     const checkpoints: LedgerEntry[] = [];
     const updated = await executeReversalSideEffects({
@@ -735,6 +893,11 @@ describe('executeSideEffects', () => {
         reversedAtMs: 2000,
         reversedBy: 'mod-b',
         reversalReason: 'issued in error',
+        sideEffects: {
+          ...EMPTY_SIDE_EFFECTS,
+          reversalModNote: 'pending',
+          reversalUserNotice: 'pending',
+        },
       }),
       activeTotal: 0,
       reddit: buildReddit(),
@@ -759,7 +922,7 @@ describe('executeSideEffects', () => {
     });
   });
 
-  it('skips username-required reversal side effects when username is deleted', async () => {
+  it('fails enabled username-required reversal side effects when username is deleted', async () => {
     const reddit = buildReddit();
 
     const updated = await executeReversalSideEffects({
@@ -769,6 +932,11 @@ describe('executeSideEffects', () => {
         reversedAtMs: 2000,
         reversedBy: 'mod-b',
         reversalReason: 'issued in error',
+        sideEffects: {
+          ...EMPTY_SIDE_EFFECTS,
+          reversalModNote: 'pending',
+          reversalUserNotice: 'pending',
+        },
       }),
       activeTotal: 0,
       reddit,
@@ -777,10 +945,55 @@ describe('executeSideEffects', () => {
     });
 
     expect(updated.status).toBe('reversed');
-    expect(updated.sideEffects.reversalModNote).toBe('skipped');
-    expect(updated.sideEffects.reversalUserNotice).toBe('skipped');
+    expect(updated.sideEffects.reversalModNote).toBe('failed');
+    expect(updated.sideEffects.reversalUserNotice).toBe('failed');
     expect(reddit.addModNote).not.toHaveBeenCalled();
     expect(reddit.modMail.createConversation).not.toHaveBeenCalled();
+  });
+
+  it('preserves completed reversal effects when a later username-dependent effect is unavailable', async () => {
+    const updated = await executeReversalSideEffects({
+      entry: buildEntry({
+        username: '[deleted]',
+        status: 'reversed',
+        reversedAtMs: 2000,
+        reversedBy: 'mod-b',
+        reversalReason: 'issued in error',
+        sideEffects: {
+          ...EMPTY_SIDE_EFFECTS,
+          reversalModNote: 'succeeded',
+          reversalUserNotice: 'pending',
+        },
+      }),
+      activeTotal: 0,
+      reddit: buildReddit(),
+      config: DEFAULT_CONFIG,
+      addNativeModNote: true,
+    });
+
+    expect(updated.status).toBe('reversed');
+    expect(updated.sideEffects.reversalModNote).toBe('succeeded');
+    expect(updated.sideEffects.reversalUserNotice).toBe('failed');
+  });
+
+  it('preserves skipped reversal effects when the username is unavailable', async () => {
+    const updated = await executeReversalSideEffects({
+      entry: buildEntry({
+        username: '[deleted]',
+        status: 'reversed',
+        reversedAtMs: 2000,
+        reversedBy: 'mod-b',
+        reversalReason: 'issued in error',
+      }),
+      activeTotal: 0,
+      reddit: buildReddit(),
+      config: DEFAULT_CONFIG,
+      addNativeModNote: true,
+    });
+
+    expect(updated.status).toBe('reversed');
+    expect(updated.sideEffects.reversalModNote).toBe('skipped');
+    expect(updated.sideEffects.reversalUserNotice).toBe('skipped');
   });
 
   it('keeps reversal valid when private reversal notice fails', async () => {
@@ -799,6 +1012,10 @@ describe('executeSideEffects', () => {
         reversedAtMs: 2000,
         reversedBy: 'mod-b',
         reversalReason: 'issued in error',
+        sideEffects: {
+          ...EMPTY_SIDE_EFFECTS,
+          reversalUserNotice: 'pending',
+        },
       }),
       activeTotal: 0,
       reddit,

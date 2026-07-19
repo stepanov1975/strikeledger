@@ -645,6 +645,7 @@ api.get('/history', async (c) => {
   return c.json({
     context,
     activeTotal,
+    canReverse: apiAccess.access.canEnforce,
     canAddReversalModNote:
       config.nativeModNotesEnabled && config.reversalNativeModNotesEnabled,
     entries: entries.map((entry) => serializeEntry(entry, nowMs, config)),
@@ -917,20 +918,12 @@ api.post('/cleanup-ledger', async (c) => {
     return c.json({ error: 'all_permission_required' }, 403);
   }
 
-  let payload: Record<string, unknown>;
-  try {
-    payload = await c.req.json<Record<string, unknown>>();
-  } catch {
-    payload = {};
-  }
-
   const { configRepository, ledgerRepository } = getRepositories();
   const result = await runLedgerCleanup({
     subredditName: apiAccess.subredditName,
     configRepository,
     ledgerRepository,
     nowMs: Date.now(),
-    payload,
   });
   logInfo('api.cleanup.ok', {
     subredditName: apiAccess.subredditName,
